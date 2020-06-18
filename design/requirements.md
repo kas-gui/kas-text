@@ -8,7 +8,7 @@ including properties such as size and colour).
 Essentially, this is meant to abstract over the entire font processing line
 except actual rendering, spitting out either a list of pre-positioned glyphs or
 the input values required by compatible rendering libraries.
-https://mrandri19.github.io/2019/07/24/modern-text-rendering-linux-overview.html
+[Modern text rendering with Linux](https://mrandri19.github.io/2019/07/24/modern-text-rendering-linux-overview.html)
 
 Scope:
 
@@ -17,7 +17,7 @@ Scope:
     needed to fit its contents into a given display environment.
 -   Font management and selection: maintain a collection of loaded fonts and
     assign each piece of text a `FontId` based on font family/property
-    restrictions. Initially this will lean heavily on `font-kit`.
+    restrictions. Initially this will lean heavily on [`font-kit`].
 -   Rich-text parsing: able to convert input formats (e.g. via Markdown and
     HTML) to the internal model. (Later these translators may be moved to
     external libraries.)
@@ -27,7 +27,7 @@ Scope:
     text shapers such as HarfBuzz, although it may not initially support them.
     This implies that the output sent to the rasteriser should be in the form of
     positioned glyphs. The library may embed a simple shaper, comparable with
-    `glyph_brush_layout`.
+    [`glyph_brush_layout`].
 -   Line-wrapping: support for this must be integrated with the bidirectional
     algorithm; additionally, it is required for multi-line text editing.
 -   Text metrics: able to calculate text bounds and translate string indices to
@@ -37,20 +37,20 @@ Scope:
 
 Dependencies:
 
--   `font-kit` (possibly only for font selection only)
--   `ab_glyph` (possibly)
--   `unicode-linebreak` for determining line-break positions
--   `unicode-bidi` — but likely not since its API appears incompatible with
+-   [`font-kit`] (possibly only for font selection only)
+-   [`ab_glyph`] (possibly)
+-   [`unicode-linebreak`] for determining line-break positions
+-   [`unicode-bidi`] — but likely not since its API appears incompatible with
     rich text and embedded objects
--   `harfbuzz_rs` (possibly only later and behind a feature gate)
--   `allsorts` (possibly only later and behind a feature gate)
--   `palette` for colours?
+-   [`harfbuzz_rs`] (possibly only later and behind a feature gate)
+-   [`allsorts`] (possibly only later and behind a feature gate)
+-   [`palette`] for colours?
 
 Dependent libraries:
 
--   `kas` is my reason for building this, but hopefully it will be useful for
-    `iced` and other libraries (GUIs, games)
--   some library binding this with `wgpu_glyph` (probably this will be simple
+-   [`kas`] is my reason for building this, but hopefully it will be useful for
+    [`iced`] and other libraries (GUIs, games)
+-   some library binding this with [`wgpu_glyph`] (probably this will be simple
     enough to embed in `kas_wgpu` and `iced_wgpu`)
 
 
@@ -88,8 +88,7 @@ Input should be able to select:
 
 For now, we can let font-kit can do the work for us and not make this
 configurable (though later configuration support is a must).
-Properties: https://docs.rs/font-kit/0.8.0/font_kit/properties/struct.Properties.html
-Families: https://docs.rs/font-kit/0.8.0/font_kit/family_name/enum.FamilyName.html
+Relevent font-kit docs: [Properties](https://docs.rs/font-kit/0.8.0/font_kit/properties/struct.Properties.html), [FamilyName](https://docs.rs/font-kit/0.8.0/font_kit/family_name/enum.FamilyName.html).
 
 ### Font & property selection
 
@@ -111,7 +110,7 @@ Several properties of text will be derived from the display environment (see
 above). Some properties may be specified for rich text:
 
 -   font selection, but likely only by family and properties including italic,
-    bold and monospace (possibly using the `font-kit` API)
+    bold and monospace (possibly using the [`font-kit`] API)
 -   font size, but possibly only relative to the default size (this side-steps
     all the scaling problems associated with usage of units like pt, mm and
     pixels); we may also allow users to force size limits
@@ -238,5 +237,17 @@ exposed as an associated type on the input parser. It must support testing
 required dimensions (with line-wrapping) and position look-ups.
 
 Additionally, we require a font library.
-This will initially be a small abstraction over `font-kit` to select fonts based
+This will initially be a small abstraction over [`font-kit`] to select fonts based
 on properties and load into memory.
+
+
+[`font-kit`]: https://crates.io/crates/font-kit
+[`ab_glyph`]: https://crates.io/crates/ab_glyph
+[`unicode-linebreak`]: https://crates.io/crates/unicode-linebreak
+[`unicode-bidi`]: https://crates.io/crates/unicode-linebreak
+[`harfbuzz_rs`]: https://crates.io/crates/harfbuzz_rs
+[`allsorts`]: https://crates.io/crates/allsorts
+[`palette`]: https://crates.io/crates/allsorts
+[`kas`]: https://crates.io/crates/kas
+[`iced`]: https://crates.io/crates/iced
+[`wgpu_glyph`]: https://crates.io/crates/wgpu_glyph
