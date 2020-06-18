@@ -1,4 +1,4 @@
-Text processing
+Rich Text processing
 ========
 
 Objective: allow text to be input in various forms (plain text, markdown, html)
