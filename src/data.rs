@@ -33,7 +33,7 @@ impl Default for Align {
     }
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct Size(pub f32, pub f32);
 
 /// Font scale
