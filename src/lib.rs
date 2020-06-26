@@ -8,6 +8,9 @@
 mod data;
 pub use data::*;
 
+mod fonts;
+pub use fonts::*;
+
 mod model;
 pub use model::*;
 

@@ -58,12 +58,3 @@ impl From<f32> for FontScale {
         FontScale { x: scale, y: scale }
     }
 }
-
-/// Font identifier
-///
-/// A default font may be obtained with `FontId(0)`, which refers to the
-/// first font loaded by the (first) theme.
-///
-/// Other than this, users should treat this type as an opaque handle.
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
-pub struct FontId(pub usize);
