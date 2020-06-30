@@ -79,7 +79,21 @@ impl PreparedText {
     }
 
     /// Set the text
-    pub fn set_text(&mut self, text: RichText) {
+    ///
+    /// Returns true when the contents have changed, in which case
+    /// `prepared` must be called again and size-requirements may have changed.
+    pub fn set_text(&mut self, text: RichText) -> bool {
+        if self.parts.len() == text.parts.len() {
+            if self
+                .parts
+                .iter()
+                .zip(text.parts.iter())
+                .all(|(p, t)| p.text == t.text && p.scale == 1.0 && p.font_id.get() == 0)
+            {
+                return false; // no change
+            }
+        }
+
         self.parts = text
             .parts
             .iter()
@@ -90,6 +104,7 @@ impl PreparedText {
             })
             .collect();
         self.ready = false;
+        true
     }
 
     /// Adjust alignment
