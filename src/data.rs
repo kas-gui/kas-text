@@ -33,8 +33,62 @@ impl Default for Align {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+/// 2D size over `f32`
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Size(pub f32, pub f32);
+
+impl Size {
+    /// Return the minimum, componentwise
+    #[inline]
+    pub fn min(self, other: Self) -> Self {
+        Size(self.0.min(other.0), self.1.min(other.1))
+    }
+
+    /// Return the maximum, componentwise
+    #[inline]
+    pub fn max(self, other: Self) -> Self {
+        Size(self.0.max(other.0), self.1.max(other.1))
+    }
+}
+
+impl std::ops::Add for Size {
+    type Output = Self;
+
+    #[inline]
+    fn add(self, other: Self) -> Self {
+        Size(self.0 + other.0, self.1 + other.1)
+    }
+}
+
+impl std::ops::Sub for Size {
+    type Output = Self;
+
+    #[inline]
+    fn sub(self, other: Self) -> Self {
+        Size(self.0 - other.0, self.1 - other.1)
+    }
+}
+
+impl From<Size> for (f32, f32) {
+    fn from(size: Size) -> Self {
+        (size.0, size.1)
+    }
+}
+
+impl From<Size> for ab_glyph::Point {
+    fn from(size: Size) -> ab_glyph::Point {
+        ab_glyph::Point {
+            x: size.0,
+            y: size.1,
+        }
+    }
+}
+
+impl From<ab_glyph::Point> for Size {
+    fn from(p: ab_glyph::Point) -> Size {
+        Size(p.x, p.y)
+    }
+}
 
 /// Font scale
 ///
@@ -49,12 +103,30 @@ pub struct FontScale {
 
 impl Default for FontScale {
     fn default() -> Self {
-        FontScale::from(18.0)
+        FontScale::from(1.0)
     }
 }
 
 impl From<f32> for FontScale {
     fn from(scale: f32) -> Self {
         FontScale { x: scale, y: scale }
+    }
+}
+
+impl From<FontScale> for ab_glyph::PxScale {
+    fn from(FontScale { x, y }: FontScale) -> ab_glyph::PxScale {
+        ab_glyph::PxScale { x, y }
+    }
+}
+
+impl std::ops::Mul<f32> for FontScale {
+    type Output = Self;
+
+    #[inline]
+    fn mul(self, f: f32) -> Self::Output {
+        FontScale {
+            x: self.x * f,
+            y: self.y * f,
+        }
     }
 }

@@ -19,11 +19,23 @@ use std::sync::RwLock;
 /// access a font with a (default-constructed) `FontId` will cause a panic in
 /// the [`FontLibrary`] method used.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
-pub struct FontId(usize);
+pub struct FontId(u32);
 
 impl FontId {
     pub fn get(self) -> usize {
-        self.0
+        self.0 as usize
+    }
+}
+
+impl From<FontId> for glyph_brush_layout::FontId {
+    fn from(id: FontId) -> glyph_brush_layout::FontId {
+        glyph_brush_layout::FontId(id.get())
+    }
+}
+
+impl From<glyph_brush_layout::FontId> for FontId {
+    fn from(id: glyph_brush_layout::FontId) -> FontId {
+        FontId(id.0 as u32)
     }
 }
 
@@ -46,10 +58,11 @@ pub struct FontLibrary {
 // public API
 impl FontLibrary {
     /// Get a font from its identifier
-    pub fn get(&self, id: FontId) -> Font {
+    pub fn get<I: Into<FontId>>(&self, id: I) -> Font {
         let fonts = self.fonts.read().unwrap();
-        assert!(id.0 < fonts.len(), "FontLibrary: invalid FontId!");
-        let font: &FontRef<'static> = &fonts[id.0];
+        let id = id.into();
+        assert!(id.get() < fonts.len(), "FontLibrary: invalid FontId!");
+        let font: &FontRef<'static> = &fonts[id.get()];
         // Safety: elements of self.fonts are never dropped or modified
         unsafe { extend_lifetime(font) }
     }
@@ -104,7 +117,7 @@ impl FontLibrary {
         // 3rd lock: insert into font list
         let font = FontRef::try_from_slice_and_index(slice, index)?;
         let mut fonts = self.fonts.write().unwrap();
-        let id = FontId(fonts.len());
+        let id = FontId(fonts.len() as u32);
         fonts.push(Box::new(font));
         Ok(id)
     }

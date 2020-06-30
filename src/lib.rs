@@ -5,6 +5,8 @@
 
 //! KAS Rich-Text library
 
+pub use glyph_brush_layout::SectionGlyph;
+
 mod data;
 pub use data::*;
 
