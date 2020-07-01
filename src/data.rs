@@ -38,6 +38,12 @@ impl Default for Align {
 pub struct Size(pub f32, pub f32);
 
 impl Size {
+    /// Take the absolute value of each component
+    #[inline]
+    pub fn abs(self) -> Self {
+        Size(self.0.abs(), self.1.abs())
+    }
+
     /// Return the minimum, componentwise
     #[inline]
     pub fn min(self, other: Self) -> Self {

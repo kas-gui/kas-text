@@ -5,8 +5,9 @@
 
 //! KAS Rich-Text library — prepared text
 
-use ab_glyph::Font;
+use ab_glyph::{Font, Glyph, ScaleFont};
 use glyph_brush_layout::{GlyphPositioner, Layout, SectionGeometry, SectionGlyph, SectionText};
+use unicode_segmentation::GraphemeCursor;
 
 use crate::{fonts, Align, FontId, FontScale, RichText, Size, TextPart};
 
@@ -196,11 +197,13 @@ impl PreparedText {
     ///
     /// One must call [`PreparedText::prepare`] before this method.
     ///
-    /// The offset is used to adjust the glyph position.
-    pub fn positioned_glyphs(&self, offset: Size) -> Vec<SectionGlyph> {
+    /// The `pos` is used to adjust the glyph position: this is the top-left
+    /// position of the rect within which glyphs appear (the size of the rect
+    /// is that passed to [`PreparedText::set_bounds`]).
+    pub fn positioned_glyphs(&self, pos: Size) -> Vec<SectionGlyph> {
         assert!(self.ready, "PreparedText: not ready");
         let mut glyphs = self.glyphs.clone();
-        let offset = self.offset + offset;
+        let offset = self.offset + pos;
         if offset != Size::default() {
             let offset = ab_glyph::Point::from(offset);
             for glyph in &mut glyphs {
@@ -217,6 +220,162 @@ impl PreparedText {
     /// and may cause parts of the text outside the bounds to be cut off.
     pub fn required_size(&self) -> Size {
         self.required
+    }
+
+    /// Find the starting position (top-left) of the glyph at the given index
+    ///
+    /// May panic on invalid byte index.
+    ///
+    /// This method is only partially compatible with mult-line text.
+    /// Ideally an external line-breaker should be used.
+    ///
+    /// Note: if the text's bounding rect does not start at the origin, then
+    /// the coordinates of the top-left corner should be added to this result.
+    pub fn text_glyph_pos(&self, index: usize) -> Size {
+        if index == 0 {
+            // Short-cut. We also cannot iterate since there may be no glyphs.
+            return self.offset;
+        }
+
+        // Translate index to part number and part's byte-index.
+        let mut section = 0;
+        let mut section_index = index;
+        let mut byte = None;
+        while section < self.parts.len() {
+            let section_len = self.parts[section].text.len();
+            if section_index < section_len {
+                byte = Some(self.parts[section].text.as_bytes()[section_index]);
+                break;
+            };
+            section += 1;
+            section_index -= section_len;
+        }
+
+        let mut iter = self.glyphs.iter();
+
+        let mut advance = false;
+        let mut glyph;
+        if let Some(byte) = byte {
+            // Tiny HACK: line-breaks don't have glyphs
+            if byte == b'\r' || byte == b'\n' {
+                advance = true;
+            }
+
+            glyph = iter.next().unwrap().clone();
+            for next in iter {
+                if next.section_index > section || next.byte_index > section_index {
+                    // Use the previous glyph, e.g. if in the middle of a
+                    // multi-byte sequence or index is a combining diacritic.
+                    break;
+                }
+                glyph = next.clone();
+            }
+        } else {
+            advance = true;
+            glyph = iter.last().unwrap().clone();
+        }
+
+        let mut pos = self.offset + glyph.glyph.position.into();
+        let scale_font = fonts().get(glyph.font_id).into_scaled(glyph.glyph.scale);
+        if advance {
+            pos.0 += scale_font.h_advance(glyph.glyph.id);
+        }
+        pos.1 -= scale_font.ascent();
+        return pos;
+    }
+
+    /// Find the text index for the glyph nearest the given `pos`
+    ///
+    /// Note: if the font's rect does not start at the origin, then its top-left
+    /// coordinate should first be subtracted from `pos`.
+    ///
+    /// This includes the index immediately after the last glyph, thus
+    /// `result ≤ text.len()`.
+    ///
+    /// This method is only partially compatible with mult-line text.
+    /// Ideally an external line-breaker should be used.
+    pub fn text_index_nearest(&self, pos: Size) -> usize {
+        if self.parts.len() == 0 {
+            return 0; // short-cut
+        }
+        let text_len = self.total_len();
+        // NOTE: if self.parts.len() > 1 then base_to_mid may change, making the
+        // row selection a little inaccurate. This method is best used with only
+        // a single row of text anyway, so we consider this acceptable.
+        // This also affects scale_font.h_advance at line-breaks. We consider
+        // this a hack anyway and so tolerate some inaccuracy.
+        let last_part = self.parts.last().unwrap();
+        let scale_font = fonts().get(last_part.font_id).into_scaled(last_part.scale);
+        let base_to_mid = -0.5 * scale_font.ascent();
+
+        let mut iter = self.glyphs.iter();
+
+        // Find the (horiz, vert) distance between pos and the glyph.
+        let dist = |glyph: &Glyph| {
+            let p = glyph.position;
+            let glyph_pos = Size(p.x, p.y + base_to_mid);
+            (pos - glyph_pos).abs()
+        };
+        let test_best = |best: Size, glyph: &Glyph| {
+            let dist = dist(glyph);
+            if dist.1 < best.1 {
+                Some(dist)
+            } else if dist.1 == best.1 && dist.0 < best.0 {
+                Some(dist)
+            } else {
+                None
+            }
+        };
+
+        let mut last: SectionGlyph = iter.next().unwrap().clone();
+        let mut last_y = last.glyph.position.y;
+        let mut best = (last.byte_index, dist(&last.glyph));
+        for next in iter {
+            // Heuristic to detect a new line. This is a HACK to handle
+            // multi-line texts since line-end positions are not represented by
+            // virtual glyphs (unlike spaces).
+            if (next.glyph.position.y - last_y).abs() > base_to_mid {
+                last.glyph.position.x += scale_font.h_advance(last.glyph.id);
+                if let Some(new_best) = test_best(best.1, &last.glyph) {
+                    let index = last.byte_index;
+                    let mut cursor = GraphemeCursor::new(index, text_len, true);
+                    let mut cum_len = 0;
+                    let text = 'outer: loop {
+                        for part in &self.parts {
+                            let len = part.text.len();
+                            if index < cum_len + len {
+                                break 'outer &part.text;
+                            }
+                            cum_len += len;
+                        }
+                        unreachable!();
+                    };
+                    let byte = cursor
+                        .next_boundary(text, cum_len)
+                        .unwrap()
+                        .unwrap_or(last.byte_index);
+                    best = (byte, new_best);
+                }
+            }
+
+            last = next.clone();
+            last_y = last.glyph.position.y;
+            if let Some(new_best) = test_best(best.1, &last.glyph) {
+                best = (last.byte_index, new_best);
+            }
+        }
+
+        // We must also consider the position after the last glyph
+        last.glyph.position.x += scale_font.h_advance(last.glyph.id);
+        if let Some(new_best) = test_best(best.1, &last.glyph) {
+            best = (text_len, new_best);
+        }
+
+        assert!(
+            best.0 <= text_len,
+            "text_index_nearest: index beyond text length!"
+        );
+        best.0
     }
 }
 
