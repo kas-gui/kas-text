@@ -305,8 +305,11 @@ impl PreparedText {
         // This also affects scale_font.h_advance at line-breaks. We consider
         // this a hack anyway and so tolerate some inaccuracy.
         let last_part = self.parts.last().unwrap();
-        let scale_font = fonts().get(last_part.font_id).into_scaled(last_part.scale);
-        let base_to_mid = -0.5 * scale_font.ascent();
+        let scale = self.base_scale * last_part.scale;
+        let scale_font = fonts().get(last_part.font_id).into_scaled(scale);
+        let base_to_mid = -0.5 * (scale_font.ascent() + scale_font.descent());
+        // Note: scale_font.line_gap() is 0.0 (why?). Use ascent() instead.
+        let half_line_gap = (0.5 * scale_font.ascent()).abs();
 
         let mut iter = self.glyphs.iter();
 
@@ -334,7 +337,7 @@ impl PreparedText {
             // Heuristic to detect a new line. This is a HACK to handle
             // multi-line texts since line-end positions are not represented by
             // virtual glyphs (unlike spaces).
-            if (next.glyph.position.y - last_y).abs() > base_to_mid {
+            if (next.glyph.position.y - last_y).abs() > half_line_gap {
                 last.glyph.position.x += scale_font.h_advance(last.glyph.id);
                 if let Some(new_best) = test_best(best.1, &last.glyph) {
                     let index = last.byte_index;
