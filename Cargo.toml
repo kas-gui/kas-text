@@ -1,0 +1,12 @@
+[package]
+name = "kas-text"
+version = "0.0.0"
+authors = ["Diggory Hardy <git@dhardy.name>"]
+edition = "2018"
+
+[dependencies]
+ab_glyph = "0.2.2"
+font-kit = "0.8.0"
+glyph_brush_layout = "0.2.0"
+lazy_static = "1.4.0"
+unicode-segmentation = "1.6"
