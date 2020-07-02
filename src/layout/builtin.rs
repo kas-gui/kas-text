@@ -17,19 +17,11 @@ use ab_glyph::*;
 pub enum Layout<L: LineBreaker> {
     /// Renders a single line from left-to-right according to the inner alignment.
     /// Hard breaking will end the line, partially hitting the width bound will end the line.
-    SingleLine {
-        line_breaker: L,
-        h_align: HorizontalAlign,
-        v_align: VerticalAlign,
-    },
+    SingleLine { line_breaker: L },
     /// Renders multiple lines from left-to-right according to the inner alignment.
     /// Hard breaking characters will cause advancement to another line.
     /// A characters hitting the width bound will also cause another line to start.
-    Wrap {
-        line_breaker: L,
-        h_align: HorizontalAlign,
-        v_align: VerticalAlign,
-    },
+    Wrap { line_breaker: L },
 }
 
 impl Default for Layout<BuiltInLineBreaker> {
@@ -44,8 +36,6 @@ impl Layout<BuiltInLineBreaker> {
     pub fn default_single_line() -> Self {
         Layout::SingleLine {
             line_breaker: BuiltInLineBreaker::default(),
-            h_align: HorizontalAlign::Left,
-            v_align: VerticalAlign::Top,
         }
     }
 
@@ -53,35 +43,6 @@ impl Layout<BuiltInLineBreaker> {
     pub fn default_wrap() -> Self {
         Layout::Wrap {
             line_breaker: BuiltInLineBreaker::default(),
-            h_align: HorizontalAlign::Left,
-            v_align: VerticalAlign::Top,
-        }
-    }
-}
-
-impl<L: LineBreaker> Layout<L> {
-    /// Returns an identical `Layout` but with the input `h_align`
-    pub fn h_align(self, h_align: HorizontalAlign) -> Self {
-        use Layout::*;
-        match self {
-            SingleLine {
-                line_breaker,
-                v_align,
-                ..
-            } => SingleLine {
-                line_breaker,
-                v_align,
-                h_align,
-            },
-            Wrap {
-                line_breaker,
-                v_align,
-                ..
-            } => Wrap {
-                line_breaker,
-                v_align,
-                h_align,
-            },
         }
     }
 }
@@ -106,11 +67,7 @@ impl<L: LineBreaker> GlyphPositioner for Layout<L> {
         } = *geometry;
 
         match *self {
-            SingleLine {
-                h_align,
-                v_align,
-                line_breaker,
-            } => Characters::new(
+            SingleLine { line_breaker } => Characters::new(
                 fonts,
                 sections.iter().map(|s| s.to_section_text()),
                 line_breaker,
@@ -118,17 +75,14 @@ impl<L: LineBreaker> GlyphPositioner for Layout<L> {
             .words()
             .lines(bound_w)
             .next()
-            .map(|line| line.aligned_on_screen(screen_position, h_align, v_align))
+            .map(|line| line.aligned_on_screen(screen_position))
             .unwrap_or_default(),
 
             Wrap {
-                h_align,
-                v_align,
                 line_breaker,
             } => {
                 let mut out = vec![];
                 let mut caret = screen_position;
-                let v_align_top = v_align == VerticalAlign::Top;
 
                 let lines = Characters::new(
                     fonts,
@@ -140,129 +94,18 @@ impl<L: LineBreaker> GlyphPositioner for Layout<L> {
 
                 for line in lines {
                     // top align can bound check & exit early
-                    if v_align_top && caret.1 >= screen_position.1 + bound_h {
+                    if caret.1 >= screen_position.1 + bound_h {
                         break;
                     }
 
                     let line_height = line.line_height();
-                    out.extend(line.aligned_on_screen(caret, h_align, VerticalAlign::Top));
+                    out.extend(line.aligned_on_screen(caret));
                     caret.1 += line_height;
-                }
-
-                if !out.is_empty() {
-                    match v_align {
-                        // already aligned
-                        VerticalAlign::Top => {}
-                        // convert from top
-                        VerticalAlign::Center | VerticalAlign::Bottom => {
-                            let shift_up = if v_align == VerticalAlign::Center {
-                                (caret.1 - screen_position.1) / 2.0
-                            } else {
-                                caret.1 - screen_position.1
-                            };
-
-                            let (min_x, max_x) = h_align.x_bounds(screen_position.0, bound_w);
-                            let (min_y, max_y) = v_align.y_bounds(screen_position.1, bound_h);
-
-                            out = out
-                                .drain(..)
-                                .filter_map(|mut sg| {
-                                    // shift into position
-                                    sg.glyph.position.y -= shift_up;
-
-                                    // filter away out-of-bounds glyphs
-                                    let sfont = fonts[sg.font_id].as_scaled(sg.glyph.scale);
-                                    let h_advance = sfont.h_advance(sg.glyph.id);
-                                    let h_side_bearing = sfont.h_side_bearing(sg.glyph.id);
-                                    let height = sfont.height();
-
-                                    Some(sg).filter(|sg| {
-                                        sg.glyph.position.x - h_side_bearing <= max_x
-                                            && sg.glyph.position.x + h_advance >= min_x
-                                            && sg.glyph.position.y - height <= max_y
-                                            && sg.glyph.position.y + height >= min_y
-                                    })
-                                })
-                                .collect();
-                        }
-                    }
                 }
 
                 out
             }
         }
-    }
-}
-
-/// Describes horizontal alignment preference for positioning & bounds.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum HorizontalAlign {
-    /// Leftmost character is immediately to the right of the render position.<br/>
-    /// Bounds start from the render position and advance rightwards.
-    Left,
-    /// Leftmost & rightmost characters are equidistant to the render position.<br/>
-    /// Bounds start from the render position and advance equally left & right.
-    Center,
-    /// Rightmost character is immetiately to the left of the render position.<br/>
-    /// Bounds start from the render position and advance leftwards.
-    Right,
-}
-
-impl HorizontalAlign {
-    #[inline]
-    pub(crate) fn x_bounds(self, screen_x: f32, bound_w: f32) -> (f32, f32) {
-        let (min, max) = match self {
-            HorizontalAlign::Left => (screen_x, screen_x + bound_w),
-            HorizontalAlign::Center => (screen_x - bound_w / 2.0, screen_x + bound_w / 2.0),
-            HorizontalAlign::Right => (screen_x - bound_w, screen_x),
-        };
-
-        (min.floor(), max.ceil())
-    }
-}
-
-/// Describes vertical alignment preference for positioning & bounds. Currently a placeholder
-/// for future functionality.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum VerticalAlign {
-    /// Characters/bounds start underneath the render position and progress downwards.
-    Top,
-    /// Characters/bounds center at the render position and progress outward equally.
-    Center,
-    /// Characters/bounds start above the render position and progress upward.
-    Bottom,
-}
-
-impl VerticalAlign {
-    #[inline]
-    pub(crate) fn y_bounds(self, screen_y: f32, bound_h: f32) -> (f32, f32) {
-        let (min, max) = match self {
-            VerticalAlign::Top => (screen_y, screen_y + bound_h),
-            VerticalAlign::Center => (screen_y - bound_h / 2.0, screen_y + bound_h / 2.0),
-            VerticalAlign::Bottom => (screen_y - bound_h, screen_y),
-        };
-
-        (min.floor(), max.ceil())
-    }
-}
-
-#[cfg(test)]
-mod bounds_test {
-    use super::*;
-    use std::f32::INFINITY as inf;
-
-    #[test]
-    fn v_align_y_bounds_inf() {
-        assert_eq!(VerticalAlign::Top.y_bounds(0.0, inf), (0.0, inf));
-        assert_eq!(VerticalAlign::Center.y_bounds(0.0, inf), (-inf, inf));
-        assert_eq!(VerticalAlign::Bottom.y_bounds(0.0, inf), (-inf, 0.0));
-    }
-
-    #[test]
-    fn h_align_x_bounds_inf() {
-        assert_eq!(HorizontalAlign::Left.x_bounds(0.0, inf), (0.0, inf));
-        assert_eq!(HorizontalAlign::Center.x_bounds(0.0, inf), (-inf, inf));
-        assert_eq!(HorizontalAlign::Right.x_bounds(0.0, inf), (-inf, 0.0));
     }
 }
 
@@ -391,68 +234,6 @@ mod layout_test {
             "unexpected last position {:?}",
             last_glyph.position
         );
-    }
-
-    #[test]
-    fn single_line_chars_right() {
-        let glyphs = Layout::default_single_line()
-            .h_align(HorizontalAlign::Right)
-            .calculate_glyphs(
-                &*FONT_MAP,
-                &SectionGeometry::default(),
-                &[SectionText {
-                    text: "hello world",
-                    scale: PxScale::from(20.0),
-                    ..SectionText::default()
-                }],
-            );
-
-        assert_glyph_order!(glyphs, "hello world");
-        let last_glyph = &glyphs.last().unwrap().glyph;
-        assert!(glyphs[0].glyph.position.x < last_glyph.position.x);
-        assert!(
-            last_glyph.position.x <= 0.0,
-            "unexpected last position {:?}",
-            last_glyph.position
-        );
-
-        let sfont = A_FONT.as_scaled(20.0);
-        let rightmost_x = last_glyph.position.x + sfont.h_advance(last_glyph.id);
-        assert_relative_eq!(rightmost_x, 0.0, epsilon = 1e-1);
-    }
-
-    #[test]
-    fn single_line_chars_center() {
-        let glyphs = Layout::default_single_line()
-            .h_align(HorizontalAlign::Center)
-            .calculate_glyphs(
-                &*FONT_MAP,
-                &SectionGeometry::default(),
-                &[SectionText {
-                    text: "hello world",
-                    scale: PxScale::from(20.0),
-                    ..SectionText::default()
-                }],
-            );
-
-        assert_glyph_order!(glyphs, "hello world");
-        assert!(
-            glyphs[0].glyph.position.x < 0.0,
-            "unexpected first glyph position {:?}",
-            glyphs[0].glyph.position
-        );
-
-        let last_glyph = &glyphs.last().unwrap().glyph;
-        assert!(
-            last_glyph.position.x > 0.0,
-            "unexpected last glyph position {:?}",
-            last_glyph.position
-        );
-
-        let leftmost_x = glyphs[0].glyph.position.x;
-        let sfont = A_FONT.as_scaled(20.0);
-        let rightmost_x = last_glyph.position.x + sfont.h_advance(last_glyph.id);
-        assert_relative_eq!(rightmost_x, -leftmost_x, epsilon = 1e-1);
     }
 
     #[test]

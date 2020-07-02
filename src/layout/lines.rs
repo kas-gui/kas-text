@@ -6,7 +6,7 @@
 //! Simple layout engine — copied from glyph_brush_layout
 
 use super::{linebreak::LineBreaker, words::*};
-use super::{HorizontalAlign, SectionGlyph, SectionText, VerticalAlign};
+use super::{SectionGlyph, SectionText};
 use ab_glyph::*;
 use std::iter::{FusedIterator, Iterator, Peekable};
 
@@ -25,45 +25,12 @@ impl Line {
     }
 
     /// Returns line glyphs positioned on the screen and aligned.
-    pub fn aligned_on_screen(
-        mut self,
-        screen_position: (f32, f32),
-        h_align: HorizontalAlign,
-        v_align: VerticalAlign,
-    ) -> Vec<SectionGlyph> {
+    pub fn aligned_on_screen(mut self, screen_position: (f32, f32)) -> Vec<SectionGlyph> {
         if self.glyphs.is_empty() {
             return Vec::new();
         }
 
-        // implement v-aligns when they're are supported
-        let screen_left = match h_align {
-            HorizontalAlign::Left => point(screen_position.0, screen_position.1),
-            // - Right alignment attained from left by shifting the line
-            //   leftwards by the rightmost x distance from render position
-            // - Central alignment is attained from left by shifting the line
-            //   leftwards by half the rightmost x distance from render position
-            HorizontalAlign::Center | HorizontalAlign::Right => {
-                let mut shift_left = self.rightmost;
-                if h_align == HorizontalAlign::Center {
-                    shift_left /= 2.0;
-                }
-                point(screen_position.0 - shift_left, screen_position.1)
-            }
-        };
-
-        let screen_pos = match v_align {
-            VerticalAlign::Top => screen_left,
-            VerticalAlign::Center => {
-                let mut screen_pos = screen_left;
-                screen_pos.y -= self.line_height() / 2.0;
-                screen_pos
-            }
-            VerticalAlign::Bottom => {
-                let mut screen_pos = screen_left;
-                screen_pos.y -= self.line_height();
-                screen_pos
-            }
-        };
+        let screen_pos = point(screen_position.0, screen_position.1);
 
         self.glyphs
             .iter_mut()
