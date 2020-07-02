@@ -38,6 +38,11 @@ impl Default for Align {
 pub struct Size(pub f32, pub f32);
 
 impl Size {
+    /// Zero
+    pub const ZERO: Size = Size(0.0, 0.0);
+    /// Positive infinity
+    pub const INFINITY: Size = Size(f32::INFINITY, f32::INFINITY);
+
     /// Take the absolute value of each component
     #[inline]
     pub fn abs(self) -> Self {

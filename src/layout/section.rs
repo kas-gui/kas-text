@@ -7,25 +7,6 @@
 
 use crate::FontId;
 use ab_glyph::*;
-use std::f32;
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct SectionGeometry {
-    /// Position on screen to render text, in pixels from top-left. Defaults to (0, 0).
-    pub screen_position: (f32, f32),
-    /// Max (width, height) bounds, in pixels from top-left. Defaults to unbounded.
-    pub bounds: (f32, f32),
-}
-
-impl Default for SectionGeometry {
-    #[inline]
-    fn default() -> Self {
-        Self {
-            screen_position: (0.0, 0.0),
-            bounds: (f32::INFINITY, f32::INFINITY),
-        }
-    }
-}
 
 /// Text to layout together using a font & scale.
 #[derive(Debug, Clone, Copy, PartialEq)]

@@ -66,7 +66,7 @@ impl GlyphPositioner for SimpleCustomGlyphPositioner {
     fn calculate_glyphs<F, S>(
         &self,
         _fonts: &[F],
-        _geometry: &SectionGeometry,
+        _bounds: Size,
         _sections: &[S],
     ) -> Vec<SectionGlyph>
     where
@@ -81,7 +81,7 @@ impl GlyphPositioner for SimpleCustomGlyphPositioner {
 fn zero_scale_glyphs() {
     let glyphs = Layout::default_single_line().calculate_glyphs(
         &*FONT_MAP,
-        &SectionGeometry::default(),
+        Size::INFINITY,
         &[SectionText {
             text: "hello world",
             scale: 0.0.into(),
@@ -96,7 +96,7 @@ fn zero_scale_glyphs() {
 fn negative_scale_glyphs() {
     let glyphs = Layout::default_single_line().calculate_glyphs(
         &*FONT_MAP,
-        &SectionGeometry::default(),
+        Size::INFINITY,
         &[SectionText {
             text: "hello world",
             scale: PxScale::from(-20.0),
@@ -111,7 +111,7 @@ fn negative_scale_glyphs() {
 fn single_line_chars_left_simple() {
     let glyphs = Layout::default_single_line().calculate_glyphs(
         &*FONT_MAP,
-        &SectionGeometry::default(),
+        Size::INFINITY,
         &[SectionText {
             text: "hello world",
             scale: PxScale::from(20.0),
@@ -134,7 +134,7 @@ fn single_line_chars_left_simple() {
 fn single_line_chars_left_finish_at_newline() {
     let glyphs = Layout::default_single_line().calculate_glyphs(
         &*FONT_MAP,
-        &SectionGeometry::default(),
+        Size::INFINITY,
         &[SectionText {
             text: "hello\nworld",
             scale: PxScale::from(20.0),
@@ -155,10 +155,7 @@ fn single_line_chars_left_finish_at_newline() {
 fn wrap_word_left() {
     let glyphs = Layout::default_single_line().calculate_glyphs(
         &*FONT_MAP,
-        &SectionGeometry {
-            bounds: (85.0, f32::INFINITY), // should only be enough room for the 1st word
-            ..SectionGeometry::default()
-        },
+        Size(85.0, f32::INFINITY), // should only be enough room for the 1st word
         &[SectionText {
             text: "hello what's _happening_?",
             scale: PxScale::from(20.0),
@@ -177,10 +174,7 @@ fn wrap_word_left() {
 
     let glyphs = Layout::default_single_line().calculate_glyphs(
         &*FONT_MAP,
-        &SectionGeometry {
-            bounds: (125.0, f32::INFINITY),
-            ..SectionGeometry::default()
-        },
+        Size(125.0, f32::INFINITY),
         &[SectionText {
             text: "hello what's _happening_?",
             scale: PxScale::from(20.0),
@@ -202,10 +196,7 @@ fn wrap_word_left() {
 fn single_line_limited_horizontal_room() {
     let glyphs = Layout::default_single_line().calculate_glyphs(
         &*FONT_MAP,
-        &SectionGeometry {
-            bounds: (50.0, f32::INFINITY),
-            ..SectionGeometry::default()
-        },
+        Size(50.0, f32::INFINITY),
         &[SectionText {
             text: "hello world",
             scale: PxScale::from(20.0),
@@ -225,7 +216,7 @@ fn wrap_layout_with_new_lines() {
 
     let glyphs = Layout::default_wrap().calculate_glyphs(
         &*FONT_MAP,
-        &SectionGeometry::default(),
+        Size::INFINITY,
         &[SectionText {
             text: test_str,
             scale: PxScale::from(20.0),
@@ -252,10 +243,7 @@ fn wrap_layout_with_new_lines() {
 fn leftover_max_vmetrics() {
     let glyphs = Layout::default_single_line().calculate_glyphs(
         &*FONT_MAP,
-        &SectionGeometry {
-            bounds: (750.0, f32::INFINITY),
-            ..SectionGeometry::default()
-        },
+        Size(750.0, f32::INFINITY),
         &[
             SectionText {
                 text: "Autumn moonlight, ",
@@ -287,7 +275,7 @@ fn leftover_max_vmetrics() {
 fn eol_new_line_hard_breaks() {
     let glyphs = Layout::default_wrap().calculate_glyphs(
         &*FONT_MAP,
-        &SectionGeometry::default(),
+        Size::INFINITY,
         &[
             SectionText {
                 text: "Autumn moonlight, \n",
@@ -345,7 +333,7 @@ fn single_line_multibyte_chars_finish_at_break() {
 
     let glyphs = Layout::default_single_line().calculate_glyphs(
         &*FONT_MAP,
-        &SectionGeometry::default(),
+        Size::INFINITY,
         &[SectionText {
             text: unicode_str,
             scale: PxScale::from(20.0),
@@ -366,10 +354,7 @@ fn single_line_multibyte_chars_finish_at_break() {
 fn no_inherent_section_break() {
     let glyphs = Layout::default_wrap().calculate_glyphs(
         &*FONT_MAP,
-        &SectionGeometry {
-            bounds: (50.0, ::std::f32::INFINITY),
-            ..SectionGeometry::default()
-        },
+        Size(50.0, ::std::f32::INFINITY),
         &[
             SectionText {
                 text: "The ",
@@ -408,10 +393,7 @@ fn no_inherent_section_break() {
 fn wrap_word_chinese() {
     let glyphs = Layout::default().calculate_glyphs(
         &*FONT_MAP,
-        &SectionGeometry {
-            bounds: (25.0, f32::INFINITY),
-            ..<_>::default()
-        },
+        Size(25.0, f32::INFINITY),
         &[SectionText {
             text: "提高代碼執行率",
             scale: PxScale::from(20.0),

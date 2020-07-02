@@ -5,7 +5,7 @@
 
 //! KAS Rich-Text library — prepared text
 
-use crate::layout::{GlyphPositioner, Layout, SectionGeometry, SectionGlyph, SectionText};
+use crate::layout::{GlyphPositioner, Layout, SectionGlyph, SectionText};
 use ab_glyph::{Font, Glyph, ScaleFont};
 use unicode_segmentation::GraphemeCursor;
 
@@ -143,11 +143,6 @@ impl PreparedText {
 
         let fonts = fonts().fonts_vec();
 
-        let geometry = SectionGeometry {
-            screen_position: (0.0, 0.0),
-            bounds: self.bounds.into(),
-        };
-
         let sections: Vec<_> = self
             .parts
             .iter()
@@ -158,7 +153,7 @@ impl PreparedText {
             })
             .collect();
 
-        self.glyphs = layout.calculate_glyphs(&fonts, &geometry, &sections);
+        self.glyphs = layout.calculate_glyphs(&fonts, self.bounds, &sections);
         self.update_required();
         self.apply_alignment();
         self.ready = true;
@@ -400,7 +395,7 @@ impl PreparedText {
             }
             bounds.1 - bounds.0
         } else {
-            Size(0.0, 0.0)
+            Size::ZERO
         };
     }
 

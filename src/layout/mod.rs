@@ -17,6 +17,7 @@ mod layout_test;
 
 pub use self::{builtin::*, linebreak::*, section::*};
 
+use crate::Size;
 use ::ab_glyph::*;
 use std::hash::Hash;
 
@@ -26,10 +27,12 @@ use std::hash::Hash;
 pub trait GlyphPositioner: Hash {
     /// Calculate a sequence of positioned glyphs to render. Custom implementations should
     /// return the same result when called with the same arguments to allow layout caching.
+    ///
+    /// `bounds` may be [`Size::INFINITY`] for unbounded layouts.
     fn calculate_glyphs<F, S>(
         &self,
         fonts: &[F],
-        geometry: &SectionGeometry,
+        bounds: Size,
         sections: &[S],
     ) -> Vec<SectionGlyph>
     where

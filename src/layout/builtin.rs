@@ -6,7 +6,8 @@
 //! Simple layout engine — copied from glyph_brush_layout
 
 use super::{characters::Characters, SectionGlyph};
-use super::{BuiltInLineBreaker, GlyphPositioner, LineBreaker, SectionGeometry, ToSectionText};
+use super::{BuiltInLineBreaker, GlyphPositioner, LineBreaker, ToSectionText};
+use crate::Size;
 use ab_glyph::*;
 
 /// Built-in [`GlyphPositioner`](trait.GlyphPositioner.html) implementations.
@@ -48,23 +49,14 @@ impl Layout<BuiltInLineBreaker> {
 }
 
 impl<L: LineBreaker> GlyphPositioner for Layout<L> {
-    fn calculate_glyphs<F, S>(
-        &self,
-        fonts: &[F],
-        geometry: &SectionGeometry,
-        sections: &[S],
-    ) -> Vec<SectionGlyph>
+    fn calculate_glyphs<F, S>(&self, fonts: &[F], bounds: Size, sections: &[S]) -> Vec<SectionGlyph>
     where
         F: Font,
         S: ToSectionText,
     {
         use Layout::{SingleLine, Wrap};
 
-        let SectionGeometry {
-            screen_position,
-            bounds: (bound_w, bound_h),
-            ..
-        } = *geometry;
+        let mut caret = (0.0, 0.0);
 
         match *self {
             SingleLine { line_breaker } => Characters::new(
@@ -73,14 +65,13 @@ impl<L: LineBreaker> GlyphPositioner for Layout<L> {
                 line_breaker,
             )
             .words()
-            .lines(bound_w)
+            .lines(bounds.0)
             .next()
-            .map(|line| line.aligned_on_screen(screen_position))
+            .map(|line| line.aligned_on_screen(caret))
             .unwrap_or_default(),
 
             Wrap { line_breaker } => {
                 let mut out = vec![];
-                let mut caret = screen_position;
 
                 let lines = Characters::new(
                     fonts,
@@ -88,11 +79,11 @@ impl<L: LineBreaker> GlyphPositioner for Layout<L> {
                     line_breaker,
                 )
                 .words()
-                .lines(bound_w);
+                .lines(bounds.0);
 
                 for line in lines {
                     // top align can bound check & exit early
-                    if caret.1 >= screen_position.1 + bound_h {
+                    if caret.1 >= bounds.1 {
                         break;
                     }
 
