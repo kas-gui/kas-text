@@ -5,8 +5,8 @@
 
 //! KAS Rich-Text library — prepared text
 
+use crate::layout::{GlyphPositioner, Layout, SectionGlyph, SectionText};
 use ab_glyph::{Font, Glyph, ScaleFont};
-use glyph_brush_layout::{GlyphPositioner, Layout, SectionGeometry, SectionGlyph, SectionText};
 use unicode_segmentation::GraphemeCursor;
 
 use crate::{fonts, Align, FontId, FontScale, RichText, Size, TextPart};
@@ -143,11 +143,6 @@ impl PreparedText {
 
         let fonts = fonts().fonts_vec();
 
-        let geometry = SectionGeometry {
-            screen_position: (0.0, 0.0),
-            bounds: self.bounds.into(),
-        };
-
         let sections: Vec<_> = self
             .parts
             .iter()
@@ -158,7 +153,7 @@ impl PreparedText {
             })
             .collect();
 
-        self.glyphs = layout.calculate_glyphs(&fonts, &geometry, &sections);
+        self.glyphs = layout.calculate_glyphs(&fonts, self.bounds, &sections);
         self.update_required();
         self.apply_alignment();
         self.ready = true;
@@ -193,24 +188,19 @@ impl PreparedText {
         self.parts.len()
     }
 
-    /// Get the list of positioned glyphs
+    /// Get an iterator over positioned glyphs
     ///
     /// One must call [`PreparedText::prepare`] before this method.
     ///
     /// The `pos` is used to adjust the glyph position: this is the top-left
     /// position of the rect within which glyphs appear (the size of the rect
     /// is that passed to [`PreparedText::set_bounds`]).
-    pub fn positioned_glyphs(&self, pos: Size) -> Vec<SectionGlyph> {
+    pub fn positioned_glyphs(&self, pos: Size) -> PreparedGlyphIter {
         assert!(self.ready, "PreparedText: not ready");
-        let mut glyphs = self.glyphs.clone();
-        let offset = self.offset + pos;
-        if offset != Size::default() {
-            let offset = ab_glyph::Point::from(offset);
-            for glyph in &mut glyphs {
-                glyph.glyph.position += offset;
-            }
+        PreparedGlyphIter {
+            offset: ab_glyph::Point::from(self.offset + pos),
+            glyphs: &self.glyphs,
         }
-        glyphs
     }
 
     /// Calculate size requirements
@@ -400,7 +390,7 @@ impl PreparedText {
             }
             bounds.1 - bounds.0
         } else {
-            Size(0.0, 0.0)
+            Size::ZERO
         };
     }
 
@@ -427,3 +417,30 @@ impl PreparedPart {
         self.font_id
     }
 }
+
+pub struct PreparedGlyphIter<'a> {
+    offset: ab_glyph::Point,
+    glyphs: &'a [SectionGlyph],
+}
+
+impl<'a> Iterator for PreparedGlyphIter<'a> {
+    type Item = SectionGlyph;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.glyphs.len() > 0 {
+            let mut glyph = self.glyphs[0].clone();
+            self.glyphs = &self.glyphs[1..];
+            glyph.glyph.position += self.offset;
+            Some(glyph)
+        } else {
+            None
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = self.glyphs.len();
+        (len, Some(len))
+    }
+}
+impl<'a> ExactSizeIterator for PreparedGlyphIter<'a> {}
+impl<'a> std::iter::FusedIterator for PreparedGlyphIter<'a> {}
