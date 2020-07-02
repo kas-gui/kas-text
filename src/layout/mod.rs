@@ -12,6 +12,9 @@ mod lines;
 mod section;
 mod words;
 
+#[cfg(test)]
+mod layout_test;
+
 pub use self::{builtin::*, linebreak::*, section::*};
 
 use ::ab_glyph::*;
