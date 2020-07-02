@@ -193,24 +193,19 @@ impl PreparedText {
         self.parts.len()
     }
 
-    /// Get the list of positioned glyphs
+    /// Get an iterator over positioned glyphs
     ///
     /// One must call [`PreparedText::prepare`] before this method.
     ///
     /// The `pos` is used to adjust the glyph position: this is the top-left
     /// position of the rect within which glyphs appear (the size of the rect
     /// is that passed to [`PreparedText::set_bounds`]).
-    pub fn positioned_glyphs(&self, pos: Vec2) -> Vec<SectionGlyph> {
+    pub fn positioned_glyphs(&self, pos: Vec2) -> PreparedGlyphIter {
         assert!(self.ready, "PreparedText: not ready");
-        let mut glyphs = self.glyphs.clone();
-        let offset = self.offset + pos;
-        if offset != Vec2::default() {
-            let offset = ab_glyph::Point::from(offset);
-            for glyph in &mut glyphs {
-                glyph.glyph.position += offset;
-            }
+        PreparedGlyphIter {
+            offset: ab_glyph::Point::from(self.offset + pos),
+            glyphs: &self.glyphs,
         }
-        glyphs
     }
 
     /// Calculate size requirements
@@ -427,3 +422,30 @@ impl PreparedPart {
         self.font_id
     }
 }
+
+pub struct PreparedGlyphIter<'a> {
+    offset: ab_glyph::Point,
+    glyphs: &'a [SectionGlyph],
+}
+
+impl<'a> Iterator for PreparedGlyphIter<'a> {
+    type Item = SectionGlyph;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.glyphs.len() > 0 {
+            let mut glyph = self.glyphs[0].clone();
+            self.glyphs = &self.glyphs[1..];
+            glyph.glyph.position += self.offset;
+            Some(glyph)
+        } else {
+            None
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = self.glyphs.len();
+        (len, Some(len))
+    }
+}
+impl<'a> ExactSizeIterator for PreparedGlyphIter<'a> {}
+impl<'a> std::iter::FusedIterator for PreparedGlyphIter<'a> {}
