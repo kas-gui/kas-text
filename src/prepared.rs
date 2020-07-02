@@ -5,8 +5,8 @@
 
 //! KAS Rich-Text library — prepared text
 
+use crate::layout::{GlyphPositioner, Layout, SectionGeometry, SectionGlyph, SectionText};
 use ab_glyph::{Font, Glyph, ScaleFont};
-use glyph_brush_layout::{GlyphPositioner, Layout, SectionGeometry, SectionGlyph, SectionText};
 use unicode_segmentation::GraphemeCursor;
 
 use crate::{fonts, Align, FontId, FontScale, RichText, Size, TextPart};

@@ -6,7 +6,12 @@ edition = "2018"
 
 [dependencies]
 ab_glyph = "0.2.2"
+approx = "0.3.2"
 font-kit = "0.8.0"
-glyph_brush_layout = "0.2.0"
 lazy_static = "1.4.0"
 unicode-segmentation = "1.6"
+xi-unicode = "0.2"
+
+[dev-dependencies]
+once_cell = "1"
+ordered-float = "1"

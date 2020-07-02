@@ -18,8 +18,8 @@ use std::sync::RwLock;
 /// loaded to the [`FontLibrary`] first). If no font is loaded, attempting to
 /// access a font with a (default-constructed) `FontId` will cause a panic in
 /// the [`FontLibrary`] method used.
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
-pub struct FontId(u32);
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct FontId(pub(crate) u32);
 
 impl FontId {
     pub fn get(self) -> usize {
@@ -27,15 +27,26 @@ impl FontId {
     }
 }
 
-impl From<FontId> for glyph_brush_layout::FontId {
-    fn from(id: FontId) -> glyph_brush_layout::FontId {
-        glyph_brush_layout::FontId(id.get())
+impl<F> std::ops::Index<FontId> for [F]
+where
+    F: ab_glyph::Font,
+{
+    type Output = F;
+
+    #[inline]
+    fn index(&self, index: FontId) -> &Self::Output {
+        self.index(index.get())
     }
 }
+impl<F> std::ops::Index<&FontId> for [F]
+where
+    F: ab_glyph::Font,
+{
+    type Output = F;
 
-impl From<glyph_brush_layout::FontId> for FontId {
-    fn from(id: glyph_brush_layout::FontId) -> FontId {
-        FontId(id.0 as u32)
+    #[inline]
+    fn index(&self, index: &FontId) -> &Self::Output {
+        self.index(index.get())
     }
 }
 
