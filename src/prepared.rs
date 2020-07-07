@@ -9,7 +9,7 @@ use ab_glyph::{Font, Glyph, ScaleFont};
 use glyph_brush_layout::{GlyphPositioner, Layout, SectionGeometry, SectionGlyph, SectionText};
 use unicode_segmentation::GraphemeCursor;
 
-use crate::{fonts, Align, FontId, FontScale, RichText, Size, TextPart};
+use crate::{fonts, Align, FontId, FontScale, RichText, TextPart, Vec2};
 
 /// Text, prepared for display in a given enviroment
 ///
@@ -23,9 +23,9 @@ pub struct PreparedText {
     line_wrap: bool,
     // If !ready, then fonts must be selected and layout calculated
     ready: bool,
-    bounds: Size,
-    required: Size,
-    offset: Size,
+    bounds: Vec2,
+    required: Vec2,
+    offset: Vec2,
     base_scale: FontScale,
     parts: Vec<PreparedPart>,
     glyphs: Vec<SectionGlyph>,
@@ -165,7 +165,7 @@ impl PreparedText {
     }
 
     /// Set size bounds
-    pub fn set_bounds(&mut self, bounds: Size) {
+    pub fn set_bounds(&mut self, bounds: Vec2) {
         self.bounds = bounds;
         self.apply_alignment();
     }
@@ -185,7 +185,7 @@ impl PreparedText {
     pub fn line_wrap(&self) -> bool {
         self.line_wrap
     }
-    pub fn bounds(&self) -> Size {
+    pub fn bounds(&self) -> Vec2 {
         self.bounds
     }
 
@@ -200,11 +200,11 @@ impl PreparedText {
     /// The `pos` is used to adjust the glyph position: this is the top-left
     /// position of the rect within which glyphs appear (the size of the rect
     /// is that passed to [`PreparedText::set_bounds`]).
-    pub fn positioned_glyphs(&self, pos: Size) -> Vec<SectionGlyph> {
+    pub fn positioned_glyphs(&self, pos: Vec2) -> Vec<SectionGlyph> {
         assert!(self.ready, "PreparedText: not ready");
         let mut glyphs = self.glyphs.clone();
         let offset = self.offset + pos;
-        if offset != Size::default() {
+        if offset != Vec2::default() {
             let offset = ab_glyph::Point::from(offset);
             for glyph in &mut glyphs {
                 glyph.glyph.position += offset;
@@ -218,7 +218,7 @@ impl PreparedText {
     /// One must set initial size bounds and call [`PreparedText::prepare`]
     /// before this method. Note that initial size bounds may cause wrapping
     /// and may cause parts of the text outside the bounds to be cut off.
-    pub fn required_size(&self) -> Size {
+    pub fn required_size(&self) -> Vec2 {
         self.required
     }
 
@@ -231,7 +231,7 @@ impl PreparedText {
     ///
     /// Note: if the text's bounding rect does not start at the origin, then
     /// the coordinates of the top-left corner should be added to this result.
-    pub fn text_glyph_pos(&self, index: usize) -> Size {
+    pub fn text_glyph_pos(&self, index: usize) -> Vec2 {
         if index == 0 {
             // Short-cut. We also cannot iterate since there may be no glyphs.
             return self.offset;
@@ -294,7 +294,7 @@ impl PreparedText {
     ///
     /// This method is only partially compatible with mult-line text.
     /// Ideally an external line-breaker should be used.
-    pub fn text_index_nearest(&self, pos: Size) -> usize {
+    pub fn text_index_nearest(&self, pos: Vec2) -> usize {
         if self.parts.len() == 0 {
             return 0; // short-cut
         }
@@ -316,10 +316,10 @@ impl PreparedText {
         // Find the (horiz, vert) distance between pos and the glyph.
         let dist = |glyph: &Glyph| {
             let p = glyph.position;
-            let glyph_pos = Size(p.x, p.y + base_to_mid);
+            let glyph_pos = Vec2(p.x, p.y + base_to_mid);
             (pos - glyph_pos).abs()
         };
-        let test_best = |best: Size, glyph: &Glyph| {
+        let test_best = |best: Vec2, glyph: &Glyph| {
             let dist = dist(glyph);
             if dist.1 < best.1 {
                 Some(dist)
@@ -387,7 +387,7 @@ impl PreparedText {
         let fonts = fonts();
         let glyph_bounds = |g: &SectionGlyph| {
             let bounds = fonts.get(g.font_id).glyph_bounds(&g.glyph);
-            (Size::from(bounds.min), Size::from(bounds.max))
+            (Vec2::from(bounds.min), Vec2::from(bounds.max))
         };
 
         let mut iter = self.glyphs.iter();
@@ -400,7 +400,7 @@ impl PreparedText {
             }
             bounds.1 - bounds.0
         } else {
-            Size(0.0, 0.0)
+            Vec2::ZERO
         };
     }
 

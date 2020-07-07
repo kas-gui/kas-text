@@ -35,54 +35,60 @@ impl Default for Align {
 
 /// 2D size over `f32`
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct Size(pub f32, pub f32);
+pub struct Vec2(pub f32, pub f32);
 
-impl Size {
+impl Vec2 {
+    /// Zero
+    pub const ZERO: Vec2 = Vec2(0.0, 0.0);
+
+    /// Positive infinity
+    pub const INFINITY: Vec2 = Vec2(f32::INFINITY, f32::INFINITY);
+
     /// Take the absolute value of each component
     #[inline]
     pub fn abs(self) -> Self {
-        Size(self.0.abs(), self.1.abs())
+        Vec2(self.0.abs(), self.1.abs())
     }
 
     /// Return the minimum, componentwise
     #[inline]
     pub fn min(self, other: Self) -> Self {
-        Size(self.0.min(other.0), self.1.min(other.1))
+        Vec2(self.0.min(other.0), self.1.min(other.1))
     }
 
     /// Return the maximum, componentwise
     #[inline]
     pub fn max(self, other: Self) -> Self {
-        Size(self.0.max(other.0), self.1.max(other.1))
+        Vec2(self.0.max(other.0), self.1.max(other.1))
     }
 }
 
-impl std::ops::Add for Size {
+impl std::ops::Add for Vec2 {
     type Output = Self;
 
     #[inline]
     fn add(self, other: Self) -> Self {
-        Size(self.0 + other.0, self.1 + other.1)
+        Vec2(self.0 + other.0, self.1 + other.1)
     }
 }
 
-impl std::ops::Sub for Size {
+impl std::ops::Sub for Vec2 {
     type Output = Self;
 
     #[inline]
     fn sub(self, other: Self) -> Self {
-        Size(self.0 - other.0, self.1 - other.1)
+        Vec2(self.0 - other.0, self.1 - other.1)
     }
 }
 
-impl From<Size> for (f32, f32) {
-    fn from(size: Size) -> Self {
+impl From<Vec2> for (f32, f32) {
+    fn from(size: Vec2) -> Self {
         (size.0, size.1)
     }
 }
 
-impl From<Size> for ab_glyph::Point {
-    fn from(size: Size) -> ab_glyph::Point {
+impl From<Vec2> for ab_glyph::Point {
+    fn from(size: Vec2) -> ab_glyph::Point {
         ab_glyph::Point {
             x: size.0,
             y: size.1,
@@ -90,9 +96,9 @@ impl From<Size> for ab_glyph::Point {
     }
 }
 
-impl From<ab_glyph::Point> for Size {
-    fn from(p: ab_glyph::Point) -> Size {
-        Size(p.x, p.y)
+impl From<ab_glyph::Point> for Vec2 {
+    fn from(p: ab_glyph::Point) -> Vec2 {
+        Vec2(p.x, p.y)
     }
 }
 
