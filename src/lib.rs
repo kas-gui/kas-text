@@ -13,8 +13,9 @@ pub use data::*;
 mod fonts;
 pub use fonts::*;
 
-mod model;
-pub use model::*;
+pub mod model;
+#[doc(no_inline)]
+pub use model::Text as ModelText;
 
 mod prepared;
 pub use prepared::*;

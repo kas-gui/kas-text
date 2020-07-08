@@ -9,7 +9,7 @@ use ab_glyph::{Font, Glyph, ScaleFont};
 use glyph_brush_layout::{GlyphPositioner, Layout, SectionGeometry, SectionGlyph, SectionText};
 use unicode_segmentation::GraphemeCursor;
 
-use crate::{fonts, Align, FontId, FontScale, RichText, TextPart, Vec2};
+use crate::{fonts, model, Align, FontId, FontScale, Vec2};
 
 /// Text, prepared for display in a given enviroment
 ///
@@ -46,7 +46,7 @@ impl PreparedText {
     ///
     /// This struct must be made ready for use before
     /// To do so, call [`PreparedText::set_environment`].
-    pub fn new(text: RichText, line_wrap: bool) -> PreparedText {
+    pub fn new(text: model::Text, line_wrap: bool) -> PreparedText {
         PreparedText {
             line_wrap,
             parts: text
@@ -62,16 +62,16 @@ impl PreparedText {
         }
     }
 
-    /// Reconstruct the [`RichText`] defining this `PreparedText`
-    pub fn clone_text(&self) -> RichText {
+    /// Reconstruct the [`model::Text`] defining this `PreparedText`
+    pub fn clone_text(&self) -> model::Text {
         let parts = self
             .parts
             .iter()
-            .map(|part| TextPart {
+            .map(|part| model::TextPart {
                 text: part.text.clone(),
             })
             .collect();
-        RichText { parts }
+        model::Text { parts }
     }
 
     /// Index at end of text
@@ -83,7 +83,7 @@ impl PreparedText {
     ///
     /// Returns true when the contents have changed, in which case
     /// `prepared` must be called again and size-requirements may have changed.
-    pub fn set_text(&mut self, text: RichText) -> bool {
+    pub fn set_text(&mut self, text: model::Text) -> bool {
         if self.parts.len() == text.parts.len() {
             if self
                 .parts
