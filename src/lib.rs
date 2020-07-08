@@ -17,5 +17,6 @@ pub mod model;
 #[doc(no_inline)]
 pub use model::Text as ModelText;
 
-mod prepared;
-pub use prepared::*;
+pub mod prepared;
+#[doc(no_inline)]
+pub use prepared::Text as PreparedText;

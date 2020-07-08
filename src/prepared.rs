@@ -3,7 +3,7 @@
 // You may obtain a copy of the License in the LICENSE-APACHE file or at:
 //     https://www.apache.org/licenses/LICENSE-2.0
 
-//! KAS Rich-Text library — prepared text
+//! Text prepared for display
 
 use ab_glyph::{Font, Glyph, ScaleFont};
 use glyph_brush_layout::{GlyphPositioner, Layout, SectionGeometry, SectionGlyph, SectionText};
@@ -17,7 +17,7 @@ use crate::{fonts, model, Align, FontId, FontScale, Vec2};
 ///
 /// The type can be default-constructed with no text.
 #[derive(Clone, Debug, Default)]
-pub struct PreparedText {
+pub struct Text {
     align_horiz: Align,
     align_vert: Align,
     line_wrap: bool,
@@ -32,22 +32,22 @@ pub struct PreparedText {
 }
 
 #[derive(Clone, Debug)]
-pub struct PreparedPart {
+struct PreparedPart {
     text: String,
     // scale is relative to base_scale
     scale: f32,
     font_id: FontId,
 }
 
-impl PreparedText {
+impl Text {
     /// Construct from a text model
     ///
-    /// This method assumes default alignment. To adjust, use [`PreparedText::set_alignment`].
+    /// This method assumes default alignment. To adjust, use [`Text::set_alignment`].
     ///
     /// This struct must be made ready for use before
-    /// To do so, call [`PreparedText::set_environment`].
-    pub fn new(text: model::Text, line_wrap: bool) -> PreparedText {
-        PreparedText {
+    /// To do so, call [`Text::set_environment`].
+    pub fn new(text: model::Text, line_wrap: bool) -> Text {
+        Text {
             line_wrap,
             parts: text
                 .parts
@@ -62,7 +62,7 @@ impl PreparedText {
         }
     }
 
-    /// Reconstruct the [`model::Text`] defining this `PreparedText`
+    /// Reconstruct the [`model::Text`] defining this `Text`
     pub fn clone_text(&self) -> model::Text {
         let parts = self
             .parts
@@ -195,14 +195,14 @@ impl PreparedText {
 
     /// Get an iterator over positioned glyphs
     ///
-    /// One must call [`PreparedText::prepare`] before this method.
+    /// One must call [`Text::prepare`] before this method.
     ///
     /// The `pos` is used to adjust the glyph position: this is the top-left
     /// position of the rect within which glyphs appear (the size of the rect
-    /// is that passed to [`PreparedText::set_bounds`]).
-    pub fn positioned_glyphs(&self, pos: Vec2) -> PreparedGlyphIter {
-        assert!(self.ready, "PreparedText: not ready");
-        PreparedGlyphIter {
+    /// is that passed to [`Text::set_bounds`]).
+    pub fn positioned_glyphs(&self, pos: Vec2) -> GlyphIter {
+        assert!(self.ready, "kas-text::prepared::Text: not ready");
+        GlyphIter {
             offset: ab_glyph::Point::from(self.offset + pos),
             glyphs: &self.glyphs,
         }
@@ -210,7 +210,7 @@ impl PreparedText {
 
     /// Calculate size requirements
     ///
-    /// One must set initial size bounds and call [`PreparedText::prepare`]
+    /// One must set initial size bounds and call [`Text::prepare`]
     /// before this method. Note that initial size bounds may cause wrapping
     /// and may cause parts of the text outside the bounds to be cut off.
     pub fn required_size(&self) -> Vec2 {
@@ -377,7 +377,7 @@ impl PreparedText {
     }
 }
 
-impl PreparedText {
+impl Text {
     fn update_required(&mut self) {
         let fonts = fonts();
         let glyph_bounds = |g: &SectionGlyph| {
@@ -414,21 +414,12 @@ impl PreparedText {
     }
 }
 
-impl PreparedPart {
-    pub fn text(&self) -> &str {
-        &self.text
-    }
-    pub fn font_id(&self) -> FontId {
-        self.font_id
-    }
-}
-
-pub struct PreparedGlyphIter<'a> {
+pub struct GlyphIter<'a> {
     offset: ab_glyph::Point,
     glyphs: &'a [SectionGlyph],
 }
 
-impl<'a> Iterator for PreparedGlyphIter<'a> {
+impl<'a> Iterator for GlyphIter<'a> {
     type Item = SectionGlyph;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -447,5 +438,5 @@ impl<'a> Iterator for PreparedGlyphIter<'a> {
         (len, Some(len))
     }
 }
-impl<'a> ExactSizeIterator for PreparedGlyphIter<'a> {}
-impl<'a> std::iter::FusedIterator for PreparedGlyphIter<'a> {}
+impl<'a> ExactSizeIterator for GlyphIter<'a> {}
+impl<'a> std::iter::FusedIterator for GlyphIter<'a> {}
