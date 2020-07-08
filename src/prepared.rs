@@ -5,11 +5,13 @@
 
 //! Text prepared for display
 
+use smallvec::SmallVec;
+
 use ab_glyph::{Font, Glyph, ScaleFont};
 use glyph_brush_layout::{GlyphPositioner, Layout, SectionGeometry, SectionGlyph, SectionText};
 use unicode_segmentation::GraphemeCursor;
 
-use crate::{fonts, model, Align, FontId, FontScale, Vec2};
+use crate::{fonts, model, Align, FontId, FontScale, Range, Vec2};
 
 /// Text, prepared for display in a given enviroment
 ///
@@ -18,6 +20,8 @@ use crate::{fonts, model, Align, FontId, FontScale, Vec2};
 /// The type can be default-constructed with no text.
 #[derive(Clone, Debug, Default)]
 pub struct Text {
+    text: String,
+    runs: SmallVec<[Run; 1]>,
     align_horiz: Align,
     align_vert: Align,
     line_wrap: bool,
@@ -27,13 +31,12 @@ pub struct Text {
     required: Vec2,
     offset: Vec2,
     base_scale: FontScale,
-    parts: Vec<PreparedPart>,
     glyphs: Vec<SectionGlyph>,
 }
 
 #[derive(Clone, Debug)]
-struct PreparedPart {
-    text: String,
+struct Run {
+    range: Range,
     // scale is relative to base_scale
     scale: f32,
     font_id: FontId,
@@ -48,35 +51,39 @@ impl Text {
     /// To do so, call [`Text::set_environment`].
     pub fn new(text: model::Text, line_wrap: bool) -> Text {
         Text {
-            line_wrap,
-            parts: text
-                .parts
+            text: text.text,
+            runs: text
+                .runs
                 .iter()
-                .map(|part| PreparedPart {
-                    text: part.text.clone(), // TODO: reference?
+                .map(|run| Run {
+                    range: run.range,
                     scale: 1.0,
                     font_id: Default::default(),
                 })
                 .collect(),
+            line_wrap,
             ..Default::default()
         }
     }
 
     /// Reconstruct the [`model::Text`] defining this `Text`
     pub fn clone_text(&self) -> model::Text {
-        let parts = self
-            .parts
-            .iter()
-            .map(|part| model::TextPart {
-                text: part.text.clone(),
-            })
-            .collect();
-        model::Text { parts }
+        model::Text {
+            text: self.text.clone(),
+            runs: self
+                .runs
+                .iter()
+                .map(|run| model::Run { range: run.range })
+                .collect(),
+        }
     }
 
-    /// Index at end of text
-    pub fn total_len(&self) -> usize {
-        self.parts.iter().map(|part| part.text.len()).sum()
+    /// Length of raw text
+    ///
+    /// It is valid to reference text within the range `0..raw_text_len()`,
+    /// even if not all text within this range will be displayed (due to runs).
+    pub fn raw_text_len(&self) -> usize {
+        self.text.len()
     }
 
     /// Set the text
@@ -84,22 +91,23 @@ impl Text {
     /// Returns true when the contents have changed, in which case
     /// `prepared` must be called again and size-requirements may have changed.
     pub fn set_text(&mut self, text: model::Text) -> bool {
-        if self.parts.len() == text.parts.len() {
+        if self.text == text.text && self.runs.len() == text.runs.len() {
             if self
-                .parts
+                .runs
                 .iter()
-                .zip(text.parts.iter())
-                .all(|(p, t)| p.text == t.text && p.scale == 1.0 && p.font_id.get() == 0)
+                .zip(text.runs.iter())
+                .all(|(p, m)| p.range == m.range && p.scale == 1.0 && p.font_id.get() == 0)
             {
                 return false; // no change
             }
         }
 
-        self.parts = text
-            .parts
+        self.text = text.text;
+        self.runs = text
+            .runs
             .iter()
-            .map(|part| PreparedPart {
-                text: part.text.clone(),
+            .map(|run| Run {
+                range: run.range,
                 scale: 1.0,
                 font_id: Default::default(),
             })
@@ -149,12 +157,12 @@ impl Text {
         };
 
         let sections: Vec<_> = self
-            .parts
+            .runs
             .iter()
-            .map(|part| SectionText {
-                text: &part.text,
-                scale: (self.base_scale * part.scale).into(),
-                font_id: part.font_id.into(),
+            .map(|run| SectionText {
+                text: &self.text[run.range],
+                scale: (self.base_scale * run.scale).into(),
+                font_id: run.font_id.into(),
             })
             .collect();
 
@@ -187,10 +195,6 @@ impl Text {
     }
     pub fn bounds(&self) -> Vec2 {
         self.bounds
-    }
-
-    pub fn num_parts(&self) -> usize {
-        self.parts.len()
     }
 
     /// Get an iterator over positioned glyphs
@@ -232,19 +236,23 @@ impl Text {
             return self.offset;
         }
 
+        let byte = if index < self.text.len() {
+            Some(self.text.as_bytes()[index])
+        } else {
+            None
+        };
+
         // Translate index to part number and part's byte-index.
-        let mut section = 0;
-        let mut section_index = index;
-        let mut byte = None;
-        while section < self.parts.len() {
-            let section_len = self.parts[section].text.len();
-            if section_index < section_len {
-                byte = Some(self.parts[section].text.as_bytes()[section_index]);
-                break;
-            };
-            section += 1;
-            section_index -= section_len;
-        }
+        let (section, section_index) = 'outer: loop {
+            for run in 0..self.runs.len() {
+                if self.runs[run].range.contains(index) {
+                    // NOTE: for now, a run corresponds directly to a section
+                    break 'outer (run, index - self.runs[run].range.start());
+                }
+            }
+            // No corresponding glyph -  TODO - how do we handle this?
+            panic!("no glyph");
+        };
 
         let mut iter = self.glyphs.iter();
 
@@ -290,18 +298,18 @@ impl Text {
     /// This method is only partially compatible with mult-line text.
     /// Ideally an external line-breaker should be used.
     pub fn text_index_nearest(&self, pos: Vec2) -> usize {
-        if self.parts.len() == 0 {
+        if self.runs.len() == 0 {
             return 0; // short-cut
         }
-        let text_len = self.total_len();
-        // NOTE: if self.parts.len() > 1 then base_to_mid may change, making the
+        let text_len = self.text.len();
+        // NOTE: if self.runs.len() > 1 then base_to_mid may change, making the
         // row selection a little inaccurate. This method is best used with only
         // a single row of text anyway, so we consider this acceptable.
         // This also affects scale_font.h_advance at line-breaks. We consider
         // this a hack anyway and so tolerate some inaccuracy.
-        let last_part = self.parts.last().unwrap();
-        let scale = self.base_scale * last_part.scale;
-        let scale_font = fonts().get(last_part.font_id).into_scaled(scale);
+        let last_run = self.runs.last().unwrap();
+        let scale = self.base_scale * last_run.scale;
+        let scale_font = fonts().get(last_run.font_id).into_scaled(scale);
         let base_to_mid = -0.5 * (scale_font.ascent() + scale_font.descent());
         // Note: scale_font.line_gap() is 0.0 (why?). Use ascent() instead.
         let half_line_gap = (0.5 * scale_font.ascent()).abs();
@@ -339,10 +347,10 @@ impl Text {
                     let mut cursor = GraphemeCursor::new(index, text_len, true);
                     let mut cum_len = 0;
                     let text = 'outer: loop {
-                        for part in &self.parts {
-                            let len = part.text.len();
+                        for run in &self.runs {
+                            let len = run.range.len();
                             if index < cum_len + len {
-                                break 'outer &part.text;
+                                break 'outer &self.text[run.range];
                             }
                             cum_len += len;
                         }

@@ -142,3 +142,131 @@ impl std::ops::Mul<f32> for FontScale {
         }
     }
 }
+
+/// Range type
+///
+/// Essentially this is just a `std::ops::Range<u32>`, but with convenient
+/// implementations.
+///
+/// Note that we consider `u32` large enough for any text we wish to display
+/// and the library is too complex to be useful on 16-bit CPUs, so using `u32`
+/// makes more sense than `usize`.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Range {
+    pub start: u32,
+    pub end: u32,
+}
+
+impl Range {
+    /// The start, as `usize`
+    pub fn start(&self) -> usize {
+        self.start as usize
+    }
+
+    /// The end, as `usize`
+    pub fn end(&self) -> usize {
+        self.end as usize
+    }
+
+    /// True if the given value is contained
+    pub fn contains(&self, value: usize) -> bool {
+        self.start as usize <= value && value < self.end as usize
+    }
+}
+
+impl std::iter::Iterator for Range {
+    type Item = u32;
+
+    fn next(&mut self) -> Option<u32> {
+        if self.start < self.end {
+            let result = self.start;
+            self.start += 1;
+            Some(result)
+        } else {
+            None
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = (self.end - self.start) as usize;
+        (len, Some(len))
+    }
+}
+
+impl std::iter::DoubleEndedIterator for Range {
+    fn next_back(&mut self) -> Option<u32> {
+        if self.start < self.end {
+            self.end -= 1;
+            Some(self.end)
+        } else {
+            None
+        }
+    }
+}
+
+impl std::iter::ExactSizeIterator for Range {}
+impl std::iter::FusedIterator for Range {}
+
+impl std::ops::Index<Range> for String {
+    type Output = str;
+
+    fn index(&self, range: Range) -> &str {
+        let range = std::ops::Range::<usize>::from(range);
+        &self[range]
+    }
+}
+
+impl std::ops::Index<Range> for str {
+    type Output = str;
+
+    fn index(&self, range: Range) -> &str {
+        let range = std::ops::Range::<usize>::from(range);
+        &self[range]
+    }
+}
+
+impl<T> std::ops::Index<Range> for [T] {
+    type Output = [T];
+
+    fn index(&self, range: Range) -> &[T] {
+        let range = std::ops::Range::<usize>::from(range);
+        &self[range]
+    }
+}
+
+impl std::ops::IndexMut<Range> for String {
+    fn index_mut(&mut self, range: Range) -> &mut str {
+        let range = std::ops::Range::<usize>::from(range);
+        &mut self[range]
+    }
+}
+
+impl std::ops::IndexMut<Range> for str {
+    fn index_mut(&mut self, range: Range) -> &mut str {
+        let range = std::ops::Range::<usize>::from(range);
+        &mut self[range]
+    }
+}
+
+impl<T> std::ops::IndexMut<Range> for [T] {
+    fn index_mut(&mut self, range: Range) -> &mut [T] {
+        let range = std::ops::Range::<usize>::from(range);
+        &mut self[range]
+    }
+}
+
+impl From<Range> for std::ops::Range<usize> {
+    fn from(range: Range) -> std::ops::Range<usize> {
+        (range.start as usize)..(range.end as usize)
+    }
+}
+
+impl From<std::ops::Range<usize>> for Range {
+    fn from(range: std::ops::Range<usize>) -> Range {
+        assert!(range.end <= u32::MAX as usize);
+        Range {
+            start: range.start as u32,
+            end: range.end as u32,
+        }
+    }
+}
