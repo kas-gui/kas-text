@@ -28,6 +28,24 @@ pub struct Text {
     pub runs: SmallVec<[Run; 1]>,
 }
 
+impl Text {
+    /// The length of all concatenated runs
+    fn len(&self) -> usize {
+        self.runs.iter().map(|run| run.range.len()).sum()
+    }
+}
+
+/// Generate an unformatted `String` from the concatenation of all runs
+impl ToString for Text {
+    fn to_string(&self) -> String {
+        let mut s = String::with_capacity(self.len());
+        for run in &self.runs {
+            s.push_str(&self.text[run.range]);
+        }
+        s
+    }
+}
+
 impl From<String> for Text {
     fn from(text: String) -> Text {
         let range = (0..text.len()).into();

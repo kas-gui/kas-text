@@ -48,7 +48,7 @@ impl Text {
     /// This method assumes default alignment. To adjust, use [`Text::set_alignment`].
     ///
     /// This struct must be made ready for use before
-    /// To do so, call [`Text::set_environment`].
+    /// To do so, call [`Text::prepare`].
     pub fn new(text: model::Text, line_wrap: bool) -> Text {
         Text {
             text: text.text,
