@@ -46,6 +46,18 @@ impl ToString for Text {
     }
 }
 
+impl From<Text> for String {
+    fn from(text: Text) -> String {
+        if text.runs.len() == 1 {
+            let range = text.runs[0].range;
+            if range.start == 0 && range.end as usize == text.text.len() {
+                return text.text;
+            }
+        }
+        text.to_string()
+    }
+}
+
 impl From<String> for Text {
     fn from(text: String) -> Text {
         let range = (0..text.len()).into();
