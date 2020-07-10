@@ -3,7 +3,7 @@
 // You may obtain a copy of the License in the LICENSE-APACHE file or at:
 //     https://www.apache.org/licenses/LICENSE-2.0
 
-//! Models of text in abstract from an environment
+//! Models of rich text in abstract from an environment
 
 use crate::Range;
 use smallvec::SmallVec;
