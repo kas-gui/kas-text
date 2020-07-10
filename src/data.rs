@@ -5,34 +5,6 @@
 
 //! KAS Rich-Text library — simple data types
 
-/// Alignment of contents
-///
-/// Note that alignment information is often passed as a `(horiz, vert)` pair.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Ord, PartialOrd, Hash)]
-pub enum Align {
-    /// Default alignment
-    ///
-    /// This is context dependent: for things that want to stretch it means
-    /// stretch, for things which don't (text), it means align-to-start.
-    Default,
-    /// Align to top / left
-    TL,
-    /// Align to centre
-    Centre,
-    /// Align to bottom / right
-    BR,
-    /// Stretch to fill space
-    ///
-    /// For text, this is known as "justified alignment".
-    Stretch,
-}
-
-impl Default for Align {
-    fn default() -> Self {
-        Align::Default
-    }
-}
-
 /// 2D size over `f32`
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Vec2(pub f32, pub f32);

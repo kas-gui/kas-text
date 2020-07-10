@@ -7,6 +7,9 @@
 
 pub use glyph_brush_layout::SectionGlyph;
 
+mod env;
+pub use env::*;
+
 mod data;
 pub use data::*;
 

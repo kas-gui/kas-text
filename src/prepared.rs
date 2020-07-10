@@ -11,7 +11,8 @@ use ab_glyph::{Font, Glyph, ScaleFont};
 use glyph_brush_layout::{GlyphPositioner, Layout, SectionGeometry, SectionGlyph, SectionText};
 use unicode_segmentation::GraphemeCursor;
 
-use crate::{fonts, rich, Align, FontId, FontScale, Range, Vec2};
+use crate::{fonts, rich, Align, FontId, Range, Vec2};
+use crate::{EnvChange, Environment, UpdateEnv};
 
 /// Text, prepared for display in a given enviroment
 ///
@@ -20,17 +21,13 @@ use crate::{fonts, rich, Align, FontId, FontScale, Range, Vec2};
 /// The type can be default-constructed with no text.
 #[derive(Clone, Debug, Default)]
 pub struct Text {
+    env: Environment,
     text: String,
     runs: SmallVec<[Run; 1]>,
-    align_horiz: Align,
-    align_vert: Align,
-    line_wrap: bool,
     // If !ready, then fonts must be selected and layout calculated
     ready: bool,
-    bounds: Vec2,
     required: Vec2,
     offset: Vec2,
-    base_scale: FontScale,
     glyphs: Vec<SectionGlyph>,
 }
 
@@ -43,27 +40,17 @@ struct Run {
 }
 
 impl Text {
-    /// Construct from a text model
-    ///
-    /// This method assumes default alignment. To adjust, use [`Text::set_alignment`].
+    /// Construct from an environment and a text model
     ///
     /// This struct must be made ready for use before
     /// To do so, call [`Text::prepare`].
-    pub fn new(text: rich::Text, line_wrap: bool) -> Text {
-        Text {
-            text: text.text,
-            runs: text
-                .runs
-                .iter()
-                .map(|run| Run {
-                    range: run.range,
-                    scale: 1.0,
-                    font_id: Default::default(),
-                })
-                .collect(),
-            line_wrap,
+    pub fn new(env: Environment, text: rich::Text) -> Text {
+        let mut result = Text {
+            env,
             ..Default::default()
-        }
+        };
+        result.set_text(text);
+        result
     }
 
     /// Reconstruct the [`rich::Text`] model defining this `Text`
@@ -116,20 +103,27 @@ impl Text {
         true
     }
 
-    /// Adjust alignment
-    pub fn set_alignment(&mut self, horiz: Align, vert: Align) {
-        if self.align_horiz != horiz || self.align_vert != vert {
-            self.align_horiz = horiz;
-            self.align_vert = vert;
-            self.apply_alignment();
-        }
+    /// Read the environment
+    pub fn env(&self) -> &Environment {
+        &self.env
     }
 
-    /// Enable or disable line-wrapping
-    pub fn set_line_wrap(&mut self, line_wrap: bool) {
-        if self.line_wrap != line_wrap {
-            self.line_wrap = line_wrap;
-            self.ready = false;
+    /// Update the environment
+    ///
+    /// If this returns true, then [`Text::prepare`] must be called again.
+    pub fn update_env<F: FnOnce(&mut UpdateEnv)>(&mut self, f: F) -> bool {
+        let mut update = UpdateEnv::new(&mut self.env);
+        f(&mut update);
+        match update.finish() {
+            EnvChange::None => false,
+            EnvChange::Align => {
+                self.apply_alignment();
+                false
+            }
+            EnvChange::Wrap | EnvChange::Full => {
+                self.ready = false;
+                true
+            }
         }
     }
 
@@ -144,7 +138,7 @@ impl Text {
         // NOTE: we can only use left-alignment here since bounds may be
         // infinite.
 
-        let layout = match self.line_wrap {
+        let layout = match self.env.wrap {
             true => Layout::default_wrap(),
             false => Layout::default_single_line(),
         };
@@ -153,7 +147,7 @@ impl Text {
 
         let geometry = SectionGeometry {
             screen_position: (0.0, 0.0),
-            bounds: self.bounds.into(),
+            bounds: self.env.bounds.into(),
         };
 
         let sections: Vec<_> = self
@@ -161,7 +155,7 @@ impl Text {
             .iter()
             .map(|run| SectionText {
                 text: &self.text[run.range],
-                scale: (self.base_scale * run.scale).into(),
+                scale: (self.env.font_scale * run.scale).into(),
                 font_id: run.font_id.into(),
             })
             .collect();
@@ -170,31 +164,6 @@ impl Text {
         self.update_required();
         self.apply_alignment();
         self.ready = true;
-    }
-
-    /// Set size bounds
-    pub fn set_bounds(&mut self, bounds: Vec2) {
-        self.bounds = bounds;
-        self.apply_alignment();
-    }
-
-    /// Set base font scale
-    pub fn set_base_scale(&mut self, scale: FontScale) {
-        self.base_scale = scale;
-        self.ready = false;
-    }
-
-    pub fn align_horiz(&self) -> Align {
-        self.align_horiz
-    }
-    pub fn align_vert(&self) -> Align {
-        self.align_vert
-    }
-    pub fn line_wrap(&self) -> bool {
-        self.line_wrap
-    }
-    pub fn bounds(&self) -> Vec2 {
-        self.bounds
     }
 
     /// Get an iterator over positioned glyphs
@@ -218,6 +187,7 @@ impl Text {
     /// before this method. Note that initial size bounds may cause wrapping
     /// and may cause parts of the text outside the bounds to be cut off.
     pub fn required_size(&self) -> Vec2 {
+        assert!(self.ready, "kas-text::prepared::Text: not ready");
         self.required
     }
 
@@ -310,7 +280,7 @@ impl Text {
         // This also affects scale_font.h_advance at line-breaks. We consider
         // this a hack anyway and so tolerate some inaccuracy.
         let last_run = self.runs.last().unwrap();
-        let scale = self.base_scale * last_run.scale;
+        let scale = self.env.font_scale * last_run.scale;
         let scale_font = fonts().get(last_run.font_id).into_scaled(scale);
         let base_to_mid = -0.5 * (scale_font.ascent() + scale_font.descent());
         // Note: scale_font.line_gap() is 0.0 (why?). Use ascent() instead.
@@ -411,15 +381,15 @@ impl Text {
 
     fn apply_alignment(&mut self) {
         // TODO: this aligns the whole block of text; we should align each line
-        self.offset.0 = match self.align_horiz {
+        self.offset.0 = match self.env.halign {
             Align::Default | Align::TL | Align::Stretch => 0.0,
-            Align::Centre => (self.bounds.0 - self.required.0) / 2.0,
-            Align::BR => self.bounds.0 - self.required.0,
+            Align::Centre => (self.env.bounds.0 - self.required.0) / 2.0,
+            Align::BR => self.env.bounds.0 - self.required.0,
         };
-        self.offset.1 = match self.align_vert {
+        self.offset.1 = match self.env.valign {
             Align::Default | Align::TL | Align::Stretch => 0.0,
-            Align::Centre => (self.bounds.1 - self.required.1) / 2.0,
-            Align::BR => self.bounds.1 - self.required.1,
+            Align::Centre => (self.env.bounds.1 - self.required.1) / 2.0,
+            Align::BR => self.env.bounds.1 - self.required.1,
         };
     }
 }
