@@ -245,9 +245,11 @@ impl Text {
         // Translate index to part number and part's byte-index.
         let (section, section_index) = 'outer: loop {
             for run in 0..self.runs.len() {
-                if self.runs[run].range.contains(index) {
+                let range = self.runs[run].range;
+                // Note: the index one-past-the-end of a run is valid!
+                if range.start() <= index && index <= range.end() {
                     // NOTE: for now, a run corresponds directly to a section
-                    break 'outer (run, index - self.runs[run].range.start());
+                    break 'outer (run, index - range.start());
                 }
             }
             // No corresponding glyph -  TODO - how do we handle this?
