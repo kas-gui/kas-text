@@ -24,6 +24,7 @@ pub struct Text {
     env: Environment,
     text: String,
     runs: SmallVec<[Run; 1]>,
+    font_id: FontId,
     // If !ready, then fonts must be selected and layout calculated
     ready: bool,
     required: Vec2,
@@ -34,9 +35,6 @@ pub struct Text {
 #[derive(Clone, Debug)]
 struct Run {
     range: Range,
-    // scale is relative to base_scale
-    scale: f32,
-    font_id: FontId,
 }
 
 impl Text {
@@ -57,11 +55,6 @@ impl Text {
     pub fn clone_text(&self) -> rich::Text {
         rich::Text {
             text: self.text.clone(),
-            runs: self
-                .runs
-                .iter()
-                .map(|run| rich::Run { range: run.range })
-                .collect(),
         }
     }
 
@@ -78,27 +71,16 @@ impl Text {
     /// Returns true when the contents have changed, in which case
     /// `prepared` must be called again and size-requirements may have changed.
     pub fn set_text(&mut self, text: rich::Text) -> bool {
-        if self.text == text.text && self.runs.len() == text.runs.len() {
-            if self
-                .runs
-                .iter()
-                .zip(text.runs.iter())
-                .all(|(p, m)| p.range == m.range && p.scale == 1.0 && p.font_id.get() == 0)
-            {
-                return false; // no change
-            }
+        if self.text == text.text && self.runs.len() == 1 {
+            return false; // no change
         }
 
         self.text = text.text;
-        self.runs = text
-            .runs
-            .iter()
-            .map(|run| Run {
-                range: run.range,
-                scale: 1.0,
-                font_id: Default::default(),
-            })
-            .collect();
+        self.runs = std::iter::once(Run {
+            range: Range::from(0..self.text.len()),
+        })
+        .collect();
+        self.font_id = Default::default();
         self.ready = false;
         true
     }
@@ -155,8 +137,8 @@ impl Text {
             .iter()
             .map(|run| SectionText {
                 text: &self.text[run.range],
-                scale: (self.env.font_scale * run.scale).into(),
-                font_id: run.font_id.into(),
+                scale: self.env.font_scale.into(),
+                font_id: self.font_id.into(),
             })
             .collect();
 
@@ -279,9 +261,8 @@ impl Text {
         // a single row of text anyway, so we consider this acceptable.
         // This also affects scale_font.h_advance at line-breaks. We consider
         // this a hack anyway and so tolerate some inaccuracy.
-        let last_run = self.runs.last().unwrap();
-        let scale = self.env.font_scale * last_run.scale;
-        let scale_font = fonts().get(last_run.font_id).into_scaled(scale);
+        let scale = self.env.font_scale;
+        let scale_font = fonts().get(self.font_id).into_scaled(scale);
         let base_to_mid = -0.5 * (scale_font.ascent() + scale_font.descent());
         // Note: scale_font.line_gap() is 0.0 (why?). Use ascent() instead.
         let half_line_gap = (0.5 * scale_font.ascent()).abs();
