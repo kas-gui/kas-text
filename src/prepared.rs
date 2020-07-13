@@ -11,8 +11,11 @@ use ab_glyph::{Font, Glyph, ScaleFont};
 use glyph_brush_layout::{GlyphPositioner, Layout, SectionGeometry, SectionGlyph, SectionText};
 use unicode_segmentation::GraphemeCursor;
 
-use crate::{fonts, rich, Align, FontId, Range, Vec2};
+use crate::{fonts, rich, Align, FontId, Vec2};
 use crate::{EnvChange, Environment, UpdateEnv};
+
+mod text_runs;
+use text_runs::Run;
 
 /// Text, prepared for display in a given enviroment
 ///
@@ -24,17 +27,13 @@ pub struct Text {
     env: Environment,
     text: String,
     runs: SmallVec<[Run; 1]>,
+    breaks: SmallVec<[usize; 3]>,
     font_id: FontId,
     // If !ready, then fonts must be selected and layout calculated
     ready: bool,
     required: Vec2,
     offset: Vec2,
     glyphs: Vec<SectionGlyph>,
-}
-
-#[derive(Clone, Debug)]
-struct Run {
-    range: Range,
 }
 
 impl Text {
@@ -76,11 +75,8 @@ impl Text {
         }
 
         self.text = text.text;
-        self.runs = std::iter::once(Run {
-            range: Range::from(0..self.text.len()),
-        })
-        .collect();
         self.font_id = Default::default();
+        self.prepare_runs();
         self.ready = false;
         true
     }
