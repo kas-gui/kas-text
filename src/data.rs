@@ -131,18 +131,23 @@ pub struct Range {
 
 impl Range {
     /// The start, as `usize`
-    pub fn start(&self) -> usize {
+    pub fn start(self) -> usize {
         self.start as usize
     }
 
     /// The end, as `usize`
-    pub fn end(&self) -> usize {
+    pub fn end(self) -> usize {
         self.end as usize
     }
 
     /// True if the given value is contained
-    pub fn contains(&self, value: usize) -> bool {
+    pub fn contains(self, value: usize) -> bool {
         self.start as usize <= value && value < self.end as usize
+    }
+
+    /// Convert to a standard range
+    pub fn to_std(self) -> std::ops::Range<usize> {
+        (self.start as usize)..(self.end as usize)
     }
 }
 

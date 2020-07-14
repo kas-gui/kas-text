@@ -21,10 +21,14 @@ use crate::{fonts, prepared, FontId, Vec2};
 use ab_glyph::{Font, GlyphId, PxScale, ScaleFont};
 use smallvec::SmallVec;
 
+/// A positioned glyph
 #[derive(Clone, Copy, Debug)]
 pub struct Glyph {
+    /// Index of char in source text
     pub index: u32,
+    /// Glyph identifier in font
     pub id: GlyphId,
+    /// Position of glyph
     pub position: Vec2,
 }
 

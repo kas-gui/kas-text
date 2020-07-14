@@ -100,7 +100,9 @@ impl<'a> UpdateEnv<'a> {
     }
 
     /// Set the alignment
-    pub fn set_align(&mut self, horiz: Align, vert: Align) {
+    ///
+    /// Takes `(horiz_align, vert_align)` tuple to allow easier parameter passing.
+    pub fn set_align(&mut self, (horiz, vert): (Align, Align)) {
         if horiz != self.env.halign || vert != self.env.valign {
             self.env.halign = horiz;
             self.env.valign = vert;

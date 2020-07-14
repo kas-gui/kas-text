@@ -7,11 +7,11 @@
 
 use smallvec::SmallVec;
 
-use ab_glyph::{Font, Glyph, ScaleFont};
-use glyph_brush_layout::SectionGlyph;
-use unicode_segmentation::GraphemeCursor;
+use ab_glyph::{Font, PxScale, ScaleFont};
+// use glyph_brush_layout::SectionGlyph;
+// use unicode_segmentation::GraphemeCursor;
 
-use crate::{fonts, rich, shaper, Align, FontId, Range, Vec2};
+use crate::{fonts, rich, shaper, /*Align,*/ FontId, Glyph, Range, Vec2};
 use crate::{Environment, UpdateEnv};
 
 mod text_runs;
@@ -39,12 +39,11 @@ impl Action {
 }
 
 #[derive(Clone, Copy, Debug)]
-struct LineRun {
+struct RunPart {
     glyph_run: u32,
     glyph_range: Range,
     offset: Vec2,
 }
-type Line = SmallVec<[LineRun; 1]>;
 
 /// Text, prepared for display in a given enviroment
 ///
@@ -59,9 +58,11 @@ pub struct Text {
     font_id: FontId,
     action: Action,
     required: Vec2,
-    offset: Vec2,
     glyph_runs: Vec<shaper::GlyphRun>,
-    lines: Vec<Line>,
+    wrapped_runs: Vec<RunPart>,
+    // Indexes of line-starts within wrapped_runs:
+    // lines: Vec<u32>,
+    num_glyphs: usize,
 }
 
 impl Text {
@@ -96,7 +97,9 @@ impl Text {
     /// Set the text
     ///
     /// Returns true when the contents have changed, in which case
-    /// `prepared` must be called again and size-requirements may have changed.
+    /// [`Text::prepare`] must be called and size-requirements may have changed.
+    /// Note that [`Text::prepare`] is not called automatically since it must
+    /// not be called before fonts are loaded.
     pub fn set_text(&mut self, text: rich::Text) -> bool {
         if self.text == text.text && self.runs.len() == 1 {
             return false; // no change
@@ -116,7 +119,9 @@ impl Text {
 
     /// Update the environment
     ///
-    /// If this returns true, then [`Text::prepare`] must be called again.
+    /// Returns true when [`Text::prepare`] must be called (again).
+    /// Note that [`Text::prepare`] is not called automatically since it must
+    /// not be called before fonts are loaded.
     pub fn update_env<F: FnOnce(&mut UpdateEnv)>(&mut self, f: F) -> bool {
         let mut update = UpdateEnv::new(&mut self.env);
         f(&mut update);
@@ -171,19 +176,35 @@ impl Text {
         self.apply_alignment();
     }
 
-    /// Get an iterator over positioned glyphs
+    /// Produce a list of positioned glyphs
     ///
     /// One must call [`Text::prepare`] before this method.
     ///
-    /// The `pos` is used to adjust the glyph position: this is the top-left
-    /// position of the rect within which glyphs appear (the size of the rect
-    /// is that passed to [`Text::set_bounds`]).
-    pub fn positioned_glyphs(&self, pos: Vec2) -> GlyphIter {
-        assert!(self.ready, "kas-text::prepared::Text: not ready");
-        GlyphIter {
-            offset: ab_glyph::Point::from(self.offset + pos),
-            glyphs: &self.glyphs,
+    /// The function `f` may be used to apply required type transformations.
+    /// Note that since internally this `Text` type assumes text is between the
+    /// origin and the bound given by the environment, the function may also
+    /// wish to translate glyphs.
+    ///
+    /// Although glyph positions are already calculated prior to calling this
+    /// method, it is still computationally-intensive enough that it may be
+    /// worth caching the result for reuse. Since the type is defined by the
+    /// function `f`, caching is left to the caller.
+    pub fn positioned_glyphs<G, F: Fn(&str, FontId, PxScale, Glyph) -> G>(&self, f: F) -> Vec<G> {
+        assert!(self.action.is_none(), "kas-text::prepared::Text: not ready");
+        let text = &self.text;
+
+        let mut glyphs = Vec::with_capacity(self.num_glyphs);
+        for run_part in self.wrapped_runs.iter().cloned() {
+            let run = &self.glyph_runs[run_part.glyph_run as usize];
+            let font_id = run.font_id;
+            let font_scale = run.font_scale;
+
+            for mut glyph in run.glyphs[run_part.glyph_range.to_std()].iter().cloned() {
+                glyph.position = glyph.position + run_part.offset;
+                glyphs.push(f(text, font_id, font_scale, glyph));
+            }
         }
+        glyphs
     }
 
     /// Calculate size requirements
@@ -206,6 +227,8 @@ impl Text {
     /// Note: if the text's bounding rect does not start at the origin, then
     /// the coordinates of the top-left corner should be added to this result.
     pub fn text_glyph_pos(&self, index: usize) -> Vec2 {
+        todo!()
+        /*
         if index == 0 {
             // Short-cut. We also cannot iterate since there may be no glyphs.
             return self.offset;
@@ -262,6 +285,7 @@ impl Text {
         }
         pos.1 -= scale_font.ascent();
         return pos;
+        */
     }
 
     /// Find the text index for the glyph nearest the given `pos`
@@ -275,6 +299,8 @@ impl Text {
     /// This method is only partially compatible with mult-line text.
     /// Ideally an external line-breaker should be used.
     pub fn text_index_nearest(&self, pos: Vec2) -> usize {
+        todo!()
+        /*
         if self.runs.len() == 0 {
             return 0; // short-cut
         }
@@ -358,6 +384,7 @@ impl Text {
             "text_index_nearest: index beyond text length!"
         );
         best.0
+        */
     }
 }
 
@@ -366,76 +393,69 @@ impl Text {
         let fonts = fonts();
         let width_bound = self.env.bounds.0;
 
-        // Use a crude estimate of the number of lines:
-        let mut lines = Vec::with_capacity(self.raw_text_len() / 16);
-
         #[derive(Default)]
         struct LineAdder {
-            line: Line,
+            runs: Vec<RunPart>,
+            line_start: usize,
             ascent: f32,
             descent: f32,
             line_gap: f32,
             longest: f32,
             caret: Vec2,
+            num_glyphs: usize,
         }
         impl LineAdder {
             fn is_empty(&self) -> bool {
-                self.line.is_empty()
+                self.line_start == self.runs.len()
             }
 
-            fn add_run<F: Font, SF: ScaleFont<F>, R: Into<Range>>(
+            fn add_part<F: Font, SF: ScaleFont<F>>(
                 &mut self,
                 scale_font: &SF,
                 run_index: usize,
-                glyph_range: R,
+                glyph_range: std::ops::Range<u32>,
             ) {
                 // Adjust vertical position if necessary
                 let ascent = scale_font.ascent();
                 if ascent > self.ascent {
                     let extra = ascent - self.ascent;
-                    for run in &mut self.line {
+                    for run in &mut self.runs[self.line_start..] {
                         run.offset.1 += extra;
                     }
                     self.caret.1 += extra;
                     self.ascent = ascent;
                 }
 
-                self.descent = self.descent.max(scale_font.descent());
+                self.descent = self.descent.min(scale_font.descent());
                 self.line_gap = self.line_gap.max(scale_font.line_gap());
 
-                self.line.push(LineRun {
+                self.num_glyphs += glyph_range.len();
+                self.runs.push(RunPart {
                     glyph_run: run_index as u32,
                     glyph_range: glyph_range.into(),
                     offset: self.caret,
                 });
             }
 
-            fn new_line(&mut self, x: f32) -> Line {
-                let mut line = SmallVec::new();
-                std::mem::swap(&mut self.line, &mut line);
-
+            fn new_line(&mut self, x: f32) {
+                self.line_start = self.runs.len();
                 self.caret.0 = x;
-                self.caret.1 += self.descent + self.line_gap;
+                self.caret.1 += self.line_gap - self.descent;
 
                 self.ascent = 0.0;
                 self.descent = 0.0;
                 self.line_gap = 0.0;
-
-                line
             }
 
-            fn finish(&mut self) -> Option<Line> {
-                if self.line.is_empty() {
-                    None
-                } else {
-                    self.caret.1 += self.descent;
-                    let mut line = SmallVec::new();
-                    std::mem::swap(&mut self.line, &mut line);
-                    Some(line)
+            fn finish(&mut self) {
+                if !self.is_empty() {
+                    self.caret.1 -= self.descent;
                 }
             }
         }
         let mut line = LineAdder::default();
+        // Use a crude estimate of the number of runs:
+        line.runs.reserve(self.raw_text_len() / 16);
 
         for (run_index, run) in self.glyph_runs.iter().enumerate() {
             let font = fonts.get(run.font_id);
@@ -459,13 +479,17 @@ impl Text {
             if line_len <= width_bound {
                 // Short-cut: we can add the entire run.
                 let glyph_end = run.glyphs.len() as u32;
-                line.add_run(&scale_font, run_index, 0..glyph_end);
+                line.add_part(&scale_font, run_index, 0..glyph_end);
                 line.caret.0 += run.caret;
                 line.longest = line.longest.max(line_len);
             } else {
                 // We require at least one line break.
 
                 let mut run_breaks = run.breaks.iter().peekable();
+                let run_gb = shaper::GlyphBreak {
+                    pos: run.glyphs.len() as u32,
+                    end_no_space: run.end_no_space,
+                };
                 let mut glyph_end = 0;
 
                 loop {
@@ -474,19 +498,22 @@ impl Text {
                     let mut empty = line.is_empty();
                     let glyph_start = glyph_end;
                     loop {
-                        if let Some(gb) = run_breaks.peek() {
-                            let part_line_len = line.caret.0 + gb.end_no_space;
-                            if empty || (part_line_len <= width_bound) {
-                                glyph_end = gb.pos;
-                                empty = false;
-                                run_breaks.next();
-                                line_len = part_line_len;
-                                continue;
+                        let gb = run_breaks.peek().map(|gb| **gb).unwrap_or(run_gb);
+                        let part_line_len = line.caret.0 + gb.end_no_space;
+                        if empty || (part_line_len <= width_bound) {
+                            glyph_end = gb.pos;
+                            empty = false;
+                            run_breaks.next();
+                            line_len = part_line_len;
+                            if glyph_end == run_gb.pos {
+                                break;
                             }
+                            continue;
                         }
                         break;
                     }
-                    line.add_run(&scale_font, run_index, glyph_start..glyph_end);
+
+                    line.add_part(&scale_font, run_index, glyph_start..glyph_end);
                     line.caret.0 += run.caret;
                     line.longest = line.longest.max(line_len);
 
@@ -499,21 +526,19 @@ impl Text {
                     // Offset new line since we are not at the start of the run
                     let glyph = run.glyphs[glyph_end as usize];
                     let x = scale_font.h_side_bearing(glyph.id) - glyph.position.0;
-
-                    lines.push(line.new_line(x));
+                    line.new_line(x);
                 }
             }
         }
 
-        if let Some(line) = line.finish() {
-            lines.push(line);
-        }
-
-        self.lines = lines;
+        line.finish();
+        self.wrapped_runs = line.runs;
         self.required = Vec2(line.longest, line.caret.1);
+        self.num_glyphs = line.num_glyphs;
     }
 
     fn apply_alignment(&mut self) {
+        /*
         // TODO: this aligns the whole block of text; we should align each line
         self.offset.0 = match self.env.halign {
             Align::Default | Align::TL | Align::Stretch => 0.0,
@@ -525,32 +550,6 @@ impl Text {
             Align::Centre => (self.env.bounds.1 - self.required.1) / 2.0,
             Align::BR => self.env.bounds.1 - self.required.1,
         };
+        */
     }
 }
-
-pub struct GlyphIter<'a> {
-    offset: ab_glyph::Point,
-    glyphs: &'a [SectionGlyph],
-}
-
-impl<'a> Iterator for GlyphIter<'a> {
-    type Item = SectionGlyph;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.glyphs.len() > 0 {
-            let mut glyph = self.glyphs[0].clone();
-            self.glyphs = &self.glyphs[1..];
-            glyph.glyph.position += self.offset;
-            Some(glyph)
-        } else {
-            None
-        }
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let len = self.glyphs.len();
-        (len, Some(len))
-    }
-}
-impl<'a> ExactSizeIterator for GlyphIter<'a> {}
-impl<'a> std::iter::FusedIterator for GlyphIter<'a> {}
