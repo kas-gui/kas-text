@@ -8,14 +8,43 @@
 use smallvec::SmallVec;
 
 use ab_glyph::{Font, Glyph, ScaleFont};
-use glyph_brush_layout::{GlyphPositioner, Layout, SectionGeometry, SectionGlyph, SectionText};
+use glyph_brush_layout::SectionGlyph;
 use unicode_segmentation::GraphemeCursor;
 
-use crate::{fonts, rich, Align, FontId, Vec2};
-use crate::{EnvChange, Environment, UpdateEnv};
+use crate::{fonts, rich, shaper, Align, FontId, Range, Vec2};
+use crate::{Environment, UpdateEnv};
 
 mod text_runs;
-use text_runs::Run;
+pub(crate) use text_runs::Run;
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Ord, PartialOrd, Hash)]
+pub(crate) enum Action {
+    None,
+    Align,
+    Wrap,
+    Shape,
+    Runs,
+}
+
+impl Default for Action {
+    fn default() -> Self {
+        Action::None
+    }
+}
+
+impl Action {
+    fn is_none(&self) -> bool {
+        *self == Action::None
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct LineRun {
+    glyph_run: u32,
+    glyph_range: Range,
+    offset: Vec2,
+}
+type Line = SmallVec<[LineRun; 1]>;
 
 /// Text, prepared for display in a given enviroment
 ///
@@ -27,13 +56,12 @@ pub struct Text {
     env: Environment,
     text: String,
     runs: SmallVec<[Run; 1]>,
-    breaks: SmallVec<[usize; 3]>,
     font_id: FontId,
-    // If !ready, then fonts must be selected and layout calculated
-    ready: bool,
+    action: Action,
     required: Vec2,
     offset: Vec2,
-    glyphs: Vec<SectionGlyph>,
+    glyph_runs: Vec<shaper::GlyphRun>,
+    lines: Vec<Line>,
 }
 
 impl Text {
@@ -77,7 +105,7 @@ impl Text {
         self.text = text.text;
         self.font_id = Default::default();
         self.prepare_runs();
-        self.ready = false;
+        self.action = Action::Shape;
         true
     }
 
@@ -92,56 +120,55 @@ impl Text {
     pub fn update_env<F: FnOnce(&mut UpdateEnv)>(&mut self, f: F) -> bool {
         let mut update = UpdateEnv::new(&mut self.env);
         f(&mut update);
-        match update.finish() {
-            EnvChange::None => false,
-            EnvChange::Align => {
+        let action = update.finish().max(self.action);
+        match action {
+            Action::None => (),
+            Action::Align => {
                 self.apply_alignment();
-                false
             }
-            EnvChange::Wrap | EnvChange::Full => {
-                self.ready = false;
-                true
+            Action::Wrap => {
+                self.wrap_lines();
+                self.apply_alignment();
+            }
+            Action::Shape | Action::Runs => {
+                return true;
             }
         }
+        self.action = Action::None;
+        false
     }
 
     /// Prepare
     ///
     /// Calculates glyph layouts for use.
     pub fn prepare(&mut self) {
-        if self.ready {
-            return;
+        let action = self.action;
+
+        if action >= Action::Runs {
+            self.prepare_runs();
         }
 
-        // NOTE: we can only use left-alignment here since bounds may be
-        // infinite.
+        if action >= Action::Shape {
+            self.glyph_runs = self
+                .runs
+                .iter()
+                .map(|run| {
+                    shaper::shape(self.font_id, self.env.font_scale.into(), &self.text, &run)
+                })
+                .collect();
+        }
 
-        let layout = match self.env.wrap {
-            true => Layout::default_wrap(),
-            false => Layout::default_single_line(),
-        };
+        if action >= Action::Wrap {
+            self.wrap_lines();
+        }
 
-        let fonts = fonts().fonts_vec();
+        if action >= Action::Align {
+            self.apply_alignment();
+        }
 
-        let geometry = SectionGeometry {
-            screen_position: (0.0, 0.0),
-            bounds: self.env.bounds.into(),
-        };
+        self.action = Action::None;
 
-        let sections: Vec<_> = self
-            .runs
-            .iter()
-            .map(|run| SectionText {
-                text: &self.text[run.range],
-                scale: self.env.font_scale.into(),
-                font_id: self.font_id.into(),
-            })
-            .collect();
-
-        self.glyphs = layout.calculate_glyphs(&fonts, &geometry, &sections);
-        self.update_required();
         self.apply_alignment();
-        self.ready = true;
     }
 
     /// Get an iterator over positioned glyphs
@@ -165,7 +192,7 @@ impl Text {
     /// before this method. Note that initial size bounds may cause wrapping
     /// and may cause parts of the text outside the bounds to be cut off.
     pub fn required_size(&self) -> Vec2 {
-        assert!(self.ready, "kas-text::prepared::Text: not ready");
+        assert!(self.action.is_none(), "kas-text::prepared::Text: not ready");
         self.required
     }
 
@@ -335,25 +362,155 @@ impl Text {
 }
 
 impl Text {
-    fn update_required(&mut self) {
+    fn wrap_lines(&mut self) {
         let fonts = fonts();
-        let glyph_bounds = |g: &SectionGlyph| {
-            let bounds = fonts.get(g.font_id).glyph_bounds(&g.glyph);
-            (Vec2::from(bounds.min), Vec2::from(bounds.max))
-        };
+        let width_bound = self.env.bounds.0;
 
-        let mut iter = self.glyphs.iter();
-        self.required = if let Some(first) = iter.next() {
-            let mut bounds = glyph_bounds(first);
-            for item in iter {
-                let b = glyph_bounds(item);
-                bounds.0 = bounds.0.min(b.0);
-                bounds.1 = bounds.1.max(b.1);
+        // Use a crude estimate of the number of lines:
+        let mut lines = Vec::with_capacity(self.raw_text_len() / 16);
+
+        #[derive(Default)]
+        struct LineAdder {
+            line: Line,
+            ascent: f32,
+            descent: f32,
+            line_gap: f32,
+            longest: f32,
+            caret: Vec2,
+        }
+        impl LineAdder {
+            fn is_empty(&self) -> bool {
+                self.line.is_empty()
             }
-            bounds.1 - bounds.0
-        } else {
-            Vec2::ZERO
-        };
+
+            fn add_run<F: Font, SF: ScaleFont<F>, R: Into<Range>>(
+                &mut self,
+                scale_font: &SF,
+                run_index: usize,
+                glyph_range: R,
+            ) {
+                // Adjust vertical position if necessary
+                let ascent = scale_font.ascent();
+                if ascent > self.ascent {
+                    let extra = ascent - self.ascent;
+                    for run in &mut self.line {
+                        run.offset.1 += extra;
+                    }
+                    self.caret.1 += extra;
+                    self.ascent = ascent;
+                }
+
+                self.descent = self.descent.max(scale_font.descent());
+                self.line_gap = self.line_gap.max(scale_font.line_gap());
+
+                self.line.push(LineRun {
+                    glyph_run: run_index as u32,
+                    glyph_range: glyph_range.into(),
+                    offset: self.caret,
+                });
+            }
+
+            fn new_line(&mut self, x: f32) -> Line {
+                let mut line = SmallVec::new();
+                std::mem::swap(&mut self.line, &mut line);
+
+                self.caret.0 = x;
+                self.caret.1 += self.descent + self.line_gap;
+
+                self.ascent = 0.0;
+                self.descent = 0.0;
+                self.line_gap = 0.0;
+
+                line
+            }
+
+            fn finish(&mut self) -> Option<Line> {
+                if self.line.is_empty() {
+                    None
+                } else {
+                    self.caret.1 += self.descent;
+                    let mut line = SmallVec::new();
+                    std::mem::swap(&mut self.line, &mut line);
+                    Some(line)
+                }
+            }
+        }
+        let mut line = LineAdder::default();
+
+        for (run_index, run) in self.glyph_runs.iter().enumerate() {
+            let font = fonts.get(run.font_id);
+            let scale_font = font.into_scaled(run.font_scale);
+
+            if run.glyphs.is_empty() {
+                // TODO: This is a special case. We want to allow blank lines,
+                // but this may need special handling.
+                // TODO: special case: an empty run followed by a non-empty run on the line
+                todo!()
+            }
+
+            if line.is_empty() {
+                // We offset the caret horizontally based on the first glyph of the line
+                if let Some(glyph) = run.glyphs.iter().as_ref().first() {
+                    line.caret.0 += scale_font.h_side_bearing(glyph.id);
+                }
+            }
+
+            let mut line_len = line.caret.0 + run.end_no_space;
+            if line_len <= width_bound {
+                // Short-cut: we can add the entire run.
+                let glyph_end = run.glyphs.len() as u32;
+                line.add_run(&scale_font, run_index, 0..glyph_end);
+                line.caret.0 += run.caret;
+                line.longest = line.longest.max(line_len);
+            } else {
+                // We require at least one line break.
+
+                let mut run_breaks = run.breaks.iter().peekable();
+                let mut glyph_end = 0;
+
+                loop {
+                    // Find how much of the run we can add, ensuring that we
+                    // do not leave a line empty but otherwise respecting width.
+                    let mut empty = line.is_empty();
+                    let glyph_start = glyph_end;
+                    loop {
+                        if let Some(gb) = run_breaks.peek() {
+                            let part_line_len = line.caret.0 + gb.end_no_space;
+                            if empty || (part_line_len <= width_bound) {
+                                glyph_end = gb.pos;
+                                empty = false;
+                                run_breaks.next();
+                                line_len = part_line_len;
+                                continue;
+                            }
+                        }
+                        break;
+                    }
+                    line.add_run(&scale_font, run_index, glyph_start..glyph_end);
+                    line.caret.0 += run.caret;
+                    line.longest = line.longest.max(line_len);
+
+                    // If we are already at the end of the run, stop. This
+                    // should not happen on the first iteration.
+                    if glyph_end as usize >= run.glyphs.len() {
+                        break;
+                    }
+
+                    // Offset new line since we are not at the start of the run
+                    let glyph = run.glyphs[glyph_end as usize];
+                    let x = scale_font.h_side_bearing(glyph.id) - glyph.position.0;
+
+                    lines.push(line.new_line(x));
+                }
+            }
+        }
+
+        if let Some(line) = line.finish() {
+            lines.push(line);
+        }
+
+        self.lines = lines;
+        self.required = Vec2(line.longest, line.caret.1);
     }
 
     fn apply_alignment(&mut self) {

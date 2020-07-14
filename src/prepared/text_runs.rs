@@ -7,13 +7,17 @@
 
 use super::Text;
 use crate::Range;
+use smallvec::SmallVec;
 use xi_unicode::LineBreakIterator;
 
 #[derive(Clone, Debug)]
 pub(crate) struct Run {
     // TODO: add append-to-previous-line property (for now always false)
     // TODO: support reversed texts
+    /// Range in source text
     pub range: Range,
+    /// All soft-break locations within this range (excludes end)
+    pub breaks: SmallVec<[u32; 5]>,
 }
 
 impl Text {
@@ -32,17 +36,19 @@ impl Text {
     /// TODO: implement BIDI processing
     pub(crate) fn prepare_runs(&mut self) {
         self.runs.clear();
-        self.breaks.clear();
 
         let mut start = 0;
+        let mut breaks = Default::default();
+
         for (pos, hard) in LineBreakIterator::new(&self.text) {
             if hard && start < pos {
                 let range = trim_control(&self.text[start..pos]);
-                self.runs.push(Run { range });
+                self.runs.push(Run { range, breaks });
                 start = pos;
+                breaks = Default::default();
             }
             if !hard {
-                self.breaks.push(pos);
+                breaks.push(pos as u32);
             }
         }
 

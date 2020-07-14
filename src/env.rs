@@ -5,7 +5,7 @@
 
 //! KAS Rich-Text library — text-display enviroment
 
-use crate::{FontScale, Vec2};
+use crate::{prepared::Action, FontScale, Vec2};
 
 /// Environment in which text is prepared for display
 ///
@@ -61,29 +61,21 @@ impl Environment {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Ord, PartialOrd, Hash)]
-pub(crate) enum EnvChange {
-    None,
-    Align,
-    Wrap,
-    Full,
-}
-
 /// Helper to modify an environment
 #[derive(Debug)]
 pub struct UpdateEnv<'a> {
     env: &'a mut Environment,
-    change: EnvChange,
+    action: Action,
 }
 
 impl<'a> UpdateEnv<'a> {
     pub(crate) fn new(env: &'a mut Environment) -> Self {
-        let change = EnvChange::None;
-        UpdateEnv { env, change }
+        let action = Action::None;
+        UpdateEnv { env, action }
     }
 
-    pub(crate) fn finish(self) -> EnvChange {
-        self.change
+    pub(crate) fn finish(self) -> Action {
+        self.action
     }
 
     /// Read access to the environment
@@ -93,33 +85,43 @@ impl<'a> UpdateEnv<'a> {
 
     /// Set base font scale
     pub fn set_font_scale(&mut self, scale: FontScale) {
-        self.env.font_scale = scale;
-        self.change = EnvChange::Full;
+        if scale != self.env.font_scale {
+            self.env.font_scale = scale;
+            self.action = Action::Shape;
+        }
     }
 
     /// Set the default direction
     pub fn set_dir(&mut self, dir: Direction) {
-        self.env.dir = dir;
-        self.change = EnvChange::Full;
+        if dir != self.env.dir {
+            self.env.dir = dir;
+            self.action = Action::Runs;
+        }
     }
 
     /// Set the alignment
     pub fn set_align(&mut self, horiz: Align, vert: Align) {
-        self.env.halign = horiz;
-        self.env.valign = vert;
-        self.change = self.change.max(EnvChange::Align);
+        if horiz != self.env.halign || vert != self.env.valign {
+            self.env.halign = horiz;
+            self.env.valign = vert;
+            self.action = self.action.max(Action::Align);
+        }
     }
 
     /// Enable or disable line-wrapping
     pub fn set_wrap(&mut self, wrap: bool) {
-        self.env.wrap = wrap;
-        self.change = self.change.max(EnvChange::Wrap);
+        if wrap != self.env.wrap {
+            self.env.wrap = wrap;
+            self.action = self.action.max(Action::Wrap);
+        }
     }
 
     /// Set the environment's bounds
     pub fn set_bounds(&mut self, bounds: Vec2) {
-        self.env.bounds = bounds;
-        self.change = self.change.max(EnvChange::Wrap);
+        if bounds != self.env.bounds {
+            self.env.bounds = bounds;
+            self.action = self.action.max(Action::Wrap);
+        }
     }
 }
 

@@ -233,6 +233,15 @@ impl From<Range> for std::ops::Range<usize> {
     }
 }
 
+impl From<std::ops::Range<u32>> for Range {
+    fn from(range: std::ops::Range<u32>) -> Range {
+        Range {
+            start: range.start,
+            end: range.end,
+        }
+    }
+}
+
 impl From<std::ops::Range<usize>> for Range {
     fn from(range: std::ops::Range<usize>) -> Range {
         assert!(range.end <= u32::MAX as usize);

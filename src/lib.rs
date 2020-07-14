@@ -18,3 +18,4 @@ pub use fonts::*;
 
 pub mod prepared;
 pub mod rich;
+pub(crate) mod shaper;
