@@ -44,6 +44,12 @@ struct RunPart {
     offset: Vec2,
 }
 
+#[derive(Clone, Copy, Debug)]
+struct Line {
+    start: u32, // index of first item of wrapped_runs
+    bottom: f32,
+}
+
 /// Text, prepared for display in a given enviroment
 ///
 /// Text is laid out for display in a box with the given size bounds.
@@ -60,7 +66,7 @@ pub struct Text {
     glyph_runs: Vec<shaper::GlyphRun>,
     wrapped_runs: Vec<RunPart>,
     // Indexes of line-starts within wrapped_runs:
-    lines: Vec<u32>,
+    lines: Vec<Line>,
     num_glyphs: usize,
 }
 
@@ -251,101 +257,49 @@ impl Text {
 
     /// Find the text index for the glyph nearest the given `pos`
     ///
-    /// Note: if the font's rect does not start at the origin, then its top-left
-    /// coordinate should first be subtracted from `pos`.
-    ///
     /// This includes the index immediately after the last glyph, thus
     /// `result ≤ text.len()`.
     ///
-    /// This method is only partially compatible with mult-line text.
-    /// Ideally an external line-breaker should be used.
+    /// Note: if the font's rect does not start at the origin, then its top-left
+    /// coordinate should first be subtracted from `pos`.
     pub fn text_index_nearest(&self, pos: Vec2) -> usize {
-        todo!()
-        /*
-        if self.runs.len() == 0 {
-            return 0; // short-cut
-        }
-        let text_len = self.text.len();
-        // NOTE: if self.runs.len() > 1 then base_to_mid may change, making the
-        // row selection a little inaccurate. This method is best used with only
-        // a single row of text anyway, so we consider this acceptable.
-        // This also affects scale_font.h_advance at line-breaks. We consider
-        // this a hack anyway and so tolerate some inaccuracy.
-        let scale = self.env.font_scale;
-        let scale_font = fonts().get(self.font_id).into_scaled(scale);
-        let base_to_mid = -0.5 * (scale_font.ascent() + scale_font.descent());
-        // Note: scale_font.line_gap() is 0.0 (why?). Use ascent() instead.
-        let half_line_gap = (0.5 * scale_font.ascent()).abs();
-
-        let mut iter = self.glyphs.iter();
-
-        // Find the (horiz, vert) distance between pos and the glyph.
-        let dist = |glyph: &Glyph| {
-            let p = glyph.position;
-            let glyph_pos = Vec2(p.x, p.y + base_to_mid);
-            (pos - glyph_pos).abs()
-        };
-        let test_best = |best: Vec2, glyph: &Glyph| {
-            let dist = dist(glyph);
-            if dist.1 < best.1 {
-                Some(dist)
-            } else if dist.1 == best.1 && dist.0 < best.0 {
-                Some(dist)
-            } else {
-                None
+        let mut start = 0;
+        let mut iter = self.lines.iter();
+        while let Some(line) = iter.next() {
+            // Save, so that we use last line if pos lies below last
+            start = line.start as usize;
+            if pos.1 <= line.bottom {
+                break;
             }
-        };
+        }
+        let end = iter
+            .next()
+            .map(|line| line.start as usize)
+            .unwrap_or(self.wrapped_runs.len());
 
-        let mut last: SectionGlyph = iter.next().unwrap().clone();
-        let mut last_y = last.glyph.position.y;
-        let mut best = (last.byte_index, dist(&last.glyph));
-        for next in iter {
-            // Heuristic to detect a new line. This is a HACK to handle
-            // multi-line texts since line-end positions are not represented by
-            // virtual glyphs (unlike spaces).
-            if (next.glyph.position.y - last_y).abs() > half_line_gap {
-                last.glyph.position.x += scale_font.h_advance(last.glyph.id);
-                if let Some(new_best) = test_best(best.1, &last.glyph) {
-                    let index = last.byte_index;
-                    let mut cursor = GraphemeCursor::new(index, text_len, true);
-                    let mut cum_len = 0;
-                    let text = 'outer: loop {
-                        for run in &self.runs {
-                            let len = run.range.len();
-                            if index < cum_len + len {
-                                break 'outer &self.text[run.range];
-                            }
-                            cum_len += len;
-                        }
-                        unreachable!();
-                    };
-                    let byte = cursor
-                        .next_boundary(text, cum_len)
-                        .unwrap()
-                        .unwrap_or(last.byte_index);
-                    best = (byte, new_best);
+        let mut best = 0;
+        let mut best_dist = f32::INFINITY;
+
+        for run_part in &self.wrapped_runs[start..end] {
+            let glyph_run = &self.glyph_runs[run_part.glyph_run as usize];
+            let rel_pos = pos.0 - run_part.offset.0;
+
+            for glyph in &glyph_run.glyphs[run_part.glyph_range.to_std()] {
+                let dist = (glyph.position.0 - rel_pos).abs();
+                if dist < best_dist {
+                    best = glyph.index;
+                    best_dist = dist;
                 }
             }
 
-            last = next.clone();
-            last_y = last.glyph.position.y;
-            if let Some(new_best) = test_best(best.1, &last.glyph) {
-                best = (last.byte_index, new_best);
+            let dist = (glyph_run.caret - rel_pos).abs();
+            if dist < best_dist {
+                best = glyph_run.end_index;
+                best_dist = dist;
             }
         }
 
-        // We must also consider the position after the last glyph
-        last.glyph.position.x += scale_font.h_advance(last.glyph.id);
-        if let Some(new_best) = test_best(best.1, &last.glyph) {
-            best = (text_len, new_best);
-        }
-
-        assert!(
-            best.0 <= text_len,
-            "text_index_nearest: index beyond text length!"
-        );
-        best.0
-        */
+        best as usize
     }
 }
 
@@ -359,7 +313,7 @@ impl Text {
         #[derive(Default)]
         struct LineAdder {
             runs: Vec<RunPart>,
-            line_starts: Vec<u32>,
+            line_starts: Vec<Line>,
             line_start: usize,
             line_len: f32,
             ascent: f32,
@@ -374,10 +328,8 @@ impl Text {
         impl LineAdder {
             fn new(run_capacity: usize, halign: Align, width_bound: f32) -> Self {
                 let runs = Vec::with_capacity(run_capacity);
-                let line_starts = vec![0];
                 LineAdder {
                     runs,
-                    line_starts,
                     halign,
                     width_bound,
                     ..Default::default()
@@ -451,12 +403,15 @@ impl Text {
 
                 self.caret.1 -= self.descent;
                 self.longest = self.longest.max(self.line_len);
+                self.line_starts.push(Line {
+                    start: self.line_start as u32,
+                    bottom: self.caret.1,
+                });
             }
 
             fn new_line(&mut self, x: f32) {
                 self.finish_line();
                 self.line_start = self.runs.len();
-                self.line_starts.push(self.line_start as u32);
                 self.caret.0 = x;
                 self.caret.1 += self.line_gap;
 
