@@ -55,6 +55,8 @@ pub struct GlyphRun {
     /// Position of next glyph, if this run is followed by another
     pub caret: f32,
 
+    /// End of slice represented
+    pub end_index: u32,
     /// If true, append to the prior line (if any)
     pub append_to_prev: bool,
 }
@@ -80,6 +82,7 @@ pub(crate) fn shape(
             font_scale,
             end_no_space: 0.0,
             caret: 0.0,
+            end_index: run.range.end,
             append_to_prev: run.append_to_prev(),
         };
     }
@@ -137,6 +140,7 @@ pub(crate) fn shape(
         font_scale,
         end_no_space,
         caret,
+        end_index: run.range.end,
         append_to_prev: run.append_to_prev(),
     }
 }

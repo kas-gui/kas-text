@@ -204,73 +204,49 @@ impl Text {
 
     /// Find the starting position (top-left) of the glyph at the given index
     ///
-    /// May panic on invalid byte index.
+    /// Returns `Some(pos, ascent, descent)` on success, where `pos.1 - ascent`
+    /// and `pos.1 - descent` are the top and bottom of the glyph position.
     ///
-    /// This method is only partially compatible with mult-line text.
-    /// Ideally an external line-breaker should be used.
+    /// Note that this only searches *visible* text sections for a valid index.
+    /// In case the `index` is not within a slice of visible text, this returns
+    /// `None`. So long as `index` is within a visible slice (or at its end),
+    /// it does not need to be on a valid code-point.
     ///
     /// Note: if the text's bounding rect does not start at the origin, then
     /// the coordinates of the top-left corner should be added to this result.
-    pub fn text_glyph_pos(&self, index: usize) -> Vec2 {
-        todo!()
-        /*
-        if index == 0 {
-            // Short-cut. We also cannot iterate since there may be no glyphs.
-            return self.offset;
-        }
+    pub fn text_glyph_pos(&self, index: usize) -> Option<(Vec2, f32, f32)> {
+        assert!(self.action.is_none(), "kas-text::prepared::Text: not ready");
 
-        let byte = if index < self.text.len() {
-            Some(self.text.as_bytes()[index])
-        } else {
-            None
-        };
+        // We don't care too much about performance: use a naive search strategy
+        for run_part in &self.wrapped_runs {
+            let glyph_run = &self.glyph_runs[run_part.glyph_run as usize];
 
-        // Translate index to part number and part's byte-index.
-        let (section, section_index) = 'outer: loop {
-            for run in 0..self.runs.len() {
-                let range = self.runs[run].range;
-                // Note: the index one-past-the-end of a run is valid!
-                if range.start() <= index && index <= range.end() {
-                    // NOTE: for now, a run corresponds directly to a section
-                    break 'outer (run, index - range.start());
+            let end_index = glyph_run
+                .glyphs
+                .get(run_part.glyph_range.end as usize)
+                .map(|glyph| glyph.index)
+                .unwrap_or(glyph_run.end_index) as usize;
+            if index > end_index {
+                continue;
+            }
+
+            let mut pos = Vec2(glyph_run.caret, 0.0);
+            if index < end_index {
+                for glyph in &glyph_run.glyphs[run_part.glyph_range.to_std()] {
+                    if glyph.index as usize > index {
+                        break;
+                    }
+                    pos = glyph.position;
                 }
             }
-            // No corresponding glyph -  TODO - how do we handle this?
-            panic!("no glyph");
-        };
 
-        let mut iter = self.glyphs.iter();
-
-        let mut advance = false;
-        let mut glyph;
-        if let Some(byte) = byte {
-            // Tiny HACK: line-breaks don't have glyphs
-            if byte == b'\r' || byte == b'\n' {
-                advance = true;
-            }
-
-            glyph = iter.next().unwrap().clone();
-            for next in iter {
-                if next.section_index > section || next.byte_index > section_index {
-                    // Use the previous glyph, e.g. if in the middle of a
-                    // multi-byte sequence or index is a combining diacritic.
-                    break;
-                }
-                glyph = next.clone();
-            }
-        } else {
-            advance = true;
-            glyph = iter.last().unwrap().clone();
+            let sf = fonts()
+                .get(glyph_run.font_id)
+                .into_scaled(glyph_run.font_scale);
+            let pos = run_part.offset + pos;
+            return Some((pos, sf.ascent(), sf.descent()));
         }
-
-        let mut pos = self.offset + glyph.glyph.position.into();
-        let scale_font = fonts().get(glyph.font_id).into_scaled(glyph.glyph.scale);
-        if advance {
-            pos.0 += scale_font.h_advance(glyph.glyph.id);
-        }
-        pos.1 -= scale_font.ascent();
-        return pos;
-        */
+        None
     }
 
     /// Find the text index for the glyph nearest the given `pos`
