@@ -54,6 +54,9 @@ pub struct GlyphRun {
     pub end_no_space: f32,
     /// Position of next glyph, if this run is followed by another
     pub caret: f32,
+
+    /// If true, append to the prior line (if any)
+    pub append_to_prev: bool,
 }
 
 /// Shape a `run` of text
@@ -77,6 +80,7 @@ pub(crate) fn shape(
             font_scale,
             end_no_space: 0.0,
             caret: 0.0,
+            append_to_prev: run.append_to_prev(),
         };
     }
 
@@ -133,5 +137,6 @@ pub(crate) fn shape(
         font_scale,
         end_no_space,
         caret,
+        append_to_prev: run.append_to_prev(),
     }
 }

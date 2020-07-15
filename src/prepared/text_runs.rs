@@ -12,12 +12,18 @@ use xi_unicode::LineBreakIterator;
 
 #[derive(Clone, Debug)]
 pub(crate) struct Run {
-    // TODO: add append-to-previous-line property (for now always false)
     // TODO: support reversed texts
     /// Range in source text
     pub range: Range,
     /// All soft-break locations within this range (excludes end)
     pub breaks: SmallVec<[u32; 5]>,
+}
+
+impl Run {
+    /// If a previous line exists, should this be appended to it?
+    pub fn append_to_prev(&self) -> bool {
+        false // will be needed later for BIDI processing
+    }
 }
 
 impl Text {
@@ -42,7 +48,11 @@ impl Text {
 
         for (pos, hard) in LineBreakIterator::new(&self.text) {
             if hard && start < pos {
-                let range = trim_control(&self.text[start..pos]);
+                let mut range = trim_control(&self.text[start..pos]);
+                // trim_control gives us a range within the slice; we need to offset:
+                range.start += start as u32;
+                range.end += start as u32;
+
                 self.runs.push(Run { range, breaks });
                 start = pos;
                 breaks = Default::default();
@@ -50,6 +60,23 @@ impl Text {
             if !hard {
                 breaks.push(pos as u32);
             }
+        }
+
+        // LineBreakIterator implicitly generates a hard-break at the text end,
+        // but if there already is one there it gets omitted. For edit boxes we
+        // need to keep this, and to force a run on empty input.
+        // TODO: for display-only text (labels), should we not do this or even
+        // trim all whitespace? Or is consistent behaviour more important?
+        let text_len = self.text.len();
+        if self
+            .runs
+            .last()
+            .map(|run| (run.range.end as usize) < text_len)
+            .unwrap_or(true)
+        {
+            let range = (text_len..text_len).into();
+            let breaks = Default::default();
+            self.runs.push(Run { range, breaks });
         }
 
         assert_eq!(start, self.text.len()); // iterator always generates a break at the end

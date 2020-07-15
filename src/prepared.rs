@@ -405,8 +405,11 @@ impl Text {
             num_glyphs: usize,
         }
         impl LineAdder {
+            /// Does the current line have any content?
             fn is_empty(&self) -> bool {
-                self.line_start == self.runs.len()
+                self.runs[self.line_start..]
+                    .iter()
+                    .all(|run| run.glyph_range.len() == 0)
             }
 
             fn add_part<F: Font, SF: ScaleFont<F>>(
@@ -448,7 +451,8 @@ impl Text {
             }
 
             fn finish(&mut self) {
-                if !self.is_empty() {
+                // If any (even empty) run was added to the line, add v-space
+                if self.line_start != self.runs.len() {
                     self.caret.1 -= self.descent;
                 }
             }
@@ -461,11 +465,8 @@ impl Text {
             let font = fonts.get(run.font_id);
             let scale_font = font.into_scaled(run.font_scale);
 
-            if run.glyphs.is_empty() {
-                // TODO: This is a special case. We want to allow blank lines,
-                // but this may need special handling.
-                // TODO: special case: an empty run followed by a non-empty run on the line
-                todo!()
+            if !line.runs.is_empty() && !run.append_to_prev {
+                line.new_line(0.0);
             }
 
             if line.is_empty() {
