@@ -106,7 +106,7 @@ impl<'a> UpdateEnv<'a> {
         if horiz != self.env.halign || vert != self.env.valign {
             self.env.halign = horiz;
             self.env.valign = vert;
-            self.action = self.action.max(Action::Align);
+            self.action = self.action.max(Action::Wrap);
         }
     }
 

@@ -11,19 +11,18 @@ use ab_glyph::{Font, PxScale, ScaleFont};
 // use glyph_brush_layout::SectionGlyph;
 // use unicode_segmentation::GraphemeCursor;
 
-use crate::{fonts, rich, shaper, /*Align,*/ FontId, Glyph, Range, Vec2};
-use crate::{Environment, UpdateEnv};
+use crate::{fonts, rich, shaper, FontId, Glyph, Range, Vec2};
+use crate::{Align, Environment, UpdateEnv};
 
 mod text_runs;
 pub(crate) use text_runs::Run;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Ord, PartialOrd, Hash)]
 pub(crate) enum Action {
-    None,
-    Align,
-    Wrap,
-    Shape,
-    Runs,
+    None,  // do nothing
+    Wrap,  // do line-wrapping and alignment
+    Shape, // do text shaping and above
+    Runs,  // do splitting into runs, BIDI and above
 }
 
 impl Default for Action {
@@ -61,7 +60,7 @@ pub struct Text {
     glyph_runs: Vec<shaper::GlyphRun>,
     wrapped_runs: Vec<RunPart>,
     // Indexes of line-starts within wrapped_runs:
-    // lines: Vec<u32>,
+    lines: Vec<u32>,
     num_glyphs: usize,
 }
 
@@ -128,16 +127,8 @@ impl Text {
         let action = update.finish().max(self.action);
         match action {
             Action::None => (),
-            Action::Align => {
-                self.apply_alignment();
-            }
-            Action::Wrap => {
-                self.wrap_lines();
-                self.apply_alignment();
-            }
-            Action::Shape | Action::Runs => {
-                return true;
-            }
+            Action::Wrap => self.wrap_lines(),
+            Action::Shape | Action::Runs => return true,
         }
         self.action = Action::None;
         false
@@ -167,13 +158,7 @@ impl Text {
             self.wrap_lines();
         }
 
-        if action >= Action::Align {
-            self.apply_alignment();
-        }
-
         self.action = Action::None;
-
-        self.apply_alignment();
     }
 
     /// Produce a list of positioned glyphs
@@ -396,15 +381,31 @@ impl Text {
         #[derive(Default)]
         struct LineAdder {
             runs: Vec<RunPart>,
+            line_starts: Vec<u32>,
             line_start: usize,
+            line_len: f32,
             ascent: f32,
             descent: f32,
             line_gap: f32,
             longest: f32,
             caret: Vec2,
             num_glyphs: usize,
+            halign: Align,
+            width_bound: f32,
         }
         impl LineAdder {
+            fn new(run_capacity: usize, halign: Align, width_bound: f32) -> Self {
+                let runs = Vec::with_capacity(run_capacity);
+                let line_starts = vec![0];
+                LineAdder {
+                    runs,
+                    line_starts,
+                    halign,
+                    width_bound,
+                    ..Default::default()
+                }
+            }
+
             /// Does the current line have any content?
             fn is_empty(&self) -> bool {
                 self.runs[self.line_start..]
@@ -417,6 +418,8 @@ impl Text {
                 scale_font: &SF,
                 run_index: usize,
                 glyph_range: std::ops::Range<u32>,
+                advance: f32,
+                line_len: f32,
             ) {
                 // Adjust vertical position if necessary
                 let ascent = scale_font.ascent();
@@ -438,28 +441,65 @@ impl Text {
                     glyph_range: glyph_range.into(),
                     offset: self.caret,
                 });
+
+                self.caret.0 += advance;
+                self.line_len = line_len;
+            }
+
+            fn finish_line(&mut self) {
+                let offset = match self.halign {
+                    // TODO(bidi): Default depends on text direction
+                    // TODO: Stretch should mean justify
+                    Align::Default | Align::TL | Align::Stretch => 0.0,
+                    Align::Centre => 0.5 * (self.width_bound - self.line_len),
+                    Align::BR => self.width_bound - self.line_len,
+                };
+                if offset != 0.0 {
+                    for run in &mut self.runs[self.line_start..] {
+                        run.offset.0 += offset;
+                    }
+                }
+
+                self.caret.1 -= self.descent;
+                self.longest = self.longest.max(self.line_len);
             }
 
             fn new_line(&mut self, x: f32) {
+                self.finish_line();
                 self.line_start = self.runs.len();
+                self.line_starts.push(self.line_start as u32);
                 self.caret.0 = x;
-                self.caret.1 += self.line_gap - self.descent;
+                self.caret.1 += self.line_gap;
 
                 self.ascent = 0.0;
                 self.descent = 0.0;
                 self.line_gap = 0.0;
             }
 
-            fn finish(&mut self) {
+            // Returns: required dimensions
+            fn finish(&mut self, valign: Align, height_bound: f32) -> Vec2 {
                 // If any (even empty) run was added to the line, add v-space
                 if self.line_start != self.runs.len() {
-                    self.caret.1 -= self.descent;
+                    self.finish_line();
                 }
+
+                let height = self.caret.1;
+                let offset = match valign {
+                    Align::Default | Align::TL | Align::Stretch => 0.0, // nothing to do
+                    Align::Centre => 0.5 * (height_bound - height),
+                    Align::BR => height_bound - height,
+                };
+                if offset != 0.0 {
+                    for run in &mut self.runs {
+                        run.offset.1 += offset;
+                    }
+                }
+
+                Vec2(self.longest, height)
             }
         }
-        let mut line = LineAdder::default();
         // Use a crude estimate of the number of runs:
-        line.runs.reserve(self.raw_text_len() / 16);
+        let mut line = LineAdder::new(self.raw_text_len() / 16, self.env.halign, width_bound);
 
         for (run_index, run) in self.glyph_runs.iter().enumerate() {
             let font = fonts.get(run.font_id);
@@ -480,9 +520,7 @@ impl Text {
             if line_len <= width_bound {
                 // Short-cut: we can add the entire run.
                 let glyph_end = run.glyphs.len() as u32;
-                line.add_part(&scale_font, run_index, 0..glyph_end);
-                line.caret.0 += run.caret;
-                line.longest = line.longest.max(line_len);
+                line.add_part(&scale_font, run_index, 0..glyph_end, run.caret, line_len);
             } else {
                 // We require at least one line break.
 
@@ -514,9 +552,13 @@ impl Text {
                         break;
                     }
 
-                    line.add_part(&scale_font, run_index, glyph_start..glyph_end);
-                    line.caret.0 += run.caret;
-                    line.longest = line.longest.max(line_len);
+                    line.add_part(
+                        &scale_font,
+                        run_index,
+                        glyph_start..glyph_end,
+                        run.caret,
+                        line_len,
+                    );
 
                     // If we are already at the end of the run, stop. This
                     // should not happen on the first iteration.
@@ -532,25 +574,9 @@ impl Text {
             }
         }
 
-        line.finish();
+        self.required = line.finish(self.env.valign, self.env.bounds.1);
         self.wrapped_runs = line.runs;
-        self.required = Vec2(line.longest, line.caret.1);
+        self.lines = line.line_starts;
         self.num_glyphs = line.num_glyphs;
-    }
-
-    fn apply_alignment(&mut self) {
-        /*
-        // TODO: this aligns the whole block of text; we should align each line
-        self.offset.0 = match self.env.halign {
-            Align::Default | Align::TL | Align::Stretch => 0.0,
-            Align::Centre => (self.env.bounds.0 - self.required.0) / 2.0,
-            Align::BR => self.env.bounds.0 - self.required.0,
-        };
-        self.offset.1 = match self.env.valign {
-            Align::Default | Align::TL | Align::Stretch => 0.0,
-            Align::Centre => (self.env.bounds.1 - self.required.1) / 2.0,
-            Align::BR => self.env.bounds.1 - self.required.1,
-        };
-        */
     }
 }
