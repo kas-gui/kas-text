@@ -46,7 +46,8 @@ struct RunPart {
 
 #[derive(Clone, Copy, Debug)]
 struct Line {
-    start: u32, // index of first item of wrapped_runs
+    start: u32,       // index of first item of wrapped_runs
+    start_index: u32, // index in text
     bottom: f32,
 }
 
@@ -255,6 +256,184 @@ impl Text {
         None
     }
 
+    /// Yield a sequence of rectangles to highlight a given range, by lines
+    ///
+    /// Rectangles span to end and beginning of lines when wrapping lines.
+    ///
+    /// This locates the ends of a range as with [`Text::text_glyph_pos`], but
+    /// yields a separate rect for each "run" within this range (where "run" is
+    /// is a line or part of a line). Rects are represented by the top-left
+    /// vertex and the bottom-right vertex.
+    pub fn highlight_lines<R: Into<std::ops::Range<usize>>>(&self, range: R) -> Vec<(Vec2, Vec2)> {
+        assert!(self.action.is_none(), "kas-text::prepared::Text: not ready");
+        let range = range.into();
+        if range.len() == 0 {
+            return vec![];
+        }
+
+        let mut rects = Vec::with_capacity(self.lines.len());
+        let mut tl = Vec2::ZERO;
+
+        let mut iter = self.lines.iter();
+        let mut cur_line = if let Some(line) = iter.next() {
+            line
+        } else {
+            return vec![];
+        };
+        let mut next_line = iter.next();
+        while let Some(line) = next_line {
+            if line.start_index as usize >= range.start {
+                break;
+            }
+            next_line = iter.next();
+            tl.1 = cur_line.bottom;
+            cur_line = line;
+        }
+
+        if range.start > cur_line.start_index as usize {
+            let start = cur_line.start as usize;
+            let end = next_line
+                .map(|line| line.start as usize)
+                .unwrap_or(self.wrapped_runs.len());
+            for run_part in &self.wrapped_runs[start..end] {
+                let glyph_run = &self.glyph_runs[run_part.glyph_run as usize];
+
+                if range.start <= glyph_run.end_index as usize {
+                    let mut pos = glyph_run.caret;
+                    if range.start < glyph_run.end_index as usize {
+                        pos = 0.0;
+                        for glyph in &glyph_run.glyphs[run_part.glyph_range.to_std()] {
+                            if glyph.index as usize > range.start {
+                                break;
+                            }
+                            pos = glyph.position.0;
+                        }
+                    }
+                    tl.0 = run_part.offset.0 + pos;
+                    break;
+                }
+            }
+        }
+
+        while let Some(line) = next_line {
+            if range.end <= line.start_index as usize {
+                break;
+            }
+
+            let br = Vec2(self.env.bounds.0, cur_line.bottom);
+            rects.push((tl, br));
+
+            tl = Vec2(0.0, cur_line.bottom);
+            cur_line = line;
+            next_line = iter.next();
+        }
+
+        if range.end > cur_line.start as usize {
+            let mut br = Vec2(self.env.bounds.0, cur_line.bottom);
+            let start = cur_line.start as usize;
+            let end = next_line
+                .map(|line| line.start as usize)
+                .unwrap_or(self.wrapped_runs.len());
+            for run_part in &self.wrapped_runs[start..end] {
+                let glyph_run = &self.glyph_runs[run_part.glyph_run as usize];
+
+                if range.end <= glyph_run.end_index as usize {
+                    let mut pos = glyph_run.caret;
+                    if range.end < glyph_run.end_index as usize {
+                        let glyph_range = run_part.glyph_range.to_std();
+                        for glyph in glyph_run.glyphs[glyph_range].iter().rev() {
+                            if range.end > glyph.index as usize {
+                                break;
+                            }
+                            pos = glyph.position.0;
+                        }
+                    }
+                    br.0 = run_part.offset.0 + pos;
+                    break;
+                }
+            }
+            rects.push((tl, br));
+        }
+
+        rects
+    }
+
+    /// Yield a sequence of rectangles to highlight a given range, by runs
+    ///
+    /// Rectangles tightly fit each "run" (piece) of text highlighted.
+    ///
+    /// This locates the ends of a range as with [`Text::text_glyph_pos`], but
+    /// yields a separate rect for each "run" within this range (where "run" is
+    /// is a line or part of a line). Rects are represented by the top-left
+    /// vertex and the bottom-right vertex.
+    pub fn highlight_runs<R: Into<std::ops::Range<usize>>>(&self, range: R) -> Vec<(Vec2, Vec2)> {
+        assert!(self.action.is_none(), "kas-text::prepared::Text: not ready");
+        let range = range.into();
+        if range.len() == 0 {
+            return vec![];
+        }
+
+        let mut rects = Vec::with_capacity(self.wrapped_runs.len());
+        for run_part in &self.wrapped_runs {
+            let glyph_run = &self.glyph_runs[run_part.glyph_run as usize];
+
+            let end_index = glyph_run
+                .glyphs
+                .get(run_part.glyph_range.end as usize)
+                .map(|glyph| glyph.index)
+                .unwrap_or(glyph_run.end_index) as usize;
+            if end_index <= range.start {
+                continue;
+            }
+
+            let glyph_range = run_part.glyph_range.to_std();
+
+            let start;
+            let mut start_pos = 'l1: loop {
+                let mut pos = Vec2::ZERO;
+                for (i, glyph) in glyph_run.glyphs[glyph_range.clone()].iter().enumerate() {
+                    if glyph.index as usize > range.start {
+                        start = i;
+                        break 'l1 pos;
+                    }
+                    pos = glyph.position;
+                }
+                start = glyph_range.end;
+                break pos;
+            };
+
+            let mut stop = false;
+            let mut end_pos = if end_index <= range.end {
+                Vec2(glyph_run.caret, 0.0)
+            } else {
+                'l2: loop {
+                    let mut pos = start_pos;
+                    for glyph in &glyph_run.glyphs[start..glyph_range.end] {
+                        if glyph.index as usize > range.end {
+                            stop = true;
+                            break 'l2 pos;
+                        }
+                        pos = glyph.position;
+                    }
+                    break Vec2(glyph_run.caret, 0.0);
+                }
+            };
+
+            let sf = fonts()
+                .get(glyph_run.font_id)
+                .into_scaled(glyph_run.font_scale);
+
+            start_pos.1 -= sf.ascent();
+            end_pos.1 -= sf.descent();
+            rects.push((run_part.offset + start_pos, run_part.offset + end_pos));
+
+            if stop {
+                break;
+            }
+        }
+        rects
+    }
+
     /// Find the text index for the glyph nearest the given `pos`
     ///
     /// This includes the index immediately after the last glyph, thus
@@ -315,6 +494,7 @@ impl Text {
             runs: Vec<RunPart>,
             line_starts: Vec<Line>,
             line_start: usize,
+            start_index: u32,
             line_len: f32,
             ascent: f32,
             descent: f32,
@@ -349,7 +529,12 @@ impl Text {
                 run_index: usize,
                 glyph_range: std::ops::Range<u32>,
                 line_len: f32,
+                start_index: u32,
             ) {
+                if self.is_empty() {
+                    self.start_index = start_index;
+                }
+
                 // Adjust vertical position if necessary
                 let ascent = scale_font.ascent();
                 if ascent > self.ascent {
@@ -405,6 +590,7 @@ impl Text {
                 self.longest = self.longest.max(self.line_len);
                 self.line_starts.push(Line {
                     start: self.line_start as u32,
+                    start_index: self.start_index,
                     bottom: self.caret.1,
                 });
             }
@@ -464,7 +650,8 @@ impl Text {
             if !justify && line_len <= width_bound {
                 // Short-cut: we can add the entire run.
                 let glyph_end = run.glyphs.len() as u32;
-                line.add_part(&scale_font, run_index, 0..glyph_end, line_len);
+                let start_index = run.glyphs[0].index;
+                line.add_part(&scale_font, run_index, 0..glyph_end, line_len, start_index);
                 line.caret.0 += run.caret;
             } else {
                 // We require at least one line break.
@@ -506,7 +693,14 @@ impl Text {
                     }
 
                     if add_run {
-                        line.add_part(&scale_font, run_index, glyph_start..glyph_end, line_len);
+                        let start_index = run.glyphs[glyph_start as usize].index;
+                        line.add_part(
+                            &scale_font,
+                            run_index,
+                            glyph_start..glyph_end,
+                            line_len,
+                            start_index,
+                        );
                     }
 
                     // If we are already at the end of the run, stop. This
