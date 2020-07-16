@@ -5,34 +5,6 @@
 
 //! KAS Rich-Text library — simple data types
 
-/// Alignment of contents
-///
-/// Note that alignment information is often passed as a `(horiz, vert)` pair.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Ord, PartialOrd, Hash)]
-pub enum Align {
-    /// Default alignment
-    ///
-    /// This is context dependent: for things that want to stretch it means
-    /// stretch, for things which don't (text), it means align-to-start.
-    Default,
-    /// Align to top / left
-    TL,
-    /// Align to centre
-    Centre,
-    /// Align to bottom / right
-    BR,
-    /// Stretch to fill space
-    ///
-    /// For text, this is known as "justified alignment".
-    Stretch,
-}
-
-impl Default for Align {
-    fn default() -> Self {
-        Align::Default
-    }
-}
-
 /// 2D size over `f32`
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Vec2(pub f32, pub f32);
@@ -159,18 +131,23 @@ pub struct Range {
 
 impl Range {
     /// The start, as `usize`
-    pub fn start(&self) -> usize {
+    pub fn start(self) -> usize {
         self.start as usize
     }
 
     /// The end, as `usize`
-    pub fn end(&self) -> usize {
+    pub fn end(self) -> usize {
         self.end as usize
     }
 
-    /// True if the given value is contained
-    pub fn contains(&self, value: usize) -> bool {
-        self.start as usize <= value && value < self.end as usize
+    /// True if the given value is contained, inclusive of end points
+    pub fn includes(self, value: usize) -> bool {
+        self.start as usize <= value && value <= self.end as usize
+    }
+
+    /// Convert to a standard range
+    pub fn to_std(self) -> std::ops::Range<usize> {
+        (self.start as usize)..(self.end as usize)
     }
 }
 
@@ -258,6 +235,15 @@ impl<T> std::ops::IndexMut<Range> for [T] {
 impl From<Range> for std::ops::Range<usize> {
     fn from(range: Range) -> std::ops::Range<usize> {
         (range.start as usize)..(range.end as usize)
+    }
+}
+
+impl From<std::ops::Range<u32>> for Range {
+    fn from(range: std::ops::Range<u32>) -> Range {
+        Range {
+            start: range.start,
+            end: range.end,
+        }
     }
 }
 

@@ -5,7 +5,10 @@
 
 //! KAS Rich-Text library
 
-pub use glyph_brush_layout::SectionGlyph;
+pub use ab_glyph::PxScale;
+
+mod env;
+pub use env::*;
 
 mod data;
 pub use data::*;
@@ -15,3 +18,6 @@ pub use fonts::*;
 
 pub mod prepared;
 pub mod rich;
+
+pub(crate) mod shaper;
+pub use shaper::Glyph;

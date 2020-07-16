@@ -61,7 +61,7 @@ impl FontLibrary {
     pub fn get<I: Into<FontId>>(&self, id: I) -> Font {
         let fonts = self.fonts.read().unwrap();
         let id = id.into();
-        assert!(id.get() < fonts.len(), "FontLibrary: invalid FontId!");
+        assert!(id.get() < fonts.len(), "FontLibrary: invalid {:?}!", id);
         let font: &FontRef<'static> = &fonts[id.get()];
         // Safety: elements of self.fonts are never dropped or modified
         unsafe { extend_lifetime(font) }
