@@ -140,9 +140,9 @@ impl Range {
         self.end as usize
     }
 
-    /// True if the given value is contained
-    pub fn contains(self, value: usize) -> bool {
-        self.start as usize <= value && value < self.end as usize
+    /// True if the given value is contained, inclusive of end points
+    pub fn includes(self, value: usize) -> bool {
+        self.start as usize <= value && value <= self.end as usize
     }
 
     /// Convert to a standard range
