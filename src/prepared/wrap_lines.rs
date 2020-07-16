@@ -31,149 +31,6 @@ impl Text {
         // Justified text requires adding each word separately:
         let justify = self.env.halign == Align::Stretch;
 
-        #[derive(Default)]
-        struct LineAdder {
-            runs: Vec<RunPart>,
-            lines: Vec<Line>,
-            line_start: usize,
-            text_range: Option<Range>,
-            line_len: f32,
-            ascent: f32,
-            descent: f32,
-            line_gap: f32,
-            longest: f32,
-            caret: Vec2,
-            num_glyphs: usize,
-            halign: Align,
-            width_bound: f32,
-        }
-        impl LineAdder {
-            fn new(run_capacity: usize, halign: Align, width_bound: f32) -> Self {
-                let runs = Vec::with_capacity(run_capacity);
-                LineAdder {
-                    runs,
-                    halign,
-                    width_bound,
-                    ..Default::default()
-                }
-            }
-
-            /// Does the current line have any content?
-            fn is_empty(&self) -> bool {
-                self.runs[self.line_start..]
-                    .iter()
-                    .all(|run| run.glyph_range.len() == 0)
-            }
-
-            fn add_part<F: Font, SF: ScaleFont<F>>(
-                &mut self,
-                scale_font: &SF,
-                run_index: usize,
-                glyph_range: std::ops::Range<u32>,
-                line_len: f32,
-                mut text_range: Range,
-            ) {
-                if let Some(range) = self.text_range {
-                    text_range.start = range.start;
-                }
-                self.text_range = Some(text_range);
-
-                // Adjust vertical position if necessary
-                let ascent = scale_font.ascent();
-                if ascent > self.ascent {
-                    let extra = ascent - self.ascent;
-                    for run in &mut self.runs[self.line_start..] {
-                        run.offset.1 += extra;
-                    }
-                    self.caret.1 += extra;
-                    self.ascent = ascent;
-                }
-
-                self.descent = self.descent.min(scale_font.descent());
-                self.line_gap = self.line_gap.max(scale_font.line_gap());
-
-                self.num_glyphs += glyph_range.len();
-                self.runs.push(RunPart {
-                    glyph_run: run_index as u32,
-                    glyph_range: glyph_range.into(),
-                    offset: self.caret,
-                });
-
-                self.line_len = line_len;
-            }
-
-            fn finish_line(&mut self) {
-                let offset = match self.halign {
-                    // TODO(bidi): Default and Stretch depend on text direction
-                    Align::Default | Align::TL => 0.0,
-                    Align::Centre => 0.5 * (self.width_bound - self.line_len),
-                    Align::BR => self.width_bound - self.line_len,
-                    Align::Stretch => {
-                        // Justify text: expand the gaps between runs
-                        // We should have at least one run, so subtraction won't wrap:
-                        let num_gaps = self.runs.len() - self.line_start - 1;
-                        let per_gap = (self.width_bound - self.line_len) / (num_gaps as f32);
-
-                        let mut i = 1;
-                        for run in &mut self.runs[(self.line_start + 1)..] {
-                            run.offset.0 += per_gap * i as f32;
-                            i += 1;
-                        }
-
-                        0.0 // do not offset below
-                    }
-                };
-                if offset != 0.0 {
-                    for run in &mut self.runs[self.line_start..] {
-                        run.offset.0 += offset;
-                    }
-                }
-
-                let top = self.caret.1 - self.ascent;
-                self.caret.1 -= self.descent;
-                self.longest = self.longest.max(self.line_len);
-                self.lines.push(Line {
-                    text_range: self.text_range.unwrap(),
-                    run_range: (self.line_start..self.runs.len()).into(),
-                    top,
-                    bottom: self.caret.1,
-                });
-                self.text_range = None;
-            }
-
-            fn new_line(&mut self, x: f32) {
-                self.finish_line();
-                self.line_start = self.runs.len();
-                self.caret.0 = x;
-                self.caret.1 += self.line_gap;
-
-                self.ascent = 0.0;
-                self.descent = 0.0;
-                self.line_gap = 0.0;
-            }
-
-            // Returns: required dimensions
-            fn finish(&mut self, valign: Align, height_bound: f32) -> Vec2 {
-                // If any (even empty) run was added to the line, add v-space
-                if self.line_start != self.runs.len() {
-                    self.finish_line();
-                }
-
-                let height = self.caret.1;
-                let offset = match valign {
-                    Align::Default | Align::TL | Align::Stretch => 0.0, // nothing to do
-                    Align::Centre => 0.5 * (height_bound - height),
-                    Align::BR => height_bound - height,
-                };
-                if offset != 0.0 {
-                    for run in &mut self.runs {
-                        run.offset.1 += offset;
-                    }
-                }
-
-                Vec2(self.longest, height)
-            }
-        }
         // Use a crude estimate of the number of runs:
         let mut line = LineAdder::new(self.raw_text_len() / 16, self.env.halign, width_bound);
 
@@ -268,5 +125,149 @@ impl Text {
         self.wrapped_runs = line.runs;
         self.lines = line.lines;
         self.num_glyphs = line.num_glyphs;
+    }
+}
+
+#[derive(Default)]
+struct LineAdder {
+    runs: Vec<RunPart>,
+    lines: Vec<Line>,
+    line_start: usize,
+    text_range: Option<Range>,
+    line_len: f32,
+    ascent: f32,
+    descent: f32,
+    line_gap: f32,
+    longest: f32,
+    caret: Vec2,
+    num_glyphs: usize,
+    halign: Align,
+    width_bound: f32,
+}
+impl LineAdder {
+    fn new(run_capacity: usize, halign: Align, width_bound: f32) -> Self {
+        let runs = Vec::with_capacity(run_capacity);
+        LineAdder {
+            runs,
+            halign,
+            width_bound,
+            ..Default::default()
+        }
+    }
+
+    /// Does the current line have any content?
+    fn is_empty(&self) -> bool {
+        self.runs[self.line_start..]
+            .iter()
+            .all(|run| run.glyph_range.len() == 0)
+    }
+
+    fn add_part<F: Font, SF: ScaleFont<F>>(
+        &mut self,
+        scale_font: &SF,
+        run_index: usize,
+        glyph_range: std::ops::Range<u32>,
+        line_len: f32,
+        mut text_range: Range,
+    ) {
+        if let Some(range) = self.text_range {
+            text_range.start = range.start;
+        }
+        self.text_range = Some(text_range);
+
+        // Adjust vertical position if necessary
+        let ascent = scale_font.ascent();
+        if ascent > self.ascent {
+            let extra = ascent - self.ascent;
+            for run in &mut self.runs[self.line_start..] {
+                run.offset.1 += extra;
+            }
+            self.caret.1 += extra;
+            self.ascent = ascent;
+        }
+
+        self.descent = self.descent.min(scale_font.descent());
+        self.line_gap = self.line_gap.max(scale_font.line_gap());
+
+        self.num_glyphs += glyph_range.len();
+        self.runs.push(RunPart {
+            glyph_run: run_index as u32,
+            glyph_range: glyph_range.into(),
+            offset: self.caret,
+        });
+
+        self.line_len = line_len;
+    }
+
+    fn finish_line(&mut self) {
+        let offset = match self.halign {
+            // TODO(bidi): Default and Stretch depend on text direction
+            Align::Default | Align::TL => 0.0,
+            Align::Centre => 0.5 * (self.width_bound - self.line_len),
+            Align::BR => self.width_bound - self.line_len,
+            Align::Stretch => {
+                // Justify text: expand the gaps between runs
+                // We should have at least one run, so subtraction won't wrap:
+                let num_gaps = self.runs.len() - self.line_start - 1;
+                let per_gap = (self.width_bound - self.line_len) / (num_gaps as f32);
+
+                let mut i = 1;
+                for run in &mut self.runs[(self.line_start + 1)..] {
+                    run.offset.0 += per_gap * i as f32;
+                    i += 1;
+                }
+
+                0.0 // do not offset below
+            }
+        };
+        if offset != 0.0 {
+            for run in &mut self.runs[self.line_start..] {
+                run.offset.0 += offset;
+            }
+        }
+
+        let top = self.caret.1 - self.ascent;
+        self.caret.1 -= self.descent;
+        self.longest = self.longest.max(self.line_len);
+        self.lines.push(Line {
+            text_range: self.text_range.unwrap(),
+            run_range: (self.line_start..self.runs.len()).into(),
+            top,
+            bottom: self.caret.1,
+        });
+        self.text_range = None;
+    }
+
+    fn new_line(&mut self, x: f32) {
+        self.finish_line();
+        self.line_start = self.runs.len();
+        self.caret.0 = x;
+        self.caret.1 += self.line_gap;
+
+        self.ascent = 0.0;
+        self.descent = 0.0;
+        self.line_gap = 0.0;
+    }
+
+    // Returns: required dimensions
+    fn finish(&mut self, valign: Align, height_bound: f32) -> Vec2 {
+        // If any (even empty) run was added to the line, add v-space
+        if self.line_start != self.runs.len() {
+            self.finish_line();
+        }
+
+        let height = self.caret.1;
+        let offset = match valign {
+            Align::Default | Align::TL | Align::Stretch => 0.0, // nothing to do
+            Align::Centre => 0.5 * (height_bound - height),
+            Align::BR => height_bound - height,
+        };
+        if offset != 0.0 {
+            for run in &mut self.runs {
+                run.offset.1 += offset;
+            }
+        }
+
+        Vec2(self.longest, height)
     }
 }
