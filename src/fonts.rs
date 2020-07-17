@@ -5,7 +5,7 @@
 
 //! KAS Rich-Text library — fonts
 
-use ab_glyph::{FontRef, PxScale, PxScaleFont};
+use ab_glyph::{FontRef, InvalidFont, PxScale, PxScaleFont};
 use font_kit::source::SystemSource;
 use font_kit::{family_name::FamilyName, handle::Handle, properties::Properties};
 use std::collections::HashMap;
@@ -31,6 +31,22 @@ impl FontId {
 // Note: FontRef itself is too large to clone cheaply, so use a reference to it
 pub type Font = &'static FontRef<'static>;
 
+struct FontStore<'a> {
+    ab_glyph: FontRef<'a>,
+    #[cfg(feature = "harfbuzz_rs")]
+    harfbuzz: harfbuzz_rs::Shared<harfbuzz_rs::Face<'a>>,
+}
+
+impl<'a> FontStore<'a> {
+    fn new(data: &'a [u8], index: u32) -> Result<Self, InvalidFont> {
+        Ok(FontStore {
+            ab_glyph: FontRef::try_from_slice_and_index(data, index)?,
+            #[cfg(feature = "harfbuzz_rs")]
+            harfbuzz: harfbuzz_rs::Face::from_bytes(data, index).into(),
+        })
+    }
+}
+
 /// Library of loaded fonts
 // Note: std::pin::Pin does not help us here: Unpin is implemented for both u8
 // and FontRef, and we never give the user a `&mut FontLibrary` anyway.
@@ -40,7 +56,7 @@ pub struct FontLibrary {
     data: RwLock<HashMap<PathBuf, Box<[u8]>>>,
     // Fonts defined over the above data (see safety note).
     // Additional safety: boxed so that instances do not move
-    fonts: RwLock<Vec<Box<FontRef<'static>>>>,
+    fonts: RwLock<Vec<Box<FontStore<'static>>>>,
 }
 
 // public API
@@ -49,7 +65,7 @@ impl FontLibrary {
     pub fn get(&self, id: FontId) -> Font {
         let fonts = self.fonts.read().unwrap();
         assert!(id.get() < fonts.len(), "FontLibrary: invalid {:?}!", id);
-        let font: &FontRef<'static> = &fonts[id.get()];
+        let font: &FontRef<'static> = &fonts[id.get()].ab_glyph;
         // Safety: elements of self.fonts are never dropped or modified
         unsafe { extend_lifetime(font) }
     }
@@ -57,6 +73,24 @@ impl FontLibrary {
     /// Get a scaled font
     pub fn get_scaled(&self, font_id: FontId, font_scale: PxScale) -> PxScaleFont<Font> {
         ab_glyph::Font::into_scaled(self.get(font_id), font_scale)
+    }
+
+    /// Get a HarfBuzz font face
+    ///
+    /// This actually makes an instance on usage, which may be inefficient(?).
+    #[cfg(feature = "harfbuzz_rs")]
+    pub fn get_harfbuzz(
+        &self,
+        id: FontId,
+        scale: PxScale,
+    ) -> harfbuzz_rs::Owned<harfbuzz_rs::Font<'static>> {
+        let fonts = self.fonts.read().unwrap();
+        assert!(id.get() < fonts.len(), "FontLibrary: invalid {:?}!", id);
+        let face = fonts[id.get()].harfbuzz.clone();
+        let mut font = harfbuzz_rs::Font::new(face);
+        // TODO: is this conversion correct?
+        font.set_ppem(scale.x as u32, scale.y as u32);
+        font
     }
 
     /// Get a list of all fonts
@@ -68,7 +102,7 @@ impl FontLibrary {
         // fonts are never modified or freed before program exit.
         fonts
             .iter()
-            .map(|font| unsafe { extend_lifetime(&**font) })
+            .map(|font| unsafe { extend_lifetime(&font.ab_glyph) })
             .collect()
     }
 
@@ -107,10 +141,11 @@ impl FontLibrary {
         drop(data);
 
         // 3rd lock: insert into font list
-        let font = FontRef::try_from_slice_and_index(slice, index)?;
+        let store = FontStore::new(slice, index)?;
         let mut fonts = self.fonts.write().unwrap();
         let id = FontId(fonts.len() as u32);
-        fonts.push(Box::new(font));
+        fonts.push(Box::new(store));
+
         Ok(id)
     }
 }
