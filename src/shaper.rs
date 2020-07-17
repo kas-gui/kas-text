@@ -72,7 +72,7 @@ pub(crate) fn shape(
     text: &str,
     run: &prepared::Run,
 ) -> GlyphRun {
-    let scale_font = fonts().get(font_id).into_scaled(font_scale);
+    let scale_font = fonts().get_scaled(font_id, font_scale);
 
     if !(scale_font.scale().x >= 0.0 || scale_font.scale().y >= 0.0) {
         return GlyphRun {

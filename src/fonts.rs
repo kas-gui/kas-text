@@ -5,7 +5,7 @@
 
 //! KAS Rich-Text library — fonts
 
-use ab_glyph::FontRef;
+use ab_glyph::{FontRef, PxScale, PxScaleFont};
 use font_kit::source::SystemSource;
 use font_kit::{family_name::FamilyName, handle::Handle, properties::Properties};
 use std::collections::HashMap;
@@ -46,13 +46,17 @@ pub struct FontLibrary {
 // public API
 impl FontLibrary {
     /// Get a font from its identifier
-    pub fn get<I: Into<FontId>>(&self, id: I) -> Font {
+    pub fn get(&self, id: FontId) -> Font {
         let fonts = self.fonts.read().unwrap();
-        let id = id.into();
         assert!(id.get() < fonts.len(), "FontLibrary: invalid {:?}!", id);
         let font: &FontRef<'static> = &fonts[id.get()];
         // Safety: elements of self.fonts are never dropped or modified
         unsafe { extend_lifetime(font) }
+    }
+
+    /// Get a scaled font
+    pub fn get_scaled(&self, font_id: FontId, font_scale: PxScale) -> PxScaleFont<Font> {
+        ab_glyph::Font::into_scaled(self.get(font_id), font_scale)
     }
 
     /// Get a list of all fonts
