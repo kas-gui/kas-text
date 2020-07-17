@@ -42,6 +42,23 @@ impl Action {
 /// Text is laid out for display in a box with the given size bounds.
 ///
 /// The type can be default-constructed with no text.
+///
+/// The text range is `0..self.text_len()`. Any index within this range
+/// (inclusive of end point) is a code-point boundary is valid for use in all
+/// functions taking an index. (Most of the time, non-code-point boundaries
+/// are also accepted.)
+///
+/// Navigating to the start or end of a line can be done with [`Text::find_line`].
+///
+/// The functions [`Text::nav_left`] and [`Text::nav_right`] allow navigating
+/// one *glyph* left or right. This may not be what you want: ligatures count
+/// as a single glyph and combining diacritics may count as separate glyphs.
+/// Alternatively, one may use a library such as `unicode-segmentation` which
+/// provides a `GraphemeCursor` to step back/forward one "grapheme".
+///
+/// Navigating "up" and "down" is trickier; use [`Text::text_glyph_pos`]
+/// to get the position of the cursor, [`Text::find_line`] to get the line
+/// number, then [`Text::line_index_nearest`] to find the new index.
 #[derive(Clone, Debug, Default)]
 pub struct Text {
     env: Environment,
@@ -78,11 +95,11 @@ impl Text {
         }
     }
 
-    /// Length of raw text
+    /// Length of text
     ///
-    /// It is valid to reference text within the range `0..raw_text_len()`,
+    /// It is valid to reference text within the range `0..text_len()`,
     /// even if not all text within this range will be displayed (due to runs).
-    pub fn raw_text_len(&self) -> usize {
+    pub fn text_len(&self) -> usize {
         self.text.len()
     }
 
@@ -195,6 +212,119 @@ impl Text {
         self.required
     }
 
+    /// Get the number of lines
+    pub fn num_lines(&self) -> usize {
+        self.lines.len()
+    }
+
+    /// Find the line containing text `index`
+    ///
+    /// Returns the line number and the text-range of the line.
+    ///
+    /// Returns `None` in case `index` does not line on or at the end of a line
+    /// (which means either that `index` is beyond the end of the text or that
+    /// `index` is within a mult-byte line break).
+    pub fn find_line(&self, index: usize) -> Option<(usize, std::ops::Range<usize>)> {
+        assert!(self.action.is_none(), "kas-text::prepared::Text: not ready");
+        for (n, line) in self.lines.iter().enumerate() {
+            if line.text_range.includes(index) {
+                return Some((n, line.text_range.to_std()));
+            }
+        }
+        None
+    }
+
+    /// Get the range of a line, by line number
+    pub fn line_range(&self, line: usize) -> Option<std::ops::Range<usize>> {
+        assert!(self.action.is_none(), "kas-text::prepared::Text: not ready");
+        self.lines.get(line).map(|line| line.text_range.to_std())
+    }
+
+    /// Find the next glyph index to the left of the given glyph
+    ///
+    /// Warning: this counts *glyphs*, which makes the result dependent on
+    /// text shaping. Combining diacritics *may* count as discrete glyphs.
+    /// Ligatures will count as a single glyph.
+    pub fn nav_left(&self, index: usize) -> usize {
+        assert!(self.action.is_none(), "kas-text::prepared::Text: not ready");
+
+        for (ri, glyph_run) in self.glyph_runs.iter().enumerate() {
+            if index > glyph_run.range.end() {
+                continue;
+            }
+
+            let mut gi = glyph_run.glyphs.len();
+            if index < glyph_run.range.end() {
+                gi = 0;
+                for (i, glyph) in glyph_run.glyphs.iter().enumerate() {
+                    if glyph.index as usize > index {
+                        break;
+                    }
+                    gi = i;
+                }
+            }
+
+            if gi > 0 {
+                return glyph_run.glyphs[gi - 1].index as usize;
+            } else if ri > 0 {
+                // We already know index > glyph_run.range.end()
+                return self.glyph_runs[ri - 1].range.end();
+            } else {
+                // we can't go left of the first run!
+                return 0;
+            }
+        }
+
+        // We are beyond the end.
+        self.text.len()
+    }
+
+    /// Find the next glyph index to the right of the given glyph
+    ///
+    /// Warning: this counts *glyphs*, which makes the result dependent on
+    /// text shaping. Combining diacritics *may* count as discrete glyphs.
+    /// Ligatures will count as a single glyph.
+    pub fn nav_right(&self, index: usize) -> usize {
+        assert!(self.action.is_none(), "kas-text::prepared::Text: not ready");
+
+        for (mut ri, glyph_run) in self.glyph_runs.iter().enumerate().rev() {
+            if index < glyph_run.range.start() {
+                continue;
+            }
+
+            if index < glyph_run.range.end() {
+                let mut gi = 0;
+                for (i, glyph) in glyph_run.glyphs.iter().enumerate() {
+                    if glyph.index as usize > index {
+                        break;
+                    }
+                    gi = i;
+                }
+
+                gi += 1;
+                if gi < glyph_run.glyphs.len() {
+                    return glyph_run.glyphs[gi].index as usize;
+                } else {
+                    return glyph_run.range.end();
+                }
+            }
+
+            if index == glyph_run.range.end() {
+                ri += 1;
+                if ri < self.glyph_runs.len() {
+                    // We already know index < glyph_run.range.start()
+                    return self.glyph_runs[ri].range.start();
+                } else {
+                    return self.text.len();
+                }
+            }
+        }
+
+        // There should not be any position to the left of the first run.
+        // (If this *is* possible, then certain other nav functions need fixing.)
+        panic!("kas-text bug!");
+    }
+
     /// Find the starting position (top-left) of the glyph at the given index
     ///
     /// Returns `Some(pos, ascent, descent)` on success, where `pos.1 - ascent`
@@ -214,18 +344,12 @@ impl Text {
         for run_part in &self.wrapped_runs {
             let glyph_run = &self.glyph_runs[run_part.glyph_run as usize];
 
-            let end_index = glyph_run
-                .glyphs
-                .get(run_part.glyph_range.end as usize)
-                .map(|glyph| glyph.index)
-                .unwrap_or(glyph_run.range.end) as usize;
-            if index > end_index {
+            if index > glyph_run.range.end() {
                 continue;
             }
-
             let mut pos = Vec2(glyph_run.caret, 0.0);
-            if index < end_index {
-                for glyph in &glyph_run.glyphs[run_part.glyph_range.to_std()] {
+            if index < glyph_run.range.end() {
+                for glyph in &glyph_run.glyphs[run_part.glyph_range.start()..] {
                     if glyph.index as usize > index {
                         break;
                     }
@@ -240,6 +364,61 @@ impl Text {
             return Some((pos, sf.ascent(), sf.descent()));
         }
         None
+    }
+
+    /// Find the text index for the glyph nearest the given `pos`
+    ///
+    /// This includes the index immediately after the last glyph, thus
+    /// `result ≤ text.len()`.
+    ///
+    /// Note: if the font's rect does not start at the origin, then its top-left
+    /// coordinate should first be subtracted from `pos`.
+    pub fn text_index_nearest(&self, pos: Vec2) -> usize {
+        let mut n = 0;
+        for (i, line) in self.lines.iter().enumerate() {
+            if line.top > pos.1 {
+                break;
+            }
+            n = i;
+        }
+        // We now know that `n` is a valid line (we must have at least one).
+        self.line_index_nearest(n, pos.0).unwrap()
+    }
+
+    /// Find the text index nearest horizontal-coordinate `x` on `line`
+    ///
+    /// This is similar to [`Text::text_index_nearest`], but allows the line to
+    /// be specified explicitly. Returns `None` only on invalid `line`.
+    pub fn line_index_nearest(&self, line: usize, x: f32) -> Option<usize> {
+        if line >= self.lines.len() {
+            return None;
+        }
+        let line = self.lines[line];
+        let run_range = line.run_range.to_std();
+
+        let mut best = line.text_range.start;
+        let mut best_dist = f32::INFINITY;
+
+        for run_part in &self.wrapped_runs[run_range] {
+            let glyph_run = &self.glyph_runs[run_part.glyph_run as usize];
+            let rel_pos = x - run_part.offset.0;
+
+            for glyph in &glyph_run.glyphs[run_part.glyph_range.to_std()] {
+                let dist = (glyph.position.0 - rel_pos).abs();
+                if dist < best_dist {
+                    best = glyph.index;
+                    best_dist = dist;
+                }
+            }
+
+            let dist = (glyph_run.caret - rel_pos).abs();
+            if dist < best_dist {
+                best = glyph_run.range.end;
+                best_dist = dist;
+            }
+        }
+
+        Some(best as usize)
     }
 
     /// Yield a sequence of rectangles to highlight a given range, by lines
@@ -412,52 +591,5 @@ impl Text {
             }
         }
         rects
-    }
-
-    /// Find the text index for the glyph nearest the given `pos`
-    ///
-    /// This includes the index immediately after the last glyph, thus
-    /// `result ≤ text.len()`.
-    ///
-    /// Note: if the font's rect does not start at the origin, then its top-left
-    /// coordinate should first be subtracted from `pos`.
-    pub fn text_index_nearest(&self, pos: Vec2) -> usize {
-        let mut start = 0;
-        let mut iter = self.lines.iter();
-        while let Some(line) = iter.next() {
-            // Save, so that we use last line if pos lies below last
-            start = line.run_range.start();
-            if pos.1 <= line.bottom {
-                break;
-            }
-        }
-        let end = iter
-            .next()
-            .map(|line| line.run_range.start())
-            .unwrap_or(self.wrapped_runs.len());
-
-        let mut best = 0;
-        let mut best_dist = f32::INFINITY;
-
-        for run_part in &self.wrapped_runs[start..end] {
-            let glyph_run = &self.glyph_runs[run_part.glyph_run as usize];
-            let rel_pos = pos.0 - run_part.offset.0;
-
-            for glyph in &glyph_run.glyphs[run_part.glyph_range.to_std()] {
-                let dist = (glyph.position.0 - rel_pos).abs();
-                if dist < best_dist {
-                    best = glyph.index;
-                    best_dist = dist;
-                }
-            }
-
-            let dist = (glyph_run.caret - rel_pos).abs();
-            if dist < best_dist {
-                best = glyph_run.range.end;
-                best_dist = dist;
-            }
-        }
-
-        best as usize
     }
 }

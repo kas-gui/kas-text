@@ -32,7 +32,7 @@ impl Text {
         let justify = self.env.halign == Align::Stretch;
 
         // Use a crude estimate of the number of runs:
-        let mut line = LineAdder::new(self.raw_text_len() / 16, self.env.halign, width_bound);
+        let mut line = LineAdder::new(self.text_len() / 16, self.env.halign, width_bound);
 
         for (run_index, run) in self.glyph_runs.iter().enumerate() {
             let font = fonts.get(run.font_id);

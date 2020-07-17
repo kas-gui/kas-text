@@ -27,18 +27,6 @@ impl FontId {
     }
 }
 
-impl From<FontId> for glyph_brush_layout::FontId {
-    fn from(id: FontId) -> glyph_brush_layout::FontId {
-        glyph_brush_layout::FontId(id.get())
-    }
-}
-
-impl From<glyph_brush_layout::FontId> for FontId {
-    fn from(id: glyph_brush_layout::FontId) -> FontId {
-        FontId(id.0 as u32)
-    }
-}
-
 /// Type-def: the type of fonts we provide
 // Note: FontRef itself is too large to clone cheaply, so use a reference to it
 pub type Font = &'static FontRef<'static>;
