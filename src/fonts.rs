@@ -27,9 +27,53 @@ impl FontId {
     }
 }
 
-/// Type-def: the type of fonts we provide
-// Note: FontRef itself is too large to clone cheaply, so use a reference to it
-pub type Font = &'static FontRef<'static>;
+/// Handle to a loaded font
+#[derive(Copy, Clone, Debug)]
+pub struct Font {
+    // Note: FontRef itself is too large to clone cheaply, so use a reference to it
+    font: &'static FontRef<'static>,
+}
+
+impl Font {
+    /// Get a scale
+    ///
+    /// Output: a font-specific scale.
+    ///
+    /// Input: `dpem` is pixels/em
+    ///
+    /// ```none
+    /// dpem
+    ///   = pt_size × dpp
+    ///   = pt_size × dpi / 72
+    ///   = pt_size × scale_factor × (96 / 72)
+    /// ```
+    #[inline]
+    pub(crate) fn font_scale(self, dpem: f32) -> f32 {
+        use ab_glyph::Font;
+        // TODO (requires ab_glyph 0.2.5): let upem = font.units_per_em().unwrap();
+        let upem = 2048.0;
+        dpem / upem * self.font.height_unscaled()
+    }
+
+    /// Get a scaled font
+    ///
+    /// Units: the same as [`PxScale] — pixels per line height.
+    #[inline]
+    pub(crate) fn scaled(self, scale: f32) -> PxScaleFont<&'static FontRef<'static>> {
+        use ab_glyph::Font;
+        self.font.into_scaled(PxScale::from(scale))
+    }
+
+    /// Get the height of a line of text in pixels
+    ///
+    /// Input: `dpem` is pixels/em (see [`Font::font_scale`]).
+    #[inline]
+    pub fn line_height(self, dpem: f32) -> f32 {
+        // Due to the way ab-glyph works, this is font_scale
+        // (We reserve the right to change this later, hence a separate method.)
+        self.font_scale(dpem)
+    }
+}
 
 struct FontStore<'a> {
     ab_glyph: FontRef<'a>,
@@ -67,14 +111,8 @@ impl FontLibrary {
         assert!(id.get() < fonts.len(), "FontLibrary: invalid {:?}!", id);
         let font: &FontRef<'static> = &fonts[id.get()].ab_glyph;
         // Safety: elements of self.fonts are never dropped or modified
-        unsafe { extend_lifetime(font) }
-    }
-
-    /// Get a scaled font
-    ///
-    /// Scale units: the same as [`PxScale`] (pixels per line height).
-    pub fn get_scaled(&self, font_id: FontId, font_scale: f32) -> PxScaleFont<Font> {
-        ab_glyph::Font::into_scaled(self.get(font_id), PxScale::from(font_scale))
+        let font = unsafe { extend_lifetime(font) };
+        Font { font }
     }
 
     /// Get a HarfBuzz font face
@@ -90,7 +128,7 @@ impl FontLibrary {
     /// Get a list of all fonts
     ///
     /// E.g. `glyph_brush` needs this
-    pub fn fonts_vec(&self) -> Vec<Font> {
+    pub fn ab_glyph_fonts_vec(&self) -> Vec<&'static FontRef<'static>> {
         let fonts = self.fonts.read().unwrap();
         // Safety: each font is boxed so that its address never changes and
         // fonts are never modified or freed before program exit.

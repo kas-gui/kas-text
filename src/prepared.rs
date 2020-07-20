@@ -359,7 +359,7 @@ impl Text {
                 }
             }
 
-            let sf = fonts().get_scaled(glyph_run.font_id, glyph_run.font_scale);
+            let sf = fonts().get(glyph_run.font_id).scaled(glyph_run.font_scale);
             let pos = run_part.offset + pos;
             return Some((pos, sf.ascent(), sf.descent()));
         }
@@ -578,7 +578,7 @@ impl Text {
                 }
             };
 
-            let sf = fonts().get_scaled(glyph_run.font_id, glyph_run.font_scale);
+            let sf = fonts().get(glyph_run.font_id).scaled(glyph_run.font_scale);
             start_pos.1 -= sf.ascent();
             end_pos.1 -= sf.descent();
             rects.push((run_part.offset + start_pos, run_part.offset + end_pos));

@@ -18,7 +18,7 @@
 //! This module *does not* perform line-breaking, wrapping or text reversal.
 
 use crate::{fonts, prepared, FontId, Range, Vec2};
-use ab_glyph::{Font, GlyphId};
+use ab_glyph::GlyphId;
 use smallvec::SmallVec;
 
 /// A positioned glyph
@@ -75,9 +75,7 @@ pub(crate) fn shape(font_id: FontId, dpem: f32, text: &str, run: &prepared::Run)
     let mut caret = 0.0;
 
     let font = fonts().get(font_id);
-    // TODO (requires ab_glyph 0.2.5): let upem = font.units_per_em().unwrap();
-    let upem = 2048.0;
-    let font_scale = dpem / upem * font.height_unscaled();
+    let font_scale = font.font_scale(dpem);
 
     if dpem >= 0.0 {
         #[cfg(feature = "harfbuzz_rs")]
@@ -185,14 +183,14 @@ fn shape_harfbuzz(
 
 // Simple implementation (kerning but no shaping)
 #[cfg(not(feature = "harfbuzz_rs"))]
-fn shape_simple<F: Font>(
-    font: F,
+fn shape_simple(
+    font: crate::Font,
     font_scale: f32,
     text: &str,
     run: &prepared::Run,
 ) -> (Vec<Glyph>, SmallVec<[GlyphBreak; 2]>, f32, f32) {
-    use ab_glyph::ScaleFont;
-    let scale_font = font.into_scaled(font_scale);
+    use ab_glyph::{Font, ScaleFont};
+    let scale_font = font.scaled(font_scale);
 
     let slice = &text[run.range];
     let idx_offset = run.range.start;
