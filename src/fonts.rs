@@ -71,26 +71,20 @@ impl FontLibrary {
     }
 
     /// Get a scaled font
-    pub fn get_scaled(&self, font_id: FontId, font_scale: PxScale) -> PxScaleFont<Font> {
-        ab_glyph::Font::into_scaled(self.get(font_id), font_scale)
+    ///
+    /// Scale units: the same as [`PxScale`] (pixels per line height).
+    pub fn get_scaled(&self, font_id: FontId, font_scale: f32) -> PxScaleFont<Font> {
+        ab_glyph::Font::into_scaled(self.get(font_id), PxScale::from(font_scale))
     }
 
     /// Get a HarfBuzz font face
     ///
-    /// This actually makes an instance on usage, which may be inefficient(?).
+    /// `font_scale` should be "point size × screen DPI / 72" (units: px/em).
     #[cfg(feature = "harfbuzz_rs")]
-    pub fn get_harfbuzz(
-        &self,
-        id: FontId,
-        scale: PxScale,
-    ) -> harfbuzz_rs::Owned<harfbuzz_rs::Font<'static>> {
+    pub fn get_harfbuzz(&self, id: FontId) -> harfbuzz_rs::Owned<harfbuzz_rs::Font<'static>> {
         let fonts = self.fonts.read().unwrap();
         assert!(id.get() < fonts.len(), "FontLibrary: invalid {:?}!", id);
-        let face = fonts[id.get()].harfbuzz.clone();
-        let mut font = harfbuzz_rs::Font::new(face);
-        // TODO: is this conversion correct?
-        font.set_ppem(scale.x as u32, scale.y as u32);
-        font
+        harfbuzz_rs::Font::new(fonts[id.get()].harfbuzz.clone())
     }
 
     /// Get a list of all fonts

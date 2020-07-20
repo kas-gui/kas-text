@@ -18,7 +18,7 @@
 //! This module *does not* perform line-breaking, wrapping or text reversal.
 
 use crate::{fonts, prepared, FontId, Range, Vec2};
-use ab_glyph::{GlyphId, PxScale};
+use ab_glyph::{Font, GlyphId};
 use smallvec::SmallVec;
 
 /// A positioned glyph
@@ -48,7 +48,7 @@ pub struct GlyphRun {
     pub breaks: SmallVec<[GlyphBreak; 2]>,
 
     pub font_id: FontId,
-    pub font_scale: PxScale,
+    pub font_scale: f32,
 
     /// End position, excluding whitespace
     pub end_no_space: f32,
@@ -66,23 +66,25 @@ pub struct GlyphRun {
 /// A "run" is expected to be the maximal sequence of code points of the same
 /// embedding level (as defined by Unicode TR9 aka BIDI algorithm) *and*
 /// excluding all hard line breaks (e.g. `\n`).
-pub(crate) fn shape(
-    font_id: FontId,
-    font_scale: PxScale,
-    text: &str,
-    run: &prepared::Run,
-) -> GlyphRun {
+///
+/// Param `dpem` is the font size in pixels/em.
+pub(crate) fn shape(font_id: FontId, dpem: f32, text: &str, run: &prepared::Run) -> GlyphRun {
     let mut glyphs = vec![];
     let mut breaks = Default::default();
     let mut end_no_space = 0.0;
     let mut caret = 0.0;
 
-    if font_scale.x >= 0.0 || font_scale.y >= 0.0 {
+    let font = fonts().get(font_id);
+    // TODO (requires ab_glyph 0.2.5): let upem = font.units_per_em().unwrap();
+    let upem = 2048.0;
+    let font_scale = dpem / upem * font.height_unscaled();
+
+    if dpem >= 0.0 {
         #[cfg(feature = "harfbuzz_rs")]
-        let r = shape_harfbuzz(font_id, font_scale, text, run);
+        let r = shape_harfbuzz(font_id, dpem, text, run);
 
         #[cfg(not(feature = "harfbuzz_rs"))]
-        let r = shape_simple(font_id, font_scale, text, run);
+        let r = shape_simple(font, font_scale, text, run);
 
         glyphs = r.0;
         breaks = r.1;
@@ -106,11 +108,20 @@ pub(crate) fn shape(
 #[cfg(feature = "harfbuzz_rs")]
 fn shape_harfbuzz(
     font_id: FontId,
-    font_scale: PxScale,
+    dpem: f32,
     text: &str,
     run: &prepared::Run,
 ) -> (Vec<Glyph>, SmallVec<[GlyphBreak; 2]>, f32, f32) {
-    let font = fonts().get_harfbuzz(font_id, font_scale);
+    let mut font = fonts().get_harfbuzz(font_id);
+
+    // ppem affects hinting but does not scale layout, so this has little effect:
+    font.set_ppem(dpem as u32, dpem as u32);
+
+    // Note: we could alternatively set scale to dpem*x and let unit_factor=1/x,
+    // resulting in sub-pixel precision of x.
+    let upem = font.face().upem() as i32;
+    // This is the default: font.set_scale(upem, upem);
+    let unit_factor = dpem / (upem as f32);
 
     let slice = &text[run.range];
     let idx_offset = run.range.start;
@@ -121,10 +132,7 @@ fn shape_harfbuzz(
 
     let output = harfbuzz_rs::shape(&font, buffer, &features);
 
-    fn unit(x: harfbuzz_rs::Position) -> f32 {
-        // TODO: is this right?
-        x as f32 * (1.0 / 128.0)
-    }
+    let unit = |x: harfbuzz_rs::Position| x as f32 * unit_factor;
 
     let mut caret = 0.0;
     let mut end_no_space = caret;
@@ -177,14 +185,14 @@ fn shape_harfbuzz(
 
 // Simple implementation (kerning but no shaping)
 #[cfg(not(feature = "harfbuzz_rs"))]
-fn shape_simple(
-    font_id: FontId,
-    font_scale: PxScale,
+fn shape_simple<F: Font>(
+    font: F,
+    font_scale: f32,
     text: &str,
     run: &prepared::Run,
 ) -> (Vec<Glyph>, SmallVec<[GlyphBreak; 2]>, f32, f32) {
-    use ab_glyph::{Font, ScaleFont};
-    let scale_font = fonts().get_scaled(font_id, font_scale);
+    use ab_glyph::ScaleFont;
+    let scale_font = font.into_scaled(font_scale);
 
     let slice = &text[run.range];
     let idx_offset = run.range.start;

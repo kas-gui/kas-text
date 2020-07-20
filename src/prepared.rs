@@ -149,18 +149,20 @@ impl Text {
     /// Calculates glyph layouts for use.
     pub fn prepare(&mut self) {
         let action = self.action;
+        if action == Action::None {
+            return;
+        }
 
         if action >= Action::Runs {
             self.prepare_runs();
         }
 
         if action >= Action::Shape {
+            let dpem = self.env.pt_size * self.env.dpp;
             self.glyph_runs = self
                 .runs
                 .iter()
-                .map(|run| {
-                    shaper::shape(self.font_id, self.env.font_scale.into(), &self.text, &run)
-                })
+                .map(|run| shaper::shape(self.font_id, dpem, &self.text, &run))
                 .collect();
         }
 
@@ -196,7 +198,7 @@ impl Text {
 
             for mut glyph in run.glyphs[run_part.glyph_range.to_std()].iter().cloned() {
                 glyph.position = glyph.position + run_part.offset;
-                glyphs.push(f(text, font_id, font_scale, glyph));
+                glyphs.push(f(text, font_id, font_scale.into(), glyph));
             }
         }
         glyphs
