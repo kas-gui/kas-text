@@ -126,29 +126,11 @@ impl Text {
         &self.env
     }
 
-    /// Update the environment
-    ///
-    /// Returns true when [`Text::prepare`] must be called (again).
-    /// Note that [`Text::prepare`] is not called automatically since it must
-    /// not be called before fonts are loaded.
-    pub fn update_env<F: FnOnce(&mut UpdateEnv)>(&mut self, f: F) -> bool {
+    /// Update the environment and prepare for drawing
+    pub fn update_env<F: FnOnce(&mut UpdateEnv)>(&mut self, f: F) {
         let mut update = UpdateEnv::new(&mut self.env);
         f(&mut update);
         let action = update.finish().max(self.action);
-        match action {
-            Action::None => (),
-            Action::Wrap => self.wrap_lines(),
-            Action::Shape | Action::Runs => return true,
-        }
-        self.action = Action::None;
-        false
-    }
-
-    /// Prepare
-    ///
-    /// Calculates glyph layouts for use.
-    pub fn prepare(&mut self) {
-        let action = self.action;
         if action == Action::None {
             return;
         }
