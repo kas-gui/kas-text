@@ -5,7 +5,7 @@
 
 //! KAS Rich-Text library — fonts
 
-use ab_glyph::FontRef;
+use ab_glyph::{FontRef, InvalidFont, PxScale, PxScaleFont};
 use font_kit::source::SystemSource;
 use font_kit::{family_name::FamilyName, handle::Handle, properties::Properties};
 use std::collections::HashMap;
@@ -27,9 +27,69 @@ impl FontId {
     }
 }
 
-/// Type-def: the type of fonts we provide
-// Note: FontRef itself is too large to clone cheaply, so use a reference to it
-pub type Font = &'static FontRef<'static>;
+/// Handle to a loaded font
+#[derive(Copy, Clone, Debug)]
+pub struct Font {
+    // Note: FontRef itself is too large to clone cheaply, so use a reference to it
+    font: &'static FontRef<'static>,
+}
+
+impl Font {
+    /// Get a scale
+    ///
+    /// Output: a font-specific scale.
+    ///
+    /// Input: `dpem` is pixels/em
+    ///
+    /// ```none
+    /// dpem
+    ///   = pt_size × dpp
+    ///   = pt_size × dpi / 72
+    ///   = pt_size × scale_factor × (96 / 72)
+    /// ```
+    #[inline]
+    pub(crate) fn font_scale(self, dpem: f32) -> f32 {
+        use ab_glyph::Font;
+        // TODO (requires ab_glyph 0.2.5): let upem = font.units_per_em().unwrap();
+        let upem = 2048.0;
+        dpem / upem * self.font.height_unscaled()
+    }
+
+    /// Get a scaled font
+    ///
+    /// Units: the same as [`PxScale] — pixels per line height.
+    #[inline]
+    pub(crate) fn scaled(self, scale: f32) -> PxScaleFont<&'static FontRef<'static>> {
+        use ab_glyph::Font;
+        self.font.into_scaled(PxScale::from(scale))
+    }
+
+    /// Get the height of a line of text in pixels
+    ///
+    /// Input: `dpem` is pixels/em (see [`Font::font_scale`]).
+    #[inline]
+    pub fn line_height(self, dpem: f32) -> f32 {
+        // Due to the way ab-glyph works, this is font_scale
+        // (We reserve the right to change this later, hence a separate method.)
+        self.font_scale(dpem)
+    }
+}
+
+struct FontStore<'a> {
+    ab_glyph: FontRef<'a>,
+    #[cfg(feature = "harfbuzz_rs")]
+    harfbuzz: harfbuzz_rs::Shared<harfbuzz_rs::Face<'a>>,
+}
+
+impl<'a> FontStore<'a> {
+    fn new(data: &'a [u8], index: u32) -> Result<Self, InvalidFont> {
+        Ok(FontStore {
+            ab_glyph: FontRef::try_from_slice_and_index(data, index)?,
+            #[cfg(feature = "harfbuzz_rs")]
+            harfbuzz: harfbuzz_rs::Face::from_bytes(data, index).into(),
+        })
+    }
+}
 
 /// Library of loaded fonts
 // Note: std::pin::Pin does not help us here: Unpin is implemented for both u8
@@ -40,31 +100,41 @@ pub struct FontLibrary {
     data: RwLock<HashMap<PathBuf, Box<[u8]>>>,
     // Fonts defined over the above data (see safety note).
     // Additional safety: boxed so that instances do not move
-    fonts: RwLock<Vec<Box<FontRef<'static>>>>,
+    fonts: RwLock<Vec<Box<FontStore<'static>>>>,
 }
 
 // public API
 impl FontLibrary {
     /// Get a font from its identifier
-    pub fn get<I: Into<FontId>>(&self, id: I) -> Font {
+    pub fn get(&self, id: FontId) -> Font {
         let fonts = self.fonts.read().unwrap();
-        let id = id.into();
         assert!(id.get() < fonts.len(), "FontLibrary: invalid {:?}!", id);
-        let font: &FontRef<'static> = &fonts[id.get()];
+        let font: &FontRef<'static> = &fonts[id.get()].ab_glyph;
         // Safety: elements of self.fonts are never dropped or modified
-        unsafe { extend_lifetime(font) }
+        let font = unsafe { extend_lifetime(font) };
+        Font { font }
+    }
+
+    /// Get a HarfBuzz font face
+    ///
+    /// `font_scale` should be "point size × screen DPI / 72" (units: px/em).
+    #[cfg(feature = "harfbuzz_rs")]
+    pub fn get_harfbuzz(&self, id: FontId) -> harfbuzz_rs::Owned<harfbuzz_rs::Font<'static>> {
+        let fonts = self.fonts.read().unwrap();
+        assert!(id.get() < fonts.len(), "FontLibrary: invalid {:?}!", id);
+        harfbuzz_rs::Font::new(fonts[id.get()].harfbuzz.clone())
     }
 
     /// Get a list of all fonts
     ///
     /// E.g. `glyph_brush` needs this
-    pub fn fonts_vec(&self) -> Vec<Font> {
+    pub fn ab_glyph_fonts_vec(&self) -> Vec<&'static FontRef<'static>> {
         let fonts = self.fonts.read().unwrap();
         // Safety: each font is boxed so that its address never changes and
         // fonts are never modified or freed before program exit.
         fonts
             .iter()
-            .map(|font| unsafe { extend_lifetime(&**font) })
+            .map(|font| unsafe { extend_lifetime(&font.ab_glyph) })
             .collect()
     }
 
@@ -103,10 +173,11 @@ impl FontLibrary {
         drop(data);
 
         // 3rd lock: insert into font list
-        let font = FontRef::try_from_slice_and_index(slice, index)?;
+        let store = FontStore::new(slice, index)?;
         let mut fonts = self.fonts.write().unwrap();
         let id = FontId(fonts.len() as u32);
-        fonts.push(Box::new(font));
+        fonts.push(Box::new(store));
+
         Ok(id)
     }
 }

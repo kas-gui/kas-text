@@ -5,18 +5,38 @@
 
 //! KAS Rich-Text library — text-display enviroment
 
-use crate::{prepared::Action, FontScale, Vec2};
+use crate::{prepared::Action, Vec2};
 
 /// Environment in which text is prepared for display
 ///
 /// An `Environment` can be default-constructed (without line-wrapping).
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Environment {
-    /// Base font scale
+    /// The available (horizontal and vertical) space
     ///
-    /// Fonts are sized relative to this scale. `FontScale` has a default size
-    /// suitable for common usage.
-    pub font_scale: FontScale,
+    /// This defaults to infinity (implying no bounds).
+    /// If line-wrapping is enabled, it is controlled by this width.
+    /// Glyphs outside of these bounds may not be drawn.
+    pub bounds: Vec2,
+    /// Pixels-per-point
+    ///
+    /// This is a scaling factor used to convert font sizes (in points) to a
+    /// size in pixels (dots). Units are `pixels/point`.
+    ///
+    /// Since "72 pt = 1 in" and the "standard" DPI is 96, calculate as:
+    /// ```none
+    /// dpp = dpi / 72 = scale_factor * (96 / 72)
+    /// ```
+    ///
+    /// Note that most systems allow the user to adjust the "font DPI" or set a
+    /// scaling factor, thus this value may not correspond to the real pixel
+    /// density of the display.
+    pub dpp: f32,
+    /// Default font size in points
+    ///
+    /// This is stored in units of pt/em partly because this is a standard unit
+    /// and partly because it allows fonts to scale with DPI.
+    pub pt_size: f32,
     /// Default text direction
     ///
     /// Note: right-to-left text can still occur in a left-to-right environment
@@ -33,12 +53,20 @@ pub struct Environment {
     /// width (regardless of height). If false, only explicit line-breaks such
     /// as `\n` result in new lines.
     pub wrap: bool,
-    /// The available (horizontal and vertical) space
-    ///
-    /// This defaults to zero but should normally be positive in usage.
-    /// If line-wrapping is enabled, it is controlled by this width.
-    /// Glyphs outside of these bounds may not be drawn.
-    pub bounds: Vec2,
+}
+
+impl Default for Environment {
+    fn default() -> Self {
+        Environment {
+            dpp: 96.0 / 72.0,
+            pt_size: 11.0,
+            dir: Direction::LR,
+            halign: Align::Default,
+            valign: Align::Default,
+            wrap: true,
+            bounds: Vec2::INFINITY,
+        }
+    }
 }
 
 impl Environment {
@@ -48,16 +76,6 @@ impl Environment {
     /// default font [`FontScale`] and zero-sized bounds.
     pub fn new() -> Self {
         Self::default()
-    }
-
-    /// Default construct but with line-wrapping
-    ///
-    /// This is identical to [`Environment::new`] except that line-wrapping is
-    /// enabled.
-    pub fn new_wrap() -> Self {
-        let mut env = Self::new();
-        env.wrap = true;
-        env
     }
 }
 
@@ -83,10 +101,22 @@ impl<'a> UpdateEnv<'a> {
         self.env
     }
 
-    /// Set base font scale
-    pub fn set_font_scale(&mut self, scale: FontScale) {
-        if scale != self.env.font_scale {
-            self.env.font_scale = scale;
+    /// Set DPP
+    ///
+    /// Units are pixels/point (see [`Environment::dpp`]).
+    pub fn set_dpp(&mut self, dpp: f32) {
+        if dpp != self.env.dpp {
+            self.env.dpp = dpp;
+            self.action = Action::Shape;
+        }
+    }
+
+    /// Set default font size in points
+    ///
+    /// Units are points/em (see [`Environment::pt_size`]).
+    pub fn set_pt_size(&mut self, pt_size: f32) {
+        if pt_size != self.env.pt_size {
+            self.env.pt_size = pt_size;
             self.action = Action::Shape;
         }
     }
@@ -121,6 +151,10 @@ impl<'a> UpdateEnv<'a> {
     /// Set the environment's bounds
     pub fn set_bounds(&mut self, bounds: Vec2) {
         if bounds != self.env.bounds {
+            // Note (opt): if we had separate align and wrap actions, then we
+            // would only need to do alignment provided:
+            // self.width_required <= bounds.0.min(self.env.bounds.0)
+            // This may not be worth pursuing however.
             self.env.bounds = bounds;
             self.action = self.action.max(Action::Wrap);
         }

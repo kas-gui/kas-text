@@ -7,7 +7,7 @@
 
 use smallvec::SmallVec;
 
-use ab_glyph::{Font, PxScale, ScaleFont};
+use ab_glyph::{PxScale, ScaleFont};
 
 use crate::{fonts, rich, shaper, FontId, Glyph, Vec2};
 use crate::{Environment, UpdateEnv};
@@ -126,41 +126,25 @@ impl Text {
         &self.env
     }
 
-    /// Update the environment
-    ///
-    /// Returns true when [`Text::prepare`] must be called (again).
-    /// Note that [`Text::prepare`] is not called automatically since it must
-    /// not be called before fonts are loaded.
-    pub fn update_env<F: FnOnce(&mut UpdateEnv)>(&mut self, f: F) -> bool {
+    /// Update the environment and prepare for drawing
+    pub fn update_env<F: FnOnce(&mut UpdateEnv)>(&mut self, f: F) {
         let mut update = UpdateEnv::new(&mut self.env);
         f(&mut update);
         let action = update.finish().max(self.action);
-        match action {
-            Action::None => (),
-            Action::Wrap => self.wrap_lines(),
-            Action::Shape | Action::Runs => return true,
+        if action == Action::None {
+            return;
         }
-        self.action = Action::None;
-        false
-    }
-
-    /// Prepare
-    ///
-    /// Calculates glyph layouts for use.
-    pub fn prepare(&mut self) {
-        let action = self.action;
 
         if action >= Action::Runs {
             self.prepare_runs();
         }
 
         if action >= Action::Shape {
+            let dpem = self.env.pt_size * self.env.dpp;
             self.glyph_runs = self
                 .runs
                 .iter()
-                .map(|run| {
-                    shaper::shape(self.font_id, self.env.font_scale.into(), &self.text, &run)
-                })
+                .map(|run| shaper::shape(self.font_id, dpem, &self.text, &run))
                 .collect();
         }
 
@@ -196,7 +180,7 @@ impl Text {
 
             for mut glyph in run.glyphs[run_part.glyph_range.to_std()].iter().cloned() {
                 glyph.position = glyph.position + run_part.offset;
-                glyphs.push(f(text, font_id, font_scale, glyph));
+                glyphs.push(f(text, font_id, font_scale.into(), glyph));
             }
         }
         glyphs
@@ -357,9 +341,7 @@ impl Text {
                 }
             }
 
-            let sf = fonts()
-                .get(glyph_run.font_id)
-                .into_scaled(glyph_run.font_scale);
+            let sf = fonts().get(glyph_run.font_id).scaled(glyph_run.font_scale);
             let pos = run_part.offset + pos;
             return Some((pos, sf.ascent(), sf.descent()));
         }
@@ -578,10 +560,7 @@ impl Text {
                 }
             };
 
-            let sf = fonts()
-                .get(glyph_run.font_id)
-                .into_scaled(glyph_run.font_scale);
-
+            let sf = fonts().get(glyph_run.font_id).scaled(glyph_run.font_scale);
             start_pos.1 -= sf.ascent();
             end_pos.1 -= sf.descent();
             rects.push((run_part.offset + start_pos, run_part.offset + end_pos));

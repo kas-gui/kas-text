@@ -35,8 +35,7 @@ impl Text {
         let mut line = LineAdder::new(self.text_len() / 16, self.env.halign, width_bound);
 
         for (run_index, run) in self.glyph_runs.iter().enumerate() {
-            let font = fonts.get(run.font_id);
-            let scale_font = font.into_scaled(run.font_scale);
+            let scale_font = fonts.get(run.font_id).scaled(run.font_scale);
 
             if !line.runs.is_empty() && !run.append_to_prev {
                 line.new_line(0.0);
