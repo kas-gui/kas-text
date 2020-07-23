@@ -52,7 +52,7 @@ impl Text {
             if !justify && line_len <= width_bound {
                 // Short-cut: we can add the entire run.
                 let glyph_end = run.glyphs.len() as u32;
-                line.add_part(&scale_font, run_index, 0..glyph_end, line_len, run.range);
+                line.add_part(&scale_font, run_index, 0..glyph_end, line_len, &run);
                 line.caret.0 += run.caret;
             } else {
                 // We require at least one line break.
@@ -94,13 +94,8 @@ impl Text {
                     }
 
                     if add_run {
-                        line.add_part(
-                            &scale_font,
-                            run_index,
-                            glyph_start..glyph_end,
-                            line_len,
-                            run.range,
-                        );
+                        let glyph_range = glyph_start..glyph_end;
+                        line.add_part(&scale_font, run_index, glyph_range, line_len, &run);
                     }
 
                     // If we are already at the end of the run, stop. This
@@ -141,6 +136,7 @@ struct LineAdder {
     caret: Vec2,
     num_glyphs: usize,
     halign: Align,
+    line_is_rtl: bool,
     width_bound: f32,
 }
 impl LineAdder {
@@ -167,12 +163,17 @@ impl LineAdder {
         run_index: usize,
         glyph_range: std::ops::Range<u32>,
         line_len: f32,
-        mut text_range: Range,
+        run: &shaper::GlyphRun,
     ) {
+        let mut text_range = run.range;
         if let Some(range) = self.text_range {
             text_range.start = range.start;
         }
         self.text_range = Some(text_range);
+
+        if self.is_empty() {
+            self.line_is_rtl = run.rtl;
+        }
 
         // Adjust vertical position if necessary
         let ascent = scale_font.ascent();
@@ -200,8 +201,11 @@ impl LineAdder {
 
     fn finish_line(&mut self) {
         let offset = match self.halign {
-            // TODO(bidi): Default and Stretch depend on text direction
-            Align::Default | Align::TL => 0.0,
+            Align::Default => match self.line_is_rtl {
+                false => 0.0,
+                true => self.width_bound - self.line_len,
+            },
+            Align::TL => 0.0,
             Align::Centre => 0.5 * (self.width_bound - self.line_len),
             Align::BR => self.width_bound - self.line_len,
             Align::Stretch => {

@@ -57,6 +57,8 @@ pub struct GlyphRun {
 
     /// Range of slice represented
     pub range: Range,
+    /// If true, text direction is right-to-left
+    pub rtl: bool,
     /// If true, append to the prior line (if any)
     pub append_to_prev: bool,
 }
@@ -98,6 +100,7 @@ pub(crate) fn shape(font_id: FontId, dpem: f32, text: &str, run: &prepared::Run)
         end_no_space,
         caret,
         range: run.range,
+        rtl: run.rtl,
         append_to_prev: run.append_to_prev(),
     }
 }
