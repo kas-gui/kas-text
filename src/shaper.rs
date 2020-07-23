@@ -125,7 +125,12 @@ fn shape_harfbuzz(
     let idx_offset = run.range.start;
 
     // TODO: cache the buffer for reuse later?
-    let buffer = harfbuzz_rs::UnicodeBuffer::new().add_str(slice);
+    let buffer = harfbuzz_rs::UnicodeBuffer::new()
+        .set_direction(match run.rtl {
+            false => harfbuzz_rs::Direction::Ltr,
+            true => harfbuzz_rs::Direction::Rtl,
+        })
+        .add_str(slice);
     let features = [];
 
     let output = harfbuzz_rs::shape(&font, buffer, &features);
@@ -206,8 +211,13 @@ fn shape_simple(
 
     // Allocate with an over-estimate and shrink later:
     let mut glyphs = Vec::with_capacity(slice.len());
-
-    for (index, c) in slice.char_indices() {
+    let mut iter = slice.char_indices();
+    let rtl = run.rtl;
+    let mut next_char_index = || match rtl {
+        false => iter.next(),
+        true => iter.next_back(),
+    };
+    while let Some((index, c)) = next_char_index() {
         let index = idx_offset + index as u32;
         let id = scale_font.font().glyph_id(c);
 

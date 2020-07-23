@@ -12,9 +12,10 @@ use xi_unicode::LineBreakIterator;
 
 #[derive(Clone, Debug)]
 pub(crate) struct Run {
-    // TODO: support reversed texts
     /// Range in source text
     pub range: Range,
+    /// If true, run is right-to-left
+    pub rtl: bool,
     /// All soft-break locations within this range (excludes end)
     pub breaks: SmallVec<[u32; 5]>,
 }
@@ -45,6 +46,7 @@ impl Text {
 
         let mut start = 0;
         let mut breaks = Default::default();
+        let rtl = true; // FIXME
 
         for (pos, hard) in LineBreakIterator::new(&self.text) {
             if hard && start < pos {
@@ -53,7 +55,7 @@ impl Text {
                 range.start += start as u32;
                 range.end += start as u32;
 
-                self.runs.push(Run { range, breaks });
+                self.runs.push(Run { range, rtl, breaks });
                 start = pos;
                 breaks = Default::default();
             }
@@ -76,7 +78,7 @@ impl Text {
         {
             let range = (text_len..text_len).into();
             let breaks = Default::default();
-            self.runs.push(Run { range, breaks });
+            self.runs.push(Run { range, rtl, breaks });
         }
 
         assert_eq!(start, self.text.len()); // iterator always generates a break at the end
