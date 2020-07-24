@@ -6,16 +6,17 @@
 //! Text preparation: line breaking and BIDI
 
 use super::Text;
-use crate::Range;
+use crate::{Direction, Range};
 use smallvec::SmallVec;
+use unicode_bidi::{BidiInfo, Level, LTR_LEVEL, RTL_LEVEL};
 use xi_unicode::LineBreakIterator;
 
 #[derive(Clone, Debug)]
 pub(crate) struct Run {
     /// Range in source text
     pub range: Range,
-    /// If true, run is right-to-left
-    pub rtl: bool,
+    /// BIDI level
+    pub level: Level,
     /// All soft-break locations within this range (excludes end)
     pub breaks: SmallVec<[u32; 5]>,
 }
@@ -48,24 +49,68 @@ impl Text {
     pub(crate) fn prepare_runs(&mut self) {
         self.runs.clear();
         self.line_runs.clear();
+        if self.text.is_empty() {
+            return;
+        }
+
+        let bidi = self.env.bidi;
+        let default_para_level = match self.env.dir {
+            Direction::Auto => None,
+            Direction::LR => Some(LTR_LEVEL),
+            Direction::RL => Some(RTL_LEVEL),
+        };
+        let mut levels = vec![];
+        let mut level;
+        if bidi || default_para_level.is_none() {
+            levels = BidiInfo::new(&self.text, default_para_level).levels;
+            assert_eq!(self.text.len(), levels.len());
+            level = levels[0];
+        } else {
+            level = default_para_level.unwrap();
+        }
 
         let mut start = 0;
         let mut breaks = Default::default();
-        let rtl = true; // FIXME
 
-        for (pos, hard) in LineBreakIterator::new(&self.text) {
-            if hard && start < pos {
+        // Iterates over `(pos, hard)` tuples:
+        let mut breaks_iter = LineBreakIterator::new(&self.text);
+        let mut next_break = breaks_iter.next().unwrap_or((0, false));
+
+        let mut line_start = 0;
+
+        for pos in 1..self.text.len() {
+            let is_break = next_break.0 == pos;
+            let hard_break = is_break && next_break.1;
+            if hard_break || (bidi && levels[pos] != level) {
                 let mut range = trim_control(&self.text[start..pos]);
                 // trim_control gives us a range within the slice; we need to offset:
                 range.start += start as u32;
                 range.end += start as u32;
 
-                self.runs.push(Run { range, rtl, breaks });
+                self.runs.push(Run {
+                    range,
+                    level,
+                    breaks,
+                });
+
+                if hard_break {
+                    let range = Range::from(line_start..self.runs.len());
+                    let rtl = self.runs[line_start].level.is_rtl();
+                    self.line_runs.push(LineRun { range, rtl });
+                    line_start = self.runs.len();
+                }
+
                 start = pos;
+                if bidi {
+                    level = levels[pos];
+                }
                 breaks = Default::default();
-            }
-            if !hard {
+                if is_break {
+                    next_break = breaks_iter.next().unwrap_or((0, false));
+                }
+            } else if is_break {
                 breaks.push(pos as u32);
+                next_break = breaks_iter.next().unwrap_or((0, false));
             }
         }
 
@@ -75,26 +120,23 @@ impl Text {
         // TODO: for display-only text (labels), should we not do this or even
         // trim all whitespace? Or is consistent behaviour more important?
         let text_len = self.text.len();
-        if self
-            .runs
-            .last()
-            .map(|run| (run.range.end as usize) < text_len)
-            .unwrap_or(true)
-        {
-            let range = (text_len..text_len).into();
-            self.runs.push(Run { range, rtl, breaks });
+        if start < text_len {
+            let mut range = trim_control(&self.text[start..]);
+            // trim_control gives us a range within the slice; we need to offset:
+            range.start += start as u32;
+            range.end += start as u32;
+            self.runs.push(Run {
+                range,
+                level,
+                breaks,
+            });
         }
 
-        assert_eq!(start, self.text.len()); // iterator always generates a break at the end
-
-        // TODO(bidi): currently each run is on a new line
-        self.line_runs = (0..self.runs.len())
-            .into_iter()
-            .map(|i| LineRun {
-                range: Range::from(i..(i + 1)),
-                rtl,
-            })
-            .collect();
+        if line_start < self.runs.len() {
+            let range = Range::from(line_start..self.runs.len());
+            let rtl = self.runs[line_start].level.is_rtl();
+            self.line_runs.push(LineRun { range, rtl });
+        }
     }
 }
 

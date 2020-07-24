@@ -56,7 +56,7 @@ impl LineAdder {
     fn add_ltr(&mut self, fonts: &FontLibrary, run_index: usize, run: &GlyphRun, append: bool) {
         let scale_font = fonts.get(run.font_id).scaled(run.font_scale);
 
-        if !self.runs.is_empty() && !append {
+        if !self.line_is_empty() && !append {
             self.new_line(0.0);
         }
 
@@ -76,7 +76,11 @@ impl LineAdder {
             self.add_part(&scale_font, run_index, 0..glyph_end, line_len, &run);
             self.caret.0 += run.caret;
         } else {
-            // We require at least one line break.
+            // We cannot fit the whole run on one line.
+            if run.rtl {
+                // It makes no sense to wrap a run with the wrong direction.
+                self.add_rtl(fonts, run_index, run, false);
+            }
 
             let mut run_breaks = run.breaks.iter().peekable();
             let run_gb = GlyphBreak {
@@ -139,7 +143,7 @@ impl LineAdder {
     fn add_rtl(&mut self, fonts: &FontLibrary, run_index: usize, run: &GlyphRun, append: bool) {
         let scale_font = fonts.get(run.font_id).scaled(run.font_scale);
 
-        if !self.runs.is_empty() && !append {
+        if !self.line_is_empty() && !append {
             self.new_line(0.0);
         }
 
@@ -155,7 +159,11 @@ impl LineAdder {
             let glyph_end = run.glyphs.len() as u32;
             self.add_part(&scale_font, run_index, 0..glyph_end, line_len, &run);
         } else {
-            // We require at least one line break.
+            // We cannot fit the whole run on one line.
+            if !run.rtl {
+                // It makes no sense to wrap a run with the wrong direction.
+                self.add_ltr(fonts, run_index, run, false);
+            }
 
             let mut run_breaks = run.breaks.iter().rev().peekable();
             let run_gb = GlyphBreak {
@@ -175,7 +183,7 @@ impl LineAdder {
                     let gb = run_breaks.peek().map(|gb| **gb).unwrap_or(run_gb);
                     let part_line_len = run.caret - gb.end_no_space - initial_caret;
                     if empty || (part_line_len <= self.width_bound) {
-                        empty = empty && 0 == glyph_start;
+                        empty = empty && gb.pos == glyph_start;
                         add_run = true;
                         glyph_start = gb.pos;
                         run_breaks.next();

@@ -93,7 +93,8 @@ pub(crate) fn shape(font_id: FontId, dpem: f32, text: &str, run: &prepared::Run)
         caret = r.3;
     }
 
-    if run.rtl {
+    let rtl = run.level.is_rtl();
+    if rtl {
         // With RTL text, end_no_space means start_no_space; recalculate
         let mut break_i = breaks.len().wrapping_sub(1);
         let mut start_no_space = caret;
@@ -129,7 +130,7 @@ pub(crate) fn shape(font_id: FontId, dpem: f32, text: &str, run: &prepared::Run)
         end_no_space,
         caret,
         range: run.range,
-        rtl: run.rtl,
+        rtl,
     }
 }
 
@@ -154,10 +155,11 @@ fn shape_harfbuzz(
 
     let slice = &text[run.range];
     let idx_offset = run.range.start;
+    let rtl = run.level.is_rtl();
 
     // TODO: cache the buffer for reuse later?
     let buffer = harfbuzz_rs::UnicodeBuffer::new()
-        .set_direction(match run.rtl {
+        .set_direction(match rtl {
             false => harfbuzz_rs::Direction::Ltr,
             true => harfbuzz_rs::Direction::Rtl,
         })
@@ -172,7 +174,11 @@ fn shape_harfbuzz(
     let mut end_no_space = caret;
 
     let mut breaks_iter = run.breaks.iter();
-    let mut next_break = breaks_iter.next().cloned().unwrap_or(u32::MAX);
+    let mut get_next_break = || match rtl {
+        false => breaks_iter.next().cloned().unwrap_or(u32::MAX),
+        true => breaks_iter.next_back().cloned().unwrap_or(u32::MAX),
+    };
+    let mut next_break = get_next_break();
     assert!(next_break >= idx_offset);
     let mut breaks = SmallVec::<[GlyphBreak; 2]>::with_capacity(run.breaks.len());
 
@@ -190,7 +196,7 @@ fn shape_harfbuzz(
         if index == next_break {
             let pos = glyphs.len() as u32;
             breaks.push(GlyphBreak { pos, end_no_space });
-            next_break = breaks_iter.next().cloned().unwrap_or(u32::MAX);
+            next_break = get_next_break();
         }
 
         let position = Vec2(caret + unit(pos.x_offset), unit(pos.y_offset));
@@ -230,7 +236,7 @@ fn shape_simple(
 
     let slice = &text[run.range];
     let idx_offset = run.range.start;
-    let rtl = run.rtl;
+    let rtl = run.level.is_rtl();
 
     let mut caret = 0.0;
     let mut end_no_space = caret;
