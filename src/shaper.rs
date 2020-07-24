@@ -232,6 +232,8 @@ fn shape_simple(
     run: &prepared::Run,
 ) -> (Vec<Glyph>, SmallVec<[GlyphBreak; 2]>, f32, f32) {
     use ab_glyph::Font;
+    use unicode_bidi_mirroring::get_mirrored;
+
     let scale_font = font.scaled(font_scale);
 
     let slice = &text[run.range];
@@ -258,8 +260,13 @@ fn shape_simple(
         false => iter.next(),
         true => iter.next_back(),
     };
-    while let Some((index, c)) = next_char_index() {
+    while let Some((index, mut c)) = next_char_index() {
         let index = idx_offset + index as u32;
+        if rtl {
+            if let Some(m) = get_mirrored(c) {
+                c = m;
+            }
+        }
         let id = scale_font.font().glyph_id(c);
 
         if index == next_break {
