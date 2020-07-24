@@ -6,7 +6,8 @@
 //! Text prepared for display
 
 use super::Text;
-use crate::{fonts, shaper, Align, Range, Vec2};
+use crate::shaper::{GlyphBreak, GlyphRun};
+use crate::{fonts, Align, FontLibrary, Range, Vec2};
 use ab_glyph::{Font, ScaleFont};
 
 #[derive(Clone, Copy, Debug)]
@@ -27,98 +28,191 @@ pub struct Line {
 impl Text {
     pub fn wrap_lines(&mut self) {
         let fonts = fonts();
-        let width_bound = self.env.bounds.0;
-        // Justified text requires adding each word separately:
-        let justify = self.env.halign == Align::Stretch;
-
         // Use a crude estimate of the number of runs:
-        let mut line = LineAdder::new(self.text_len() / 16, self.env.halign, width_bound);
+        let mut adder = LineAdder::new(self.text_len() / 16, self.env.halign, self.env.bounds.0);
 
-        for (run_index, run) in self.glyph_runs.iter().enumerate() {
-            let scale_font = fonts.get(run.font_id).scaled(run.font_scale);
-
-            if !line.runs.is_empty() && !run.append_to_prev {
-                line.new_line(0.0);
-            }
-
-            if line.is_empty() {
-                // We offset the caret horizontally based on the first glyph of the line
-                if let Some(glyph) = run.glyphs.iter().as_ref().first() {
-                    line.caret.0 += scale_font.h_side_bearing(glyph.id);
+        // Almost everything in "this" method depends on the line direction, so
+        // we determine that then call the appropriate implementation.
+        for line in self.line_runs.iter() {
+            let mut append = false;
+            let line_start = line.range.start();
+            for (index, run) in self.glyph_runs[line.range.to_std()].iter().enumerate() {
+                match line.rtl {
+                    false => adder.add_ltr(&fonts, line_start + index, run, append),
+                    true => adder.add_rtl(&fonts, line_start + index, run, append),
                 }
-            }
-
-            let mut line_len = line.caret.0 + run.end_no_space;
-            if !justify && line_len <= width_bound {
-                // Short-cut: we can add the entire run.
-                let glyph_end = run.glyphs.len() as u32;
-                line.add_part(&scale_font, run_index, 0..glyph_end, line_len, &run);
-                line.caret.0 += run.caret;
-            } else {
-                // We require at least one line break.
-
-                let mut run_breaks = run.breaks.iter().peekable();
-                let run_gb = shaper::GlyphBreak {
-                    pos: run.glyphs.len() as u32,
-                    end_no_space: run.end_no_space,
-                };
-                let mut glyph_end = 0;
-
-                loop {
-                    // Find how much of the run we can add, ensuring that we
-                    // do not leave a line empty but otherwise respecting width.
-                    let mut empty = line.is_empty();
-                    let mut add_run = false;
-                    let mut line_break = true;
-                    let glyph_start = glyph_end;
-                    loop {
-                        let gb = run_breaks.peek().map(|gb| **gb).unwrap_or(run_gb);
-                        let part_line_len = line.caret.0 + gb.end_no_space;
-                        if empty || (part_line_len <= width_bound) {
-                            empty = empty && gb.pos == glyph_end;
-                            add_run = true;
-                            glyph_end = gb.pos;
-                            run_breaks.next();
-                            line_len = part_line_len;
-                            if glyph_end == run_gb.pos {
-                                break;
-                            } else if justify {
-                                // When justifying text we must add each word
-                                // separately to allow independent positioning.
-                                line_break = false;
-                                break;
-                            }
-                            continue;
-                        }
-                        break;
-                    }
-
-                    if add_run {
-                        let glyph_range = glyph_start..glyph_end;
-                        line.add_part(&scale_font, run_index, glyph_range, line_len, &run);
-                    }
-
-                    // If we are already at the end of the run, stop. This
-                    // should not happen on the first iteration.
-                    if glyph_end as usize >= run.glyphs.len() {
-                        line.caret.0 = line_len;
-                        break;
-                    }
-
-                    if line_break {
-                        // Offset new line since we are not at the start of the run
-                        let glyph = run.glyphs[glyph_end as usize];
-                        let x = scale_font.h_side_bearing(glyph.id) - glyph.position.0;
-                        line.new_line(x);
-                    }
-                }
+                append = true;
             }
         }
 
-        self.required = line.finish(self.env.valign, self.env.bounds.1);
-        self.wrapped_runs = line.runs;
-        self.lines = line.lines;
-        self.num_glyphs = line.num_glyphs;
+        self.required = adder.finish(self.env.valign, self.env.bounds.1);
+        self.wrapped_runs = adder.runs;
+        self.lines = adder.lines;
+        self.num_glyphs = adder.num_glyphs;
+    }
+}
+
+impl LineAdder {
+    fn add_ltr(&mut self, fonts: &FontLibrary, run_index: usize, run: &GlyphRun, append: bool) {
+        let scale_font = fonts.get(run.font_id).scaled(run.font_scale);
+
+        if !self.runs.is_empty() && !append {
+            self.new_line(0.0);
+        }
+
+        // In LTR mode, caret.0 starts at 0, however it needs offsetting to
+        // account for the glyph's origin.
+        if self.line_is_empty() {
+            // We offset the caret horizontally based on the first glyph of the line
+            if let Some(glyph) = run.glyphs.iter().as_ref().first() {
+                self.caret.0 += scale_font.h_side_bearing(glyph.id);
+            }
+        }
+
+        let mut line_len = self.caret.0 + run.end_no_space;
+        if !self.justify && line_len <= self.width_bound {
+            // Short-cut: we can add the entire run.
+            let glyph_end = run.glyphs.len() as u32;
+            self.add_part(&scale_font, run_index, 0..glyph_end, line_len, &run);
+            self.caret.0 += run.caret;
+        } else {
+            // We require at least one line break.
+
+            let mut run_breaks = run.breaks.iter().peekable();
+            let run_gb = GlyphBreak {
+                pos: run.glyphs.len() as u32,
+                end_no_space: run.end_no_space,
+            };
+            let mut glyph_end = 0;
+
+            loop {
+                // Find how much of the run we can add, ensuring that we
+                // do not leave a line empty but otherwise respecting width.
+                let mut empty = self.line_is_empty();
+                let mut add_run = false;
+                let mut line_break = true;
+                let glyph_start = glyph_end;
+                loop {
+                    let gb = run_breaks.peek().map(|gb| **gb).unwrap_or(run_gb);
+                    let part_line_len = self.caret.0 + gb.end_no_space;
+                    if empty || (part_line_len <= self.width_bound) {
+                        empty = empty && gb.pos == glyph_end;
+                        add_run = true;
+                        glyph_end = gb.pos;
+                        run_breaks.next();
+                        line_len = part_line_len;
+                        if glyph_end == run_gb.pos {
+                            break;
+                        } else if self.justify {
+                            // When justifying text we must add each word
+                            // separately to allow independent positioning.
+                            line_break = false;
+                            break;
+                        }
+                        continue;
+                    }
+                    break;
+                }
+
+                if add_run {
+                    let glyph_range = glyph_start..glyph_end;
+                    self.add_part(&scale_font, run_index, glyph_range, line_len, &run);
+                }
+
+                // If we are already at the end of the run, stop. This
+                // should not happen on the first iteration.
+                if glyph_end as usize >= run.glyphs.len() {
+                    self.caret.0 = line_len;
+                    break;
+                }
+
+                if line_break {
+                    // Offset new line since we are not at the start of the run
+                    let glyph = run.glyphs[glyph_end as usize];
+                    let x = scale_font.h_side_bearing(glyph.id) - glyph.position.0;
+                    self.new_line(x);
+                }
+            }
+        }
+    }
+
+    fn add_rtl(&mut self, fonts: &FontLibrary, run_index: usize, run: &GlyphRun, append: bool) {
+        let scale_font = fonts.get(run.font_id).scaled(run.font_scale);
+
+        if !self.runs.is_empty() && !append {
+            self.new_line(0.0);
+        }
+
+        // In RTL mode, caret.0 starts at zero goes negative. We avoid adding
+        // or subtracting width_bound until alignment since it may be infinite
+        // during size requirement computations.
+
+        let mut initial_caret = self.caret.0;
+        self.caret.0 -= run.caret;
+        let mut line_len = run.caret - run.end_no_space - initial_caret;
+        if !self.justify && line_len <= self.width_bound {
+            // Short-cut: we can add the entire run.
+            let glyph_end = run.glyphs.len() as u32;
+            self.add_part(&scale_font, run_index, 0..glyph_end, line_len, &run);
+        } else {
+            // We require at least one line break.
+
+            let mut run_breaks = run.breaks.iter().rev().peekable();
+            let run_gb = GlyphBreak {
+                pos: 0,
+                end_no_space: run.end_no_space,
+            };
+            let mut glyph_start = run.glyphs.len() as u32;
+
+            loop {
+                // Find how much of the run we can add, ensuring that we
+                // do not leave a line empty but otherwise respecting width.
+                let mut empty = self.line_is_empty();
+                let mut add_run = false;
+                let mut line_break = true;
+                let glyph_end = glyph_start;
+                loop {
+                    let gb = run_breaks.peek().map(|gb| **gb).unwrap_or(run_gb);
+                    let part_line_len = run.caret - gb.end_no_space - initial_caret;
+                    if empty || (part_line_len <= self.width_bound) {
+                        empty = empty && 0 == glyph_start;
+                        add_run = true;
+                        glyph_start = gb.pos;
+                        run_breaks.next();
+                        line_len = part_line_len;
+                        if glyph_start == 0 {
+                            break;
+                        } else if self.justify {
+                            // When justifying text we must add each word
+                            // separately to allow independent positioning.
+                            line_break = false;
+                            break;
+                        }
+                        continue;
+                    }
+                    break;
+                }
+
+                if add_run {
+                    let glyph_range = glyph_start..glyph_end;
+                    self.add_part(&scale_font, run_index, glyph_range, line_len, &run);
+                }
+
+                // If we are already at the end of the run, stop. This
+                // should not happen on the first iteration.
+                if glyph_start == 0 {
+                    self.caret.0 = -line_len;
+                    break;
+                }
+
+                if line_break {
+                    // Offset new line since we are not at the start of the run
+                    let glyph = run.glyphs[glyph_start as usize];
+                    self.new_line(-glyph.position.0);
+                    initial_caret = run.caret - glyph.position.0;
+                }
+            }
+        }
     }
 }
 
@@ -136,22 +230,25 @@ struct LineAdder {
     caret: Vec2,
     num_glyphs: usize,
     halign: Align,
+    justify: bool,
     line_is_rtl: bool,
     width_bound: f32,
 }
 impl LineAdder {
     fn new(run_capacity: usize, halign: Align, width_bound: f32) -> Self {
         let runs = Vec::with_capacity(run_capacity);
+        let justify = halign == Align::Stretch;
         LineAdder {
             runs,
             halign,
+            justify,
             width_bound,
             ..Default::default()
         }
     }
 
     /// Does the current line have any content?
-    fn is_empty(&self) -> bool {
+    fn line_is_empty(&self) -> bool {
         self.runs[self.line_start..]
             .iter()
             .all(|run| run.glyph_range.len() == 0)
@@ -163,7 +260,7 @@ impl LineAdder {
         run_index: usize,
         glyph_range: std::ops::Range<u32>,
         line_len: f32,
-        run: &shaper::GlyphRun,
+        run: &GlyphRun,
     ) {
         let mut text_range = run.range;
         if let Some(range) = self.text_range {
@@ -171,7 +268,7 @@ impl LineAdder {
         }
         self.text_range = Some(text_range);
 
-        if self.is_empty() {
+        if self.line_is_empty() {
             self.line_is_rtl = run.rtl;
         }
 
@@ -203,23 +300,42 @@ impl LineAdder {
         let offset = match self.halign {
             Align::Default => match self.line_is_rtl {
                 false => 0.0,
-                true => self.width_bound - self.line_len,
+                true => self.width_bound,
             },
-            Align::TL => 0.0,
-            Align::Centre => 0.5 * (self.width_bound - self.line_len),
-            Align::BR => self.width_bound - self.line_len,
+            Align::TL => match self.line_is_rtl {
+                false => 0.0,
+                true => self.line_len,
+            },
+            Align::Centre => {
+                let mut offset = 0.5 * (self.width_bound - self.line_len);
+                if self.line_is_rtl {
+                    offset += self.line_len;
+                }
+                offset
+            }
+            Align::BR => match self.line_is_rtl {
+                false => self.width_bound - self.line_len,
+                true => self.width_bound,
+            },
             Align::Stretch => {
                 // Justify text: expand the gaps between runs
                 // We should have at least one run, so subtraction won't wrap:
                 let num_gaps = self.runs.len() - self.line_start - 1;
                 let per_gap = (self.width_bound - self.line_len) / (num_gaps as f32);
 
-                let mut i = 1;
-                for run in &mut self.runs[(self.line_start + 1)..] {
-                    run.offset.0 += per_gap * i as f32;
-                    i += 1;
+                if !self.line_is_rtl {
+                    let mut offset = per_gap;
+                    for run in &mut self.runs[(self.line_start + 1)..] {
+                        run.offset.0 += offset;
+                        offset += per_gap;
+                    }
+                } else {
+                    let mut offset = self.width_bound;
+                    for run in &mut self.runs[self.line_start..] {
+                        run.offset.0 += offset;
+                        offset -= per_gap;
+                    }
                 }
-
                 0.0 // do not offset below
             }
         };

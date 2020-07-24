@@ -14,7 +14,7 @@ use crate::{Environment, UpdateEnv};
 
 mod text_runs;
 mod wrap_lines;
-pub(crate) use text_runs::Run;
+pub(crate) use text_runs::{LineRun, Run};
 use wrap_lines::{Line, RunPart};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Ord, PartialOrd, Hash)]
@@ -62,11 +62,16 @@ impl Action {
 #[derive(Clone, Debug, Default)]
 pub struct Text {
     env: Environment,
+    /// Contiguous text in logical order
     text: String,
+    /// Level runs within the text
     runs: SmallVec<[Run; 1]>,
+    /// Subsets of runs forming a line, with line direction
+    line_runs: SmallVec<[LineRun; 1]>,
     font_id: FontId,
     action: Action,
     required: Vec2,
+    /// Runs of glyphs (same order as `runs` sequence)
     glyph_runs: Vec<shaper::GlyphRun>,
     wrapped_runs: Vec<RunPart>,
     // Indexes of line-starts within wrapped_runs:

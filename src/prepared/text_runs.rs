@@ -20,11 +20,15 @@ pub(crate) struct Run {
     pub breaks: SmallVec<[u32; 5]>,
 }
 
-impl Run {
-    /// If a previous line exists, should this be appended to it?
-    pub fn append_to_prev(&self) -> bool {
-        false // will be needed later for BIDI processing
-    }
+#[derive(Copy, Clone, Debug)]
+pub(crate) struct LineRun {
+    /// Range within runs
+    ///
+    /// Runs within this range occur in visual order, from the line's start
+    /// (left or right depending on direction).
+    pub range: Range,
+    /// If true, line is right-to-left
+    pub rtl: bool,
 }
 
 impl Text {
@@ -43,6 +47,7 @@ impl Text {
     /// TODO: implement BIDI processing
     pub(crate) fn prepare_runs(&mut self) {
         self.runs.clear();
+        self.line_runs.clear();
 
         let mut start = 0;
         let mut breaks = Default::default();
@@ -77,11 +82,19 @@ impl Text {
             .unwrap_or(true)
         {
             let range = (text_len..text_len).into();
-            let breaks = Default::default();
             self.runs.push(Run { range, rtl, breaks });
         }
 
         assert_eq!(start, self.text.len()); // iterator always generates a break at the end
+
+        // TODO(bidi): currently each run is on a new line
+        self.line_runs = (0..self.runs.len())
+            .into_iter()
+            .map(|i| LineRun {
+                range: Range::from(i..(i + 1)),
+                rtl,
+            })
+            .collect();
     }
 }
 
