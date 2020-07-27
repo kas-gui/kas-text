@@ -20,6 +20,7 @@
 use crate::{fonts, prepared, FontId, Range, Vec2};
 use ab_glyph::{GlyphId, ScaleFont};
 use smallvec::SmallVec;
+use unicode_bidi::Level;
 
 /// A positioned glyph
 #[derive(Clone, Copy, Debug)]
@@ -60,8 +61,8 @@ pub struct GlyphRun {
 
     /// Range of slice represented
     pub range: Range,
-    /// If true, text direction is right-to-left
-    pub rtl: bool,
+    /// BIDI level (odd levels are right-to-left)
+    pub level: Level,
 }
 
 /// Shape a `run` of text
@@ -93,8 +94,7 @@ pub(crate) fn shape(font_id: FontId, dpem: f32, text: &str, run: &prepared::Run)
         caret = r.3;
     }
 
-    let rtl = run.level.is_rtl();
-    if rtl {
+    if run.level.is_rtl() {
         // With RTL text, end_no_space means start_no_space; recalculate
         let mut break_i = breaks.len().wrapping_sub(1);
         let mut start_no_space = caret;
@@ -130,7 +130,7 @@ pub(crate) fn shape(font_id: FontId, dpem: f32, text: &str, run: &prepared::Run)
         end_no_space,
         caret,
         range: run.range,
-        rtl,
+        level: run.level,
     }
 }
 

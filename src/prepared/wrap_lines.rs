@@ -77,7 +77,7 @@ impl LineAdder {
             self.caret.0 += run.caret;
         } else {
             // We cannot fit the whole run on one line.
-            if run.rtl {
+            if run.level.is_rtl() {
                 // It makes no sense to wrap a run with the wrong direction.
                 self.add_rtl(fonts, run_index, run, false);
             }
@@ -160,7 +160,7 @@ impl LineAdder {
             self.add_part(&scale_font, run_index, 0..glyph_end, line_len, &run);
         } else {
             // We cannot fit the whole run on one line.
-            if !run.rtl {
+            if run.level.is_ltr() {
                 // It makes no sense to wrap a run with the wrong direction.
                 self.add_ltr(fonts, run_index, run, false);
             }
@@ -277,7 +277,7 @@ impl LineAdder {
         self.text_range = Some(text_range);
 
         if self.line_is_empty() {
-            self.line_is_rtl = run.rtl;
+            self.line_is_rtl = run.level.is_rtl();
         }
 
         // Adjust vertical position if necessary
