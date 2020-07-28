@@ -60,15 +60,6 @@ impl LineAdder {
             self.new_line(0.0);
         }
 
-        // In LTR mode, caret.0 starts at 0, however it needs offsetting to
-        // account for the glyph's origin.
-        if self.line_is_empty() {
-            // We offset the caret horizontally based on the first glyph of the line
-            if let Some(glyph) = run.glyphs.iter().as_ref().first() {
-                self.caret.0 += scale_font.h_side_bearing(glyph.id);
-            }
-        }
-
         let mut line_len = self.caret.0 + run.end_no_space;
         if !self.justify && line_len <= self.width_bound {
             // Short-cut: we can add the entire run.
@@ -131,8 +122,7 @@ impl LineAdder {
                 if line_break {
                     // Offset new line since we are not at the start of the run
                     let glyph = run.glyphs[glyph_end as usize];
-                    let x = scale_font.h_side_bearing(glyph.id) - glyph.position.0;
-                    self.new_line(x);
+                    self.new_line(-glyph.position.0);
                 }
             }
         }
