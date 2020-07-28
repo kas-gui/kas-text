@@ -93,7 +93,6 @@ impl LineAdder {
                 // Find how much of the run we can add, ensuring that we
                 // do not leave a line empty but otherwise respecting width.
                 let mut empty = self.line_is_empty();
-                let mut add_run = false;
                 let mut line_break = true;
                 let glyph_start = glyph_end;
                 loop {
@@ -101,7 +100,6 @@ impl LineAdder {
                     let part_line_len = self.caret.0 + gb.end_no_space;
                     if empty || (part_line_len <= self.width_bound) {
                         empty = empty && gb.pos == glyph_end;
-                        add_run = true;
                         glyph_end = gb.pos;
                         run_breaks.next();
                         line_len = part_line_len;
@@ -118,7 +116,7 @@ impl LineAdder {
                     break;
                 }
 
-                if add_run {
+                if glyph_start < glyph_end {
                     let glyph_range = glyph_start..glyph_end;
                     self.add_part(&scale_font, run_index, glyph_range, line_len, &run);
                 }
@@ -176,7 +174,6 @@ impl LineAdder {
                 // Find how much of the run we can add, ensuring that we
                 // do not leave a line empty but otherwise respecting width.
                 let mut empty = self.line_is_empty();
-                let mut add_run = false;
                 let mut line_break = true;
                 let glyph_end = glyph_start;
                 loop {
@@ -184,7 +181,6 @@ impl LineAdder {
                     let part_line_len = run.caret - gb.end_no_space - initial_caret;
                     if empty || (part_line_len <= self.width_bound) {
                         empty = empty && gb.pos == glyph_start;
-                        add_run = true;
                         glyph_start = gb.pos;
                         run_breaks.next();
                         line_len = part_line_len;
@@ -201,7 +197,7 @@ impl LineAdder {
                     break;
                 }
 
-                if add_run {
+                if glyph_start < glyph_end {
                     let glyph_range = glyph_start..glyph_end;
                     self.add_part(&scale_font, run_index, glyph_range, line_len, &run);
                 }
@@ -215,9 +211,13 @@ impl LineAdder {
 
                 if line_break {
                     // Offset new line since we are not at the start of the run
-                    let glyph = run.glyphs[glyph_start as usize];
-                    self.new_line(-glyph.position.0);
-                    initial_caret = run.caret - glyph.position.0;
+                    let g_pos = run
+                        .glyphs
+                        .get(glyph_start as usize)
+                        .map(|g| g.position.0)
+                        .unwrap_or(run.caret);
+                    self.new_line(-g_pos);
+                    initial_caret = run.caret - g_pos;
                 }
             }
         }
