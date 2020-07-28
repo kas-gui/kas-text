@@ -9,7 +9,7 @@ edition = "2018"
 shaping = ["harfbuzz_rs"]
 
 [dependencies]
-ab_glyph = "0.2.2"
+ab_glyph = "0.2.5"
 font-kit = "0.8.0"
 lazy_static = "1.4.0"
 smallvec = "1.4.1"

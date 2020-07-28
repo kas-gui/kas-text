@@ -50,8 +50,7 @@ impl Font {
     #[inline]
     pub(crate) fn font_scale(self, dpem: f32) -> f32 {
         use ab_glyph::Font;
-        // TODO (requires ab_glyph 0.2.5): let upem = font.units_per_em().unwrap();
-        let upem = 2048.0;
+        let upem = self.font.units_per_em().unwrap();
         dpem / upem * self.font.height_unscaled()
     }
 
