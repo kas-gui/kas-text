@@ -8,22 +8,20 @@ Development status
 
 An initial [design document](design/requirements.md) was posted (see #1).
 
-Simple text layout was initially implemented via
-[glyph_brush_layout](https://crates.io/crates/glyph_brush_layout).
-On reflection, this did not provide a good path to future development, thus
-was abandoned.
+Glyph layout is implemented twice: via a simple algorithm (supporting kerning
+but not shaping), and via [HarfBuzz](https://harfbuzz.github.io/). The `shaping`
+feature flag enables the latter implementation, at the cost of extra dependencies.
 
-Line-breaking and simple text shaping have now been implemented directly in
-this library using a design more appropriate for inclusion of bidirectional text
-processing and usage of an external shaper.
+Text wrapping is enabled using `xi-unicode` to find break points. Bidirectional
+text support is enabled, using `unicode-bidi` to find embedding levels and an
+internal algorithm to rearrange text runs, but with some limitations (see #9).
+These two features are necessarily interlinked.
 
 Currently missing features:
 
--   font fallback support (not planned, but required to support many texts)
--   bidirectional text algorithm (Unicode TR9)
--   usage of an external shaper (`harfbuzz-rf` and/or `rustybuzz`); it is
-    intended that this is an optional feature (otherwise using the existing
-    simple shaper in this lib)
+-   text navigation is somewhat broken
+-   font fallback support (not planned, but potentially required to support
+    many texts, depending on the primary font used)
 -   rich text formatting
 
 
