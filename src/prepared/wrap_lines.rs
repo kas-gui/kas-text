@@ -46,7 +46,7 @@ impl Text {
             }
         }
 
-        self.required = adder.finish(self.env.valign, self.env.bounds.1);
+        self.required = adder.finish(self.text.len() as u32, self.env.valign, self.env.bounds.1);
         self.wrapped_runs = adder.runs;
         self.lines = adder.lines;
         self.num_glyphs = adder.num_glyphs;
@@ -58,7 +58,7 @@ impl LineAdder {
         let scale_font = fonts.get(run.font_id).scaled(run.font_scale);
 
         if !append || self.line_is_rtl {
-            self.new_line(0.0);
+            self.new_line(run.range.start, 0.0);
         }
 
         let mut line_len = self.caret.0 + run.end_no_space();
@@ -74,7 +74,7 @@ impl LineAdder {
 
             line_len = run.end_no_space();
             if line_len < self.width_bound {
-                self.new_line(0.0);
+                self.new_line(run.range.start, 0.0);
                 self.add_part(&scale_font, run_index, 0..glyph_end, line_len, false, &run);
                 self.caret.0 += run.caret;
             } else {
@@ -132,7 +132,7 @@ impl LineAdder {
                 if line_break {
                     // Offset new line since we are not at the start of the run
                     let glyph = run.glyphs[glyph_end as usize];
-                    self.new_line(-glyph.position.0);
+                    self.new_line(glyph.index, -glyph.position.0);
                 }
             }
         }
@@ -142,7 +142,7 @@ impl LineAdder {
         let scale_font = fonts.get(run.font_id).scaled(run.font_scale);
 
         if !append || !self.line_is_rtl {
-            self.new_line(0.0);
+            self.new_line(run.range.start, 0.0);
         }
 
         // In RTL mode, caret.0 starts at zero goes negative. We avoid adding
@@ -163,7 +163,7 @@ impl LineAdder {
 
             line_len = run.caret - run.start_no_space();
             if line_len < self.width_bound {
-                self.new_line(0.0);
+                self.new_line(run.range.start, 0.0);
                 self.caret.0 -= run.caret;
                 self.add_part(&scale_font, run_index, 0..glyph_end, line_len, true, &run);
             } else {
@@ -220,12 +220,12 @@ impl LineAdder {
 
                 if line_break {
                     // Offset new line since we are not at the start of the run
-                    let g_pos = run
+                    let (index, g_pos) = run
                         .glyphs
                         .get(glyph_start as usize)
-                        .map(|g| g.position.0)
-                        .unwrap_or(run.caret);
-                    self.new_line(-g_pos);
+                        .map(|g| (g.index, g.position.0))
+                        .unwrap_or((run.range.end, run.caret));
+                    self.new_line(index, -g_pos);
                     initial_caret = run.caret - g_pos;
                 }
             }
@@ -238,7 +238,7 @@ struct LineAdder {
     runs: Vec<RunPart>,
     lines: Vec<Line>,
     line_start: usize,
-    text_range: Option<Range>,
+    line_text_start: u32,
     line_len: f32,
     line_runs: Vec<(usize, Level, f32)>,
     line_max_level: Option<Level>,
@@ -282,13 +282,6 @@ impl LineAdder {
         rtl: bool,
         run: &GlyphRun,
     ) {
-        // FIXME: we may not have the full range
-        let mut text_range = run.range;
-        if let Some(range) = self.text_range {
-            text_range.start = range.start;
-        }
-        self.text_range = Some(text_range);
-
         if self.line_is_empty() {
             self.line_is_rtl = rtl;
         }
@@ -324,7 +317,7 @@ impl LineAdder {
         self.line_len = line_len;
     }
 
-    fn finish_line(&mut self) {
+    fn finish_line(&mut self, text_index: u32) {
         let num_runs = self.runs.len() - self.line_start;
 
         // Unic TR#9 L2: reverse items on the line
@@ -446,16 +439,16 @@ impl LineAdder {
         self.longest = self.longest.max(self.line_len);
         self.line_len = 0.0;
         self.lines.push(Line {
-            text_range: self.text_range.unwrap_or(Range::from(0u32..0)), // FIXME
+            text_range: Range::from(self.line_text_start..text_index),
             run_range: (self.line_start..self.runs.len()).into(),
             top,
             bottom: self.caret.1,
         });
-        self.text_range = None;
+        self.line_text_start = text_index;
     }
 
-    fn new_line(&mut self, x: f32) {
-        self.finish_line();
+    fn new_line(&mut self, text_index: u32, x: f32) {
+        self.finish_line(text_index);
         self.line_start = self.runs.len();
         self.caret.0 = x;
         self.caret.1 += self.line_gap;
@@ -466,10 +459,10 @@ impl LineAdder {
     }
 
     // Returns: required dimensions
-    fn finish(&mut self, valign: Align, height_bound: f32) -> Vec2 {
+    fn finish(&mut self, text_index: u32, valign: Align, height_bound: f32) -> Vec2 {
         // If any (even empty) run was added to the line, add v-space
         if self.line_start != self.runs.len() {
-            self.finish_line();
+            self.finish_line(text_index);
         }
 
         let height = self.caret.1;
