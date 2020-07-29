@@ -9,6 +9,7 @@ use super::Text;
 use crate::shaper::{GlyphBreak, GlyphRun};
 use crate::{fonts, Align, FontLibrary, Range, Vec2};
 use ab_glyph::{Font, ScaleFont};
+use unicode_bidi::Level;
 
 #[derive(Clone, Copy, Debug)]
 pub struct RunPart {
@@ -239,6 +240,8 @@ struct LineAdder {
     line_start: usize,
     text_range: Option<Range>,
     line_len: f32,
+    line_runs: Vec<(usize, Level, f32)>,
+    line_max_level: Option<Level>,
     ascent: f32,
     descent: f32,
     line_gap: f32,
@@ -304,6 +307,13 @@ impl LineAdder {
         self.descent = self.descent.min(scale_font.descent());
         self.line_gap = self.line_gap.max(scale_font.line_gap());
 
+        let part_len = (if rtl { -1.0 } else { 1.0 }) * (line_len - self.line_len);
+        self.line_runs.push((self.runs.len(), run.level, part_len));
+        self.line_max_level = self
+            .line_max_level
+            .map(|level| level.max(run.level))
+            .or(Some(run.level));
+
         self.num_glyphs += glyph_range.len();
         self.runs.push(RunPart {
             glyph_run: run_index as u32,
@@ -315,57 +325,126 @@ impl LineAdder {
     }
 
     fn finish_line(&mut self) {
-        let offset = match self.halign {
-            Align::Default => match self.line_is_rtl {
-                false => 0.0,
-                true => self.width_bound,
-            },
-            Align::TL => match self.line_is_rtl {
-                false => 0.0,
-                true => self.line_len,
-            },
-            Align::Centre => {
-                let mut offset = 0.5 * (self.width_bound - self.line_len);
-                if self.line_is_rtl {
-                    offset += self.line_len;
-                }
-                offset
-            }
-            Align::BR => match self.line_is_rtl {
-                false => self.width_bound - self.line_len,
-                true => self.width_bound,
-            },
-            Align::Stretch => {
-                // Justify text: expand the gaps between runs
-                // We should have at least one run, so subtraction won't wrap:
-                let num_gaps = self.runs.len() - self.line_start - 1;
-                let per_gap = (self.width_bound - self.line_len) / (num_gaps as f32);
+        let num_runs = self.runs.len() - self.line_start;
 
-                if !self.line_is_rtl {
-                    let mut offset = per_gap;
-                    for run in &mut self.runs[(self.line_start + 1)..] {
-                        run.offset.0 += offset;
-                        offset += per_gap;
-                    }
-                } else {
-                    let mut offset = self.width_bound;
-                    for run in &mut self.runs[self.line_start..] {
-                        run.offset.0 += offset;
-                        offset -= per_gap;
+        // Unic TR#9 L2: reverse items on the line
+        // This implementation does not correspond directly to the Unicode
+        // algorithm, which assumes that shaping happens *after* re-arranging
+        // chars (but also *before*, in order to calculate line-wrap points).
+        // Our shaper(s) accept both LTR and RTL input; additionally, our line
+        // wrapping must explicitly handle both LTR and RTL lines; the missing
+        // step is to rearrange non-wrapped runs on the line.
+        if let Some(mut level) = self.line_max_level {
+            let reverse_first = |mut slice: &mut [(usize, Level, f32)]| loop {
+                if slice.len() < 2 {
+                    return;
+                }
+                let len1 = slice.len() - 1;
+                let a = slice[0].0;
+                slice[0].0 = slice[len1].0;
+                slice[len1].0 = a;
+                slice = &mut slice[1..len1];
+            };
+            let line_level = match self.line_is_rtl {
+                false => Level::ltr(),
+                true => Level::rtl(),
+            };
+            while level > line_level {
+                let mut start = None;
+                for i in 0..num_runs {
+                    if let Some(s) = start {
+                        if self.line_runs[i].1 < level {
+                            reverse_first(&mut self.line_runs[s..i]);
+                            start = None;
+                        }
+                    } else {
+                        if self.line_runs[i].1 >= level {
+                            start = Some(i);
+                        }
                     }
                 }
-                0.0 // do not offset below
+                if let Some(s) = start {
+                    reverse_first(&mut self.line_runs[s..]);
+                }
+                level.lower(1).unwrap();
             }
-        };
-        if offset != 0.0 {
-            for run in &mut self.runs[self.line_start..] {
-                run.offset.0 += offset;
+
+            let mut i = 0;
+            while i < self.line_runs.len() {
+                let j = self.line_runs[i].0 - self.line_start;
+                if j > i {
+                    let mut a = self.line_runs[j].2;
+                    let b = a - self.line_runs[i].2;
+                    for k in (i + 1)..j {
+                        a += self.line_runs[k].2;
+                        self.runs[self.line_start + k].offset.0 += b;
+                    }
+                    self.runs[self.line_start + i].offset.0 += a;
+                    self.runs[self.line_start + j].offset.0 -= a;
+                    // swap field 2 (but since we never read i again, forget that):
+                    self.line_runs[j].2 = self.line_runs[i].2;
+                }
+                i += 1;
+            }
+
+            let runs = &mut self.runs[self.line_start..];
+
+            let offset = match self.halign {
+                Align::Default => match self.line_is_rtl {
+                    false => 0.0,
+                    true => self.width_bound,
+                },
+                Align::TL => match self.line_is_rtl {
+                    false => 0.0,
+                    true => self.line_len,
+                },
+                Align::Centre => {
+                    let mut offset = 0.5 * (self.width_bound - self.line_len);
+                    if self.line_is_rtl {
+                        offset += self.line_len;
+                    }
+                    offset
+                }
+                Align::BR => match self.line_is_rtl {
+                    false => self.width_bound - self.line_len,
+                    true => self.width_bound,
+                },
+                Align::Stretch => {
+                    // Justify text: expand the gaps between runs
+                    // We should have at least one run, so subtraction won't wrap:
+                    let num_gaps = (num_runs - 1) as f32;
+                    let per_gap = (self.width_bound - self.line_len) / num_gaps;
+
+                    if !self.line_is_rtl {
+                        let mut offset = per_gap;
+                        for run in &mut runs[1..] {
+                            run.offset.0 += offset;
+                            offset += per_gap;
+                        }
+                    } else {
+                        let mut offset = self.width_bound;
+                        for run in &mut runs[..] {
+                            run.offset.0 += offset;
+                            offset -= per_gap;
+                        }
+                    }
+                    0.0 // do not offset below
+                }
+            };
+            if offset != 0.0 {
+                for run in &mut runs[..] {
+                    run.offset.0 += offset;
+                }
             }
         }
+
+        self.line_runs.clear();
+        self.line_max_level = None;
 
         let top = self.caret.1 - self.ascent;
         self.caret.1 -= self.descent;
         self.longest = self.longest.max(self.line_len);
+        self.line_len = 0.0;
         self.lines.push(Line {
             text_range: self.text_range.unwrap_or(Range::from(0u32..0)), // FIXME
             run_range: (self.line_start..self.runs.len()).into(),
