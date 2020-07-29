@@ -44,8 +44,6 @@ impl Text {
     /// result of splitting and reversing according to Unicode TR9 aka
     /// Bidirectional algorithm), plus a list of "soft break" positions
     /// (where wrapping may introduce new lines depending on available space).
-    ///
-    /// TODO: implement BIDI processing
     pub(crate) fn prepare_runs(&mut self) {
         self.runs.clear();
         self.line_runs.clear();
@@ -137,6 +135,19 @@ impl Text {
             let rtl = self.runs[line_start].level.is_rtl();
             self.line_runs.push(LineRun { range, rtl });
         }
+
+        /*
+        println!("text: {}", &self.text);
+        for line in self.line_runs.iter() {
+            println!("line (rtl={}) runs:", line.rtl);
+            for run in &self.runs[line.range.to_std()] {
+                println!(
+                    "{:?}, text[{}..{}]: '{}', breaks={:?}",
+                    run.level, run.range.start, run.range.end, &self.text[run.range], run.breaks
+                );
+            }
+        }
+        */
     }
 }
 
