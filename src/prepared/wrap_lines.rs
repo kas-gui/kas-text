@@ -56,7 +56,7 @@ impl LineAdder {
     fn add_ltr(&mut self, fonts: &FontLibrary, run_index: usize, run: &GlyphRun, append: bool) {
         let scale_font = fonts.get(run.font_id).scaled(run.font_scale);
 
-        if !self.line_is_empty() && (!append || self.line_is_rtl) {
+        if !append || self.line_is_rtl {
             self.new_line(0.0);
         }
 
@@ -140,7 +140,7 @@ impl LineAdder {
     fn add_rtl(&mut self, fonts: &FontLibrary, run_index: usize, run: &GlyphRun, append: bool) {
         let scale_font = fonts.get(run.font_id).scaled(run.font_scale);
 
-        if !self.line_is_empty() && (!append || !self.line_is_rtl) {
+        if !append || !self.line_is_rtl {
             self.new_line(0.0);
         }
 
@@ -279,6 +279,7 @@ impl LineAdder {
         rtl: bool,
         run: &GlyphRun,
     ) {
+        // FIXME: we may not have the full range
         let mut text_range = run.range;
         if let Some(range) = self.text_range {
             text_range.start = range.start;
@@ -366,7 +367,7 @@ impl LineAdder {
         self.caret.1 -= self.descent;
         self.longest = self.longest.max(self.line_len);
         self.lines.push(Line {
-            text_range: self.text_range.unwrap(),
+            text_range: self.text_range.unwrap_or(Range::from(0u32..0)), // FIXME
             run_range: (self.line_start..self.runs.len()).into(),
             top,
             bottom: self.caret.1,
