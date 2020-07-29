@@ -43,6 +43,18 @@ pub struct Environment {
     /// and vice-versa, however the default alignment direction can affect the
     /// layout of complex texts.
     pub dir: Direction,
+    /// Bidirectional text
+    ///
+    /// If enabled, right-to-left text embedded within left-to-right text and
+    /// RTL within LTR will be re-ordered correctly (up to the maximum embedding
+    /// level defined by Unicode Technical Report #9).
+    ///
+    /// If disabled, the base paragraph direction may be LTR or RTL depending on
+    /// [`Environment::dir`], but embedded text is not re-ordered.
+    ///
+    /// Normally this should be enabled, but within text-editors it might be
+    /// disabled (at user's preference).
+    pub bidi: bool,
     /// Horizontal alignment
     pub halign: Align,
     /// Vertical alignment
@@ -60,9 +72,10 @@ impl Default for Environment {
         Environment {
             dpp: 96.0 / 72.0,
             pt_size: 11.0,
-            dir: Direction::LR,
-            halign: Align::Default,
-            valign: Align::Default,
+            dir: Direction::default(),
+            bidi: true,
+            halign: Align::default(),
+            valign: Align::default(),
             wrap: true,
             bounds: Vec2::INFINITY,
         }
@@ -192,17 +205,19 @@ impl Default for Align {
 
 /// Directionality of environment
 ///
-/// TODO: support RL and possibly vertical directions.
+/// This can be used to force the text direction.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Ord, PartialOrd, Hash)]
 pub enum Direction {
-    /// Left-to-Right (default)
+    /// Auto-detect (default)
+    Auto,
+    /// Left-to-Right
     LR,
-    // /// Right-to-Left
-    // RL,
+    /// Right-to-Left
+    RL,
 }
 
 impl Default for Direction {
     fn default() -> Self {
-        Direction::LR
+        Direction::Auto
     }
 }

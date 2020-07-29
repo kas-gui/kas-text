@@ -18,8 +18,9 @@
 //! This module *does not* perform line-breaking, wrapping or text reversal.
 
 use crate::{fonts, prepared, FontId, Range, Vec2};
-use ab_glyph::GlyphId;
+use ab_glyph::{GlyphId, ScaleFont};
 use smallvec::SmallVec;
+use unicode_bidi::Level;
 
 /// A positioned glyph
 #[derive(Clone, Copy, Debug)]
@@ -37,9 +38,20 @@ pub struct GlyphBreak {
     /// Position in sequence of glyphs
     pub pos: u32,
     /// End position of previous "word" excluding space
-    pub end_no_space: f32,
+    pub no_space_end: f32,
 }
 
+/// A glyph run
+///
+/// A glyph run is a sequence of glyphs, starting from the origin: 0.0.
+/// Whether the run is left-to-right text or right-to-left, glyphs are
+/// positioned between 0.0 and `run.caret` (usually with some internal
+/// margin due to side bearings — though this could even be negative).
+/// The first glyph in the run should not be invisible (space) except where the
+/// run occurs at the start of a line with explicit initial spacing, however
+/// the run may end with white-space. `no_space_end` gives the "caret" position
+/// of the *logical* end of the run, excluding white-space (for right-to-left
+/// text, this is the end nearer the origin than `caret`).
 #[derive(Clone, Debug)]
 pub struct GlyphRun {
     /// Sequence of all glyphs, with index in text
@@ -51,14 +63,42 @@ pub struct GlyphRun {
     pub font_scale: f32,
 
     /// End position, excluding whitespace
-    pub end_no_space: f32,
+    ///
+    /// Use [`GlyphRun::start_no_space`] or [`GlyphRun::end_no_space`].
+    pub no_space_end: f32,
     /// Position of next glyph, if this run is followed by another
     pub caret: f32,
 
     /// Range of slice represented
     pub range: Range,
-    /// If true, append to the prior line (if any)
-    pub append_to_prev: bool,
+    /// BIDI level (odd levels are right-to-left)
+    pub level: Level,
+}
+
+impl GlyphRun {
+    /// Starting offset of the run, excluding space
+    ///
+    /// Note that runs never have space at the logical start, thus we only
+    /// need to save this value for the logical end of the run.
+    pub fn start_no_space(&self) -> f32 {
+        if self.level.is_ltr() {
+            0.0
+        } else {
+            self.no_space_end
+        }
+    }
+
+    /// Ending offset of the run, excluding space
+    ///
+    /// Note that runs never have space at the logical start, thus we only
+    /// need to save this value for the logical end of the run.
+    pub fn end_no_space(&self) -> f32 {
+        if self.level.is_ltr() {
+            self.no_space_end
+        } else {
+            self.caret
+        }
+    }
 }
 
 /// Shape a `run` of text
@@ -71,7 +111,7 @@ pub struct GlyphRun {
 pub(crate) fn shape(font_id: FontId, dpem: f32, text: &str, run: &prepared::Run) -> GlyphRun {
     let mut glyphs = vec![];
     let mut breaks = Default::default();
-    let mut end_no_space = 0.0;
+    let mut no_space_end = 0.0;
     let mut caret = 0.0;
 
     let font = fonts().get(font_id);
@@ -86,8 +126,36 @@ pub(crate) fn shape(font_id: FontId, dpem: f32, text: &str, run: &prepared::Run)
 
         glyphs = r.0;
         breaks = r.1;
-        end_no_space = r.2;
+        no_space_end = r.2;
         caret = r.3;
+    }
+
+    if run.level.is_rtl() {
+        // With RTL text, no_space_end means start_no_space; recalculate
+        let mut break_i = breaks.len().wrapping_sub(1);
+        let mut start_no_space = caret;
+        let mut last_id = None;
+        let scale_font = font.scaled(font_scale);
+        let side_bearing =
+            |id: Option<GlyphId>| id.map(|id| scale_font.h_side_bearing(id)).unwrap_or(0.0);
+        for (pos, glyph) in glyphs.iter().enumerate().rev() {
+            if break_i < breaks.len() && breaks[break_i].pos as usize == pos {
+                assert!(pos < glyphs.len());
+                breaks[break_i].pos = pos as u32 + 1;
+                breaks[break_i].no_space_end = start_no_space - side_bearing(last_id);
+                break_i = break_i.wrapping_sub(1);
+            }
+            if !text[(glyph.index as usize)..]
+                .chars()
+                .next()
+                .map(|c| c.is_whitespace())
+                .unwrap_or(true)
+            {
+                last_id = Some(glyph.id);
+                start_no_space = glyph.position.0;
+            }
+        }
+        no_space_end = start_no_space - side_bearing(last_id);
     }
 
     GlyphRun {
@@ -95,10 +163,10 @@ pub(crate) fn shape(font_id: FontId, dpem: f32, text: &str, run: &prepared::Run)
         breaks,
         font_id,
         font_scale,
-        end_no_space,
+        no_space_end,
         caret,
         range: run.range,
-        append_to_prev: run.append_to_prev(),
+        level: run.level,
     }
 }
 
@@ -123,9 +191,15 @@ fn shape_harfbuzz(
 
     let slice = &text[run.range];
     let idx_offset = run.range.start;
+    let rtl = run.level.is_rtl();
 
     // TODO: cache the buffer for reuse later?
-    let buffer = harfbuzz_rs::UnicodeBuffer::new().add_str(slice);
+    let buffer = harfbuzz_rs::UnicodeBuffer::new()
+        .set_direction(match rtl {
+            false => harfbuzz_rs::Direction::Ltr,
+            true => harfbuzz_rs::Direction::Rtl,
+        })
+        .add_str(slice);
     let features = [];
 
     let output = harfbuzz_rs::shape(&font, buffer, &features);
@@ -133,10 +207,14 @@ fn shape_harfbuzz(
     let unit = |x: harfbuzz_rs::Position| x as f32 * unit_factor;
 
     let mut caret = 0.0;
-    let mut end_no_space = caret;
+    let mut no_space_end = caret;
 
     let mut breaks_iter = run.breaks.iter();
-    let mut next_break = breaks_iter.next().cloned().unwrap_or(u32::MAX);
+    let mut get_next_break = || match rtl {
+        false => breaks_iter.next().cloned().unwrap_or(u32::MAX),
+        true => breaks_iter.next_back().cloned().unwrap_or(u32::MAX),
+    };
+    let mut next_break = get_next_break();
     assert!(next_break >= idx_offset);
     let mut breaks = SmallVec::<[GlyphBreak; 2]>::with_capacity(run.breaks.len());
 
@@ -153,8 +231,8 @@ fn shape_harfbuzz(
 
         if index == next_break {
             let pos = glyphs.len() as u32;
-            breaks.push(GlyphBreak { pos, end_no_space });
-            next_break = breaks_iter.next().cloned().unwrap_or(u32::MAX);
+            breaks.push(GlyphBreak { pos, no_space_end });
+            next_break = get_next_break();
         }
 
         let position = Vec2(caret + unit(pos.x_offset), unit(pos.y_offset));
@@ -174,11 +252,11 @@ fn shape_harfbuzz(
             .map(|c| !c.is_whitespace())
             .unwrap()
         {
-            end_no_space = caret;
+            no_space_end = caret;
         }
     }
 
-    (glyphs, breaks, end_no_space, caret)
+    (glyphs, breaks, no_space_end, caret)
 }
 
 // Simple implementation (kerning but no shaping)
@@ -189,32 +267,49 @@ fn shape_simple(
     text: &str,
     run: &prepared::Run,
 ) -> (Vec<Glyph>, SmallVec<[GlyphBreak; 2]>, f32, f32) {
-    use ab_glyph::{Font, ScaleFont};
+    use ab_glyph::Font;
+    use unicode_bidi_mirroring::get_mirrored;
+
     let scale_font = font.scaled(font_scale);
 
     let slice = &text[run.range];
     let idx_offset = run.range.start;
+    let rtl = run.level.is_rtl();
 
     let mut caret = 0.0;
-    let mut end_no_space = caret;
+    let mut no_space_end = caret;
     let mut prev_glyph_id = None;
 
     let mut breaks_iter = run.breaks.iter();
-    let mut next_break = breaks_iter.next().cloned().unwrap_or(u32::MAX);
+    let mut get_next_break = || match rtl {
+        false => breaks_iter.next().cloned().unwrap_or(u32::MAX),
+        true => breaks_iter.next_back().cloned().unwrap_or(u32::MAX),
+    };
+    let mut next_break = get_next_break();
     assert!(next_break >= idx_offset);
     let mut breaks = SmallVec::<[GlyphBreak; 2]>::with_capacity(run.breaks.len());
 
     // Allocate with an over-estimate and shrink later:
     let mut glyphs = Vec::with_capacity(slice.len());
-
-    for (index, c) in slice.char_indices() {
+    let mut iter = slice.char_indices();
+    let mut next_char_index = || match rtl {
+        false => iter.next(),
+        true => iter.next_back(),
+    };
+    while let Some((index, mut c)) = next_char_index() {
         let index = idx_offset + index as u32;
+        if rtl {
+            if let Some(m) = get_mirrored(c) {
+                c = m;
+            }
+        }
         let id = scale_font.font().glyph_id(c);
 
         if index == next_break {
             let pos = glyphs.len() as u32;
-            breaks.push(GlyphBreak { pos, end_no_space });
-            next_break = breaks_iter.next().cloned().unwrap_or(u32::MAX);
+            breaks.push(GlyphBreak { pos, no_space_end });
+            next_break = get_next_break();
+            no_space_end = caret;
         }
 
         if let Some(prev) = prev_glyph_id {
@@ -232,11 +327,11 @@ fn shape_simple(
 
         caret += scale_font.h_advance(id);
         if !c.is_whitespace() {
-            end_no_space = caret;
+            no_space_end = caret;
         }
     }
 
     glyphs.shrink_to_fit();
 
-    (glyphs, breaks, end_no_space, caret)
+    (glyphs, breaks, no_space_end, caret)
 }
