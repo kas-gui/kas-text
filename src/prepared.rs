@@ -76,7 +76,7 @@ pub struct Text {
     wrapped_runs: Vec<RunPart>,
     // Indexes of line-starts within wrapped_runs:
     lines: Vec<Line>,
-    num_glyphs: usize,
+    num_glyphs: u32,
 }
 
 impl Text {
@@ -177,7 +177,7 @@ impl Text {
         assert!(self.action.is_none(), "kas-text::prepared::Text: not ready");
         let text = &self.text;
 
-        let mut glyphs = Vec::with_capacity(self.num_glyphs);
+        let mut glyphs = Vec::with_capacity(self.num_glyphs as usize);
         for run_part in self.wrapped_runs.iter().cloned() {
             let run = &self.glyph_runs[run_part.glyph_run as usize];
             let font_id = run.font_id;
