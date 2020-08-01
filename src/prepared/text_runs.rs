@@ -47,9 +47,6 @@ impl Text {
     pub(crate) fn prepare_runs(&mut self) {
         self.runs.clear();
         self.line_runs.clear();
-        if self.text.is_empty() {
-            return;
-        }
 
         let bidi = self.env.bidi;
         let default_para_level = match self.env.dir {
@@ -58,11 +55,11 @@ impl Text {
             Direction::RL => Some(RTL_LEVEL),
         };
         let mut levels = vec![];
-        let mut level;
+        let mut level: Level;
         if bidi || default_para_level.is_none() {
             levels = BidiInfo::new(&self.text, default_para_level).levels;
             assert_eq!(self.text.len(), levels.len());
-            level = levels[0];
+            level = levels.get(0).cloned().unwrap_or(LTR_LEVEL);
         } else {
             level = default_para_level.unwrap();
         }
@@ -112,28 +109,44 @@ impl Text {
             }
         }
 
-        // LineBreakIterator implicitly generates a hard-break at the text end,
-        // but if there already is one there it gets omitted. For edit boxes we
-        // need to keep this, and to force a run on empty input.
-        // TODO: for display-only text (labels), should we not do this or even
-        // trim all whitespace? Or is consistent behaviour more important?
-        let text_len = self.text.len();
-        if start < text_len {
-            let mut range = trim_control(&self.text[start..]);
-            // trim_control gives us a range within the slice; we need to offset:
-            range.start += start as u32;
-            range.end += start as u32;
-            self.runs.push(Run {
-                range,
-                level,
-                breaks,
-            });
-        }
-
+        // The loop above misses the last break at the end of the text.
+        // LineBreakIterator always reports a hard break at the text's end
+        // regardless of whether the text ends with a line-break char.
+        let mut range = trim_control(&self.text[start..]);
+        // trim_control gives us a range within the slice; we need to offset:
+        range.start += start as u32;
+        range.end += start as u32;
+        self.runs.push(Run {
+            range,
+            level,
+            breaks,
+        });
         if line_start < self.runs.len() {
             let range = Range::from(line_start..self.runs.len());
             let rtl = self.runs[line_start].level.is_rtl();
             self.line_runs.push(LineRun { range, rtl });
+        }
+
+        // If the text *does* end with a line-break, we add an empty line.
+        // TODO: do we want the empty line for labels or only for edit boxes?
+        if let Some(c) = self.text.chars().next_back() {
+            // Match according to https://www.unicode.org/reports/tr14/#Table1
+            if let '\x0C' | '\x0B' | '\u{2028}' | '\u{2029}' | '\r' | '\n' | '\u{85}' = c {
+                let text_len = self.text.len();
+                let range = Range::from(text_len..text_len);
+                level = default_para_level.unwrap_or(LTR_LEVEL);
+                breaks = Default::default();
+                line_start = self.runs.len();
+                self.runs.push(Run {
+                    range,
+                    level,
+                    breaks,
+                });
+
+                let range = Range::from(line_start..self.runs.len());
+                let rtl = level.is_rtl();
+                self.line_runs.push(LineRun { range, rtl });
+            }
         }
 
         /*
