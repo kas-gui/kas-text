@@ -64,7 +64,7 @@ pub struct Text {
     env: Environment,
     /// Contiguous text in logical order
     text: String,
-    /// Level runs within the text
+    /// Level runs within the text, in logical order
     runs: SmallVec<[Run; 1]>,
     /// Subsets of runs forming a line, with line direction
     line_runs: SmallVec<[LineRun; 1]>,
@@ -73,8 +73,11 @@ pub struct Text {
     required: Vec2,
     /// Runs of glyphs (same order as `runs` sequence)
     glyph_runs: Vec<shaper::GlyphRun>,
+    /// Contiguous runs, in logical order
+    ///
+    /// Within a line, runs may not be in visual order due to BIDI reversals.
     wrapped_runs: Vec<RunPart>,
-    // Indexes of line-starts within wrapped_runs:
+    /// Visual (wrapped) lines, in visual and logical order
     lines: Vec<Line>,
     num_glyphs: u32,
 }
@@ -330,20 +333,36 @@ impl Text {
         assert!(self.action.is_none(), "kas-text::prepared::Text: not ready");
 
         // We don't care too much about performance: use a naive search strategy
-        for run_part in &self.wrapped_runs {
+        'a: for run_part in &self.wrapped_runs {
             let glyph_run = &self.glyph_runs[run_part.glyph_run as usize];
 
-            if index > glyph_run.range.end() {
+            if !glyph_run.range.includes(index) {
                 continue;
             }
             let mut pos = Vec2(glyph_run.caret, 0.0);
-            if index < glyph_run.range.end() {
-                for glyph in &glyph_run.glyphs[run_part.glyph_range.start()..] {
+            'b: loop {
+                if index == glyph_run.range.end() {
+                    break 'b;
+                }
+
+                let run_end = run_part.glyph_range.end();
+                if run_end < glyph_run.glyphs.len() {
+                    let glyph = glyph_run.glyphs[run_end];
+                    if index > glyph.index as usize {
+                        continue 'a;
+                    } else if index == glyph.index as usize {
+                        pos = glyph.position;
+                        break 'b;
+                    }
+                }
+
+                for glyph in &glyph_run.glyphs[run_part.glyph_range.to_std()] {
                     if glyph.index as usize > index {
                         break;
                     }
                     pos = glyph.position;
                 }
+                break 'b;
             }
 
             let sf = fonts().get(glyph_run.font_id).scaled(glyph_run.font_scale);

@@ -13,6 +13,7 @@ use unicode_bidi::Level;
 
 #[derive(Clone, Copy, Debug)]
 pub struct RunPart {
+    pub text_end: u32,
     pub glyph_run: u32,
     pub glyph_range: Range,
     pub offset: Vec2,
@@ -66,7 +67,7 @@ impl LineAdder {
         if !self.justify && line_len <= self.width_bound {
             // Short-cut: we can add the entire run.
             self.prep_add(&scale_font, line_len, false, &run);
-            self.add_part(run_index, 0..glyph_end);
+            self.add_part(run.range.end, run_index, 0..glyph_end);
             self.caret.0 += run.caret;
         } else if run.level.is_rtl() {
             // It makes little sense to wrap a run against its direction.
@@ -77,7 +78,7 @@ impl LineAdder {
             if line_len < self.width_bound {
                 self.new_line(run.range.start, 0.0);
                 self.prep_add(&scale_font, line_len, false, &run);
-                self.add_part(run_index, 0..glyph_end);
+                self.add_part(run.range.end, run_index, 0..glyph_end);
                 self.caret.0 += run.caret;
             } else {
                 self.add_rtl(fonts, run_index, run, false);
@@ -121,7 +122,12 @@ impl LineAdder {
 
                 if glyph_start < glyph_end {
                     self.prep_add(&scale_font, line_len, false, &run);
-                    self.add_part(run_index, glyph_start..glyph_end);
+                    let text_end = run
+                        .glyphs
+                        .get(glyph_end as usize + 1)
+                        .map(|g| g.index)
+                        .unwrap_or(run.range.end);
+                    self.add_part(text_end, run_index, glyph_start..glyph_end);
                 }
 
                 // If we are already at the end of the run, stop. This
@@ -158,7 +164,7 @@ impl LineAdder {
         if !self.justify && line_len <= self.width_bound {
             // Short-cut: we can add the entire run.
             self.prep_add(&scale_font, line_len, true, &run);
-            self.add_part(run_index, 0..glyph_end);
+            self.add_part(run.range.end, run_index, 0..glyph_end);
         } else if run.level.is_ltr() {
             // It makes little sense to wrap a run against its direction.
             // Instead we push the run to the next line, and if it still needs
@@ -169,7 +175,7 @@ impl LineAdder {
                 self.new_line(run.range.start, 0.0);
                 self.caret.0 -= run.caret;
                 self.prep_add(&scale_font, line_len, true, &run);
-                self.add_part(run_index, 0..glyph_end);
+                self.add_part(run.range.end, run_index, 0..glyph_end);
             } else {
                 return self.add_ltr(fonts, run_index, run, false);
             }
@@ -212,7 +218,11 @@ impl LineAdder {
 
                 if glyph_start < glyph_end {
                     self.prep_add(&scale_font, line_len, true, &run);
-                    self.add_part(run_index, glyph_start..glyph_end);
+                    let mut text_end = run.range.end;
+                    if glyph_start > 0 {
+                        text_end = run.glyphs[glyph_start as usize - 1].index;
+                    }
+                    self.add_part(text_end, run_index, glyph_start..glyph_end);
                 }
 
                 // If we are already at the end of the run, stop. This
@@ -224,13 +234,9 @@ impl LineAdder {
 
                 if line_break {
                     // Offset new line since we are not at the start of the run
-                    let (index, g_pos) = run
-                        .glyphs
-                        .get(glyph_start as usize)
-                        .map(|g| (g.index, g.position.0))
-                        .unwrap_or((run.range.end, run.caret));
-                    self.new_line(index, -g_pos);
-                    initial_caret = run.caret - g_pos;
+                    let g = run.glyphs[glyph_start as usize - 1];
+                    self.new_line(g.index, -g.position.0);
+                    initial_caret = run.caret - g.position.0;
                 }
             }
         }
@@ -314,9 +320,10 @@ impl LineAdder {
 
     // Call prep_add first!
     #[inline]
-    fn add_part(&mut self, run_index: usize, glyph_range: std::ops::Range<u32>) {
+    fn add_part(&mut self, text_end: u32, run_index: usize, glyph_range: std::ops::Range<u32>) {
         self.num_glyphs += glyph_range.len() as u32;
         self.runs.push(RunPart {
+            text_end,
             glyph_run: run_index as u32,
             glyph_range: glyph_range.into(),
             offset: self.caret,
