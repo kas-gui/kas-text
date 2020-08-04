@@ -37,13 +37,15 @@ impl Text {
         // we determine that then call the appropriate implementation.
         for line in self.line_runs.iter() {
             let mut append = false;
-            let line_start = line.range.start();
-            for (index, run) in self.glyph_runs[line.range.to_std()].iter().enumerate() {
+            let mut index = line.range.start();
+            while index < line.range.end() {
+                let run = &self.glyph_runs[index];
                 match line.rtl {
-                    false => adder.add_ltr(&fonts, line_start + index, run, append),
-                    true => adder.add_rtl(&fonts, line_start + index, run, append),
+                    false => adder.add_ltr(&fonts, index, run, append),
+                    true => adder.add_rtl(&fonts, index, run, append),
                 }
                 append = true;
+                index += 1;
             }
         }
 
@@ -124,7 +126,7 @@ impl LineAdder {
                     self.prep_add(&scale_font, line_len, false, &run);
                     let text_end = run
                         .glyphs
-                        .get(glyph_end as usize + 1)
+                        .get(glyph_end as usize)
                         .map(|g| g.index)
                         .unwrap_or(run.range.end);
                     self.add_part(text_end, run_index, glyph_start..glyph_end);

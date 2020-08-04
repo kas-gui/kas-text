@@ -12,8 +12,10 @@ use ab_glyph::{PxScale, ScaleFont};
 use crate::{fonts, rich, shaper, FontId, Glyph, Vec2};
 use crate::{Environment, UpdateEnv};
 
+mod glyph_pos;
 mod text_runs;
 mod wrap_lines;
+pub use glyph_pos::{MarkerPos, MarkerPosIter};
 pub(crate) use text_runs::{LineRun, Run};
 use wrap_lines::{Line, RunPart};
 
@@ -315,61 +317,6 @@ impl Text {
         // There should not be any position to the left of the first run.
         // (If this *is* possible, then certain other nav functions need fixing.)
         panic!("kas-text bug!");
-    }
-
-    /// Find the starting position (top-left) of the glyph at the given index
-    ///
-    /// Returns `Some(pos, ascent, descent)` on success, where `pos.1 - ascent`
-    /// and `pos.1 - descent` are the top and bottom of the glyph position.
-    ///
-    /// Note that this only searches *visible* text sections for a valid index.
-    /// In case the `index` is not within a slice of visible text, this returns
-    /// `None`. So long as `index` is within a visible slice (or at its end),
-    /// it does not need to be on a valid code-point.
-    ///
-    /// Note: if the text's bounding rect does not start at the origin, then
-    /// the coordinates of the top-left corner should be added to this result.
-    pub fn text_glyph_pos(&self, index: usize) -> Option<(Vec2, f32, f32)> {
-        assert!(self.action.is_none(), "kas-text::prepared::Text: not ready");
-
-        // We don't care too much about performance: use a naive search strategy
-        'a: for run_part in &self.wrapped_runs {
-            let glyph_run = &self.glyph_runs[run_part.glyph_run as usize];
-
-            if !glyph_run.range.includes(index) {
-                continue;
-            }
-            let mut pos = Vec2(glyph_run.caret, 0.0);
-            'b: loop {
-                if index == glyph_run.range.end() {
-                    break 'b;
-                }
-
-                let run_end = run_part.glyph_range.end();
-                if run_end < glyph_run.glyphs.len() {
-                    let glyph = glyph_run.glyphs[run_end];
-                    if index > glyph.index as usize {
-                        continue 'a;
-                    } else if index == glyph.index as usize {
-                        pos = glyph.position;
-                        break 'b;
-                    }
-                }
-
-                for glyph in &glyph_run.glyphs[run_part.glyph_range.to_std()] {
-                    if glyph.index as usize > index {
-                        break;
-                    }
-                    pos = glyph.position;
-                }
-                break 'b;
-            }
-
-            let sf = fonts().get(glyph_run.font_id).scaled(glyph_run.font_scale);
-            let pos = run_part.offset + pos;
-            return Some((pos, sf.ascent(), sf.descent()));
-        }
-        None
     }
 
     /// Find the text index for the glyph nearest the given `pos`
