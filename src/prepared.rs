@@ -106,8 +106,63 @@ impl Text {
     ///
     /// It is valid to reference text within the range `0..text_len()`,
     /// even if not all text within this range will be displayed (due to runs).
+    #[inline]
     pub fn text_len(&self) -> usize {
         self.text.len()
+    }
+
+    /// Access to the raw text
+    ///
+    /// This is the contiguous raw text without formatting information.
+    #[inline]
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+
+    /// Insert a char at the given position
+    ///
+    /// This may be used to edit the raw text instead of replacing it.
+    /// One must call [`PreparedText::prepare`] afterwards.
+    ///
+    /// TODO: document how this affects formatting.
+    ///
+    /// Currently this is not significantly more efficent than
+    /// [`PreparedText::set_text`]. This may change in the future (TODO).
+    pub fn insert_char(&mut self, index: usize, c: char) {
+        self.text.insert(index, c);
+        self.action = Action::Runs;
+    }
+
+    /// Replace a section of text
+    ///
+    /// This may be used to edit the raw text instead of replacing it.
+    /// One must call [`Text::prepare`] afterwards.
+    ///
+    /// TODO: document how this affects formatting.
+    ///
+    /// Currently this is not significantly more efficent than
+    /// [`Text::set_text`]. This may change in the future (TODO).
+    #[inline]
+    pub fn replace_range<R>(&mut self, range: R, replace_with: &str)
+    where
+        R: std::ops::RangeBounds<usize>,
+    {
+        self.text.replace_range(range, replace_with);
+        self.action = Action::Runs;
+    }
+
+    /// Swap the raw text with a `String`
+    ///
+    /// This may be used to edit the raw text instead of replacing it.
+    /// One must call [`PreparedText::prepare`] afterwards.
+    ///
+    /// TODO: document how this affects formatting.
+    ///
+    /// Currently this is not significantly more efficent than
+    /// [`PreparedText::set_text`]. This may change in the future (TODO).
+    pub fn swap_string(&mut self, string: &mut String) {
+        std::mem::swap(&mut self.text, string);
+        self.action = Action::Runs;
     }
 
     /// Set the text
@@ -117,7 +172,7 @@ impl Text {
     /// Note that [`Text::prepare`] is not called automatically since it must
     /// not be called before fonts are loaded.
     pub fn set_text(&mut self, text: rich::Text) -> bool {
-        if self.text == text.text && self.runs.len() == 1 {
+        if self.text == text.text {
             return false; // no change
         }
 
@@ -133,11 +188,20 @@ impl Text {
         &self.env
     }
 
-    /// Update the environment and prepare for drawing
+    /// Update the environment and prepare for display
+    ///
+    /// This calls [`Text::prepare`] to prepare text for display.
+    #[inline]
     pub fn update_env<F: FnOnce(&mut UpdateEnv)>(&mut self, f: F) {
         let mut update = UpdateEnv::new(&mut self.env);
         f(&mut update);
-        let action = update.finish().max(self.action);
+        self.action = update.finish().max(self.action);
+        self.prepare();
+    }
+
+    /// Prepare text for display
+    pub fn prepare(&mut self) {
+        let action = self.action;
         if action == Action::None {
             return;
         }
