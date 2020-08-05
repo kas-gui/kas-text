@@ -158,6 +158,93 @@ impl Text {
         MarkerPosIter { v, a, b }
     }
 
+    /// Yield a sequence of rectangles to highlight a given range, by lines
+    ///
+    /// Rectangles span to end and beginning of lines when wrapping lines.
+    /// (Note: gaps are possible between runs in the first and last lines. This
+    /// is a defect which should be fixed but low priority and trickier than it
+    /// might seem due to bi-directional text allowing re-ordering of runs.)
+    ///
+    /// This locates the ends of a range as with [`Text::text_glyph_pos`], but
+    /// yields a separate rect for each "run" within this range (where "run" is
+    /// is a line or part of a line). Rects are represented by the top-left
+    /// vertex and the bottom-right vertex.
+    pub fn highlight_lines<R: Into<std::ops::Range<usize>>>(&self, range: R) -> Vec<(Vec2, Vec2)> {
+        assert!(self.action.is_none(), "kas-text::prepared::Text: not ready");
+        let range = range.into();
+        if range.len() == 0 {
+            return vec![];
+        }
+
+        let mut lines = self.lines.iter();
+        let mut rects = Vec::with_capacity(self.lines.len());
+        let rbound = self.env.bounds.0;
+
+        // Find the first line
+        let mut cur_line = 'l1: loop {
+            while let Some(line) = lines.next() {
+                if line.text_range.includes(range.start) {
+                    break 'l1 line;
+                }
+            }
+            return vec![];
+        };
+
+        if range.start > cur_line.text_range.start() || range.end <= cur_line.text_range.end() {
+            self.highlight_run_range(range.clone(), cur_line.run_range.to_std(), &mut rects);
+            if !rects.is_empty() && range.end > cur_line.text_range.end() {
+                // find the rect nearest the line's end and extend
+                let mut nearest = 0;
+                let first_run = cur_line.run_range.start();
+                let glyph_run = self.wrapped_runs[first_run].glyph_run as usize;
+                if self.glyph_runs[glyph_run].level.is_ltr() {
+                    let mut dist = rbound - (rects[0].1).0;
+                    for i in 1..rects.len() {
+                        let d = rbound - (rects[i].1).0;
+                        if d < dist {
+                            nearest = i;
+                            dist = d;
+                        }
+                    }
+                    (rects[nearest].1).0 = rbound;
+                } else {
+                    let mut dist = (rects[0].0).0;
+                    for i in 1..rects.len() {
+                        let d = (rects[i].0).0;
+                        if d < dist {
+                            nearest = i;
+                            dist = d;
+                        }
+                    }
+                    (rects[nearest].0).0 = 0.0;
+                }
+            }
+        } else {
+            let a = Vec2(0.0, cur_line.top);
+            let b = Vec2(rbound, cur_line.bottom);
+            rects.push((a, b));
+        }
+
+        if range.end > cur_line.text_range.end() {
+            while let Some(line) = lines.next() {
+                if range.end <= line.text_range.end() {
+                    cur_line = line;
+                    break;
+                }
+
+                let a = Vec2(0.0, line.top);
+                let b = Vec2(rbound, line.bottom);
+                rects.push((a, b));
+            }
+
+            if cur_line.text_range.start() < range.end {
+                self.highlight_run_range(range, cur_line.run_range.to_std(), &mut rects);
+            }
+        }
+
+        rects
+    }
+
     /// Yield a sequence of rectangles to highlight a given range, by runs
     ///
     /// Rectangles tightly fit each "run" (piece) of text highlighted. (As an
@@ -168,6 +255,7 @@ impl Text {
     /// yields a separate rect for each "run" within this range (where "run" is
     /// is a line or part of a line). Rects are represented by the top-left
     /// vertex and the bottom-right vertex.
+    #[inline]
     pub fn highlight_runs<R: Into<std::ops::Range<usize>>>(&self, range: R) -> Vec<(Vec2, Vec2)> {
         assert!(self.action.is_none(), "kas-text::prepared::Text: not ready");
         let range = range.into();
@@ -176,6 +264,22 @@ impl Text {
         }
 
         let mut rects = Vec::with_capacity(self.wrapped_runs.len());
+        self.highlight_run_range(range, 0..self.wrapped_runs.len(), &mut rects);
+        rects
+    }
+
+    /// Produce highlighting rectangles within a range of runs
+    ///
+    /// Warning: runs are in logical order which does not correspond to display
+    /// order. As a result, the order of results (on a line) is not known.
+    fn highlight_run_range(
+        &self,
+        range: std::ops::Range<usize>,
+        run_range: std::ops::Range<usize>,
+        rects: &mut Vec<(Vec2, Vec2)>,
+    ) {
+        assert!(run_range.end <= self.wrapped_runs.len());
+
         let bounds = self.env.bounds;
         let mut push_rect = |mut a: Vec2, mut b: Vec2, offset, ascent, descent| {
             a = a + offset;
@@ -188,10 +292,10 @@ impl Text {
         };
         let mut a;
 
-        let mut i = 0;
+        let mut i = run_range.start;
         'b: loop {
-            if i >= self.wrapped_runs.len() {
-                return vec![];
+            if i >= run_range.end {
+                return;
             }
             let run_part = &self.wrapped_runs[i];
             if range.start >= run_part.text_end as usize {
@@ -225,14 +329,18 @@ impl Text {
         }
 
         let mut first = true;
-        'a: while i < self.wrapped_runs.len() {
+        'a: while i < run_range.end {
             let run_part = &self.wrapped_runs[i];
             let glyph_run = &self.glyph_runs[run_part.glyph_run as usize];
             let sf = fonts().get(glyph_run.font_id).scaled(glyph_run.font_scale);
 
             if !first {
                 a = if glyph_run.level.is_ltr() {
-                    glyph_run.glyphs[run_part.glyph_range.start()].position
+                    if run_part.glyph_range.start() < glyph_run.glyphs.len() {
+                        glyph_run.glyphs[run_part.glyph_range.start()].position
+                    } else {
+                        Vec2::ZERO
+                    }
                 } else {
                     if run_part.glyph_range.end() < glyph_run.glyphs.len() {
                         glyph_run.glyphs[run_part.glyph_range.end()].position
@@ -289,6 +397,5 @@ impl Text {
             push_rect(a, b, run_part.offset, sf.ascent(), sf.descent());
             break;
         }
-        rects
     }
 }

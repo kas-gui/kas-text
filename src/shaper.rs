@@ -69,7 +69,7 @@ pub struct GlyphRun {
     /// Position of next glyph, if this run is followed by another
     pub caret: f32,
 
-    /// Range of slice represented
+    /// Range of text represented
     pub range: Range,
     /// BIDI level (odd levels are right-to-left)
     pub level: Level,

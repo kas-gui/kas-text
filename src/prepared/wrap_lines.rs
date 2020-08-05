@@ -251,6 +251,7 @@ struct LineAdder {
     lines: Vec<Line>,
     line_start: usize,
     line_text_start: u32,
+    line_text_end: u32,
     line_len: f32,
     line_runs: Vec<(usize, Level, f32)>,
     line_max_level: Option<Level>,
@@ -323,6 +324,7 @@ impl LineAdder {
     // Call prep_add first!
     #[inline]
     fn add_part(&mut self, text_end: u32, run_index: usize, glyph_range: std::ops::Range<u32>) {
+        self.line_text_end = text_end;
         self.num_glyphs += glyph_range.len() as u32;
         self.runs.push(RunPart {
             text_end,
@@ -454,7 +456,7 @@ impl LineAdder {
         self.longest = self.longest.max(self.line_len);
         self.line_len = 0.0;
         self.lines.push(Line {
-            text_range: Range::from(self.line_text_start..text_index),
+            text_range: Range::from(self.line_text_start..self.line_text_end),
             run_range: (self.line_start..self.runs.len()).into(),
             top,
             bottom: self.caret.1,
@@ -463,7 +465,9 @@ impl LineAdder {
     }
 
     fn new_line(&mut self, text_index: u32, x: f32) {
-        self.finish_line(text_index);
+        if self.line_start != self.runs.len() {
+            self.finish_line(text_index);
+        }
         self.line_start = self.runs.len();
         self.caret.0 = x;
         self.caret.1 += self.line_gap;
