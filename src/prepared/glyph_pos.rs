@@ -114,8 +114,7 @@ impl Text {
             // If index is at the end of a run, we potentially get two matches.
             if index == run_part.text_end as usize {
                 let pos = if glyph_run.level.is_ltr() {
-                    if index < glyph_run.range.end() {
-                        assert!(run_part.glyph_range.end() < glyph_run.glyphs.len());
+                    if run_part.glyph_range.end() < glyph_run.glyphs.len() {
                         glyph_run.glyphs[run_part.glyph_range.end()].position
                     } else {
                         Vec2(glyph_run.caret, 0.0)
@@ -157,5 +156,139 @@ impl Text {
         }
 
         MarkerPosIter { v, a, b }
+    }
+
+    /// Yield a sequence of rectangles to highlight a given range, by runs
+    ///
+    /// Rectangles tightly fit each "run" (piece) of text highlighted. (As an
+    /// artifact, the highlighting may leave gaps between runs. This may or may
+    /// not change in the future.)
+    ///
+    /// This locates the ends of a range as with [`Text::text_glyph_pos`], but
+    /// yields a separate rect for each "run" within this range (where "run" is
+    /// is a line or part of a line). Rects are represented by the top-left
+    /// vertex and the bottom-right vertex.
+    pub fn highlight_runs<R: Into<std::ops::Range<usize>>>(&self, range: R) -> Vec<(Vec2, Vec2)> {
+        assert!(self.action.is_none(), "kas-text::prepared::Text: not ready");
+        let range = range.into();
+        if range.len() == 0 {
+            return vec![];
+        }
+
+        let mut rects = Vec::with_capacity(self.wrapped_runs.len());
+        let bounds = self.env.bounds;
+        let mut push_rect = |mut a: Vec2, mut b: Vec2, offset, ascent, descent| {
+            a = a + offset;
+            b = b + offset;
+            a.1 -= ascent;
+            b.1 -= descent;
+            a = a.min(bounds).max(Vec2::ZERO);
+            b = b.min(bounds).max(Vec2::ZERO);
+            rects.push((a, b));
+        };
+        let mut a;
+
+        let mut i = 0;
+        'b: loop {
+            if i >= self.wrapped_runs.len() {
+                return vec![];
+            }
+            let run_part = &self.wrapped_runs[i];
+            if range.start >= run_part.text_end as usize {
+                i += 1;
+                continue;
+            }
+
+            let glyph_run = &self.glyph_runs[run_part.glyph_run as usize];
+            let sf = fonts().get(glyph_run.font_id).scaled(glyph_run.font_scale);
+
+            // else: range.start < run_part.text_end as usize
+            if glyph_run.level.is_ltr() {
+                for glyph in glyph_run.glyphs[run_part.glyph_range.to_std()].iter().rev() {
+                    if glyph.index as usize <= range.start {
+                        a = glyph.position;
+                        break 'b;
+                    }
+                }
+                a = Vec2::ZERO;
+            } else {
+                for glyph in glyph_run.glyphs[run_part.glyph_range.to_std()].iter() {
+                    if glyph.index as usize <= range.start {
+                        a = glyph.position;
+                        a.0 += sf.h_advance(glyph.id);
+                        break 'b;
+                    }
+                }
+                a = Vec2(glyph_run.caret, 0.0);
+            }
+            break 'b;
+        }
+
+        let mut first = true;
+        'a: while i < self.wrapped_runs.len() {
+            let run_part = &self.wrapped_runs[i];
+            let glyph_run = &self.glyph_runs[run_part.glyph_run as usize];
+            let sf = fonts().get(glyph_run.font_id).scaled(glyph_run.font_scale);
+
+            if !first {
+                a = if glyph_run.level.is_ltr() {
+                    glyph_run.glyphs[run_part.glyph_range.start()].position
+                } else {
+                    if run_part.glyph_range.end() < glyph_run.glyphs.len() {
+                        glyph_run.glyphs[run_part.glyph_range.end()].position
+                    } else {
+                        Vec2(glyph_run.caret, 0.0)
+                    }
+                };
+            }
+            first = false;
+
+            if range.end >= run_part.text_end as usize {
+                let b;
+                if glyph_run.level.is_ltr() {
+                    if run_part.glyph_range.end() < glyph_run.glyphs.len() {
+                        b = glyph_run.glyphs[run_part.glyph_range.end()].position;
+                    } else {
+                        b = Vec2(glyph_run.caret, 0.0);
+                    }
+                } else {
+                    let p = glyph_run.glyphs[run_part.glyph_range.start()].position;
+                    b = Vec2(a.0, p.1);
+                    a.0 = p.0;
+                };
+
+                push_rect(a, b, run_part.offset, sf.ascent(), sf.descent());
+                i += 1;
+                continue;
+            }
+
+            // else: range.end < run_part.text_end as usize
+            let b;
+            'c: loop {
+                if glyph_run.level.is_ltr() {
+                    for glyph in glyph_run.glyphs[run_part.glyph_range.to_std()].iter().rev() {
+                        if glyph.index as usize <= range.end {
+                            b = glyph.position;
+                            break 'c;
+                        }
+                    }
+                } else {
+                    for glyph in glyph_run.glyphs[run_part.glyph_range.to_std()].iter() {
+                        if glyph.index as usize <= range.end {
+                            let mut p = glyph.position;
+                            p.0 += sf.h_advance(glyph.id);
+                            b = Vec2(a.0, p.1);
+                            a.0 = p.0;
+                            break 'c;
+                        }
+                    }
+                }
+                break 'a;
+            }
+
+            push_rect(a, b, run_part.offset, sf.ascent(), sf.descent());
+            break;
+        }
+        rects
     }
 }

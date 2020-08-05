@@ -5,11 +5,10 @@
 
 //! Text prepared for display
 
+use ab_glyph::PxScale;
 use smallvec::SmallVec;
 
-use ab_glyph::{PxScale, ScaleFont};
-
-use crate::{fonts, rich, shaper, FontId, Glyph, Vec2};
+use crate::{rich, shaper, FontId, Glyph, Vec2};
 use crate::{Environment, UpdateEnv};
 
 mod glyph_pos;
@@ -482,79 +481,6 @@ impl Text {
         }
 
         // TODO(opt): length is at most 3. Use a different data type?
-        rects
-    }
-
-    /// Yield a sequence of rectangles to highlight a given range, by runs
-    ///
-    /// Rectangles tightly fit each "run" (piece) of text highlighted.
-    ///
-    /// This locates the ends of a range as with [`Text::text_glyph_pos`], but
-    /// yields a separate rect for each "run" within this range (where "run" is
-    /// is a line or part of a line). Rects are represented by the top-left
-    /// vertex and the bottom-right vertex.
-    pub fn highlight_runs<R: Into<std::ops::Range<usize>>>(&self, range: R) -> Vec<(Vec2, Vec2)> {
-        assert!(self.action.is_none(), "kas-text::prepared::Text: not ready");
-        let range = range.into();
-        if range.len() == 0 {
-            return vec![];
-        }
-
-        let mut rects = Vec::with_capacity(self.wrapped_runs.len());
-        for run_part in &self.wrapped_runs {
-            let glyph_run = &self.glyph_runs[run_part.glyph_run as usize];
-
-            let end_index = glyph_run
-                .glyphs
-                .get(run_part.glyph_range.end as usize)
-                .map(|glyph| glyph.index)
-                .unwrap_or(glyph_run.range.end) as usize;
-            if end_index <= range.start {
-                continue;
-            }
-
-            let glyph_range = run_part.glyph_range.to_std();
-
-            let start;
-            let mut start_pos = 'l1: loop {
-                let mut pos = Vec2::ZERO;
-                for (i, glyph) in glyph_run.glyphs[glyph_range.clone()].iter().enumerate() {
-                    if glyph.index as usize > range.start {
-                        start = i;
-                        break 'l1 pos;
-                    }
-                    pos = glyph.position;
-                }
-                start = glyph_range.end;
-                break pos;
-            };
-
-            let mut stop = false;
-            let mut end_pos = if end_index <= range.end {
-                Vec2(glyph_run.caret, 0.0)
-            } else {
-                'l2: loop {
-                    let mut pos = start_pos;
-                    for glyph in &glyph_run.glyphs[start..glyph_range.end] {
-                        if glyph.index as usize > range.end {
-                            stop = true;
-                            break 'l2 pos;
-                        }
-                        pos = glyph.position;
-                    }
-                    break Vec2(glyph_run.caret, 0.0);
-                }
-            };
-
-            let sf = fonts().get(glyph_run.font_id).scaled(glyph_run.font_scale);
-            start_pos.1 -= sf.ascent();
-            end_pos.1 -= sf.descent();
-            rects.push((run_part.offset + start_pos, run_part.offset + end_pos));
-
-            if stop {
-                break;
-            }
-        }
         rects
     }
 }
