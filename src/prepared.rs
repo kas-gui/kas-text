@@ -237,6 +237,27 @@ impl Text {
         self.lines.get(line).map(|line| line.text_range.to_std())
     }
 
+    /// Get the directionality of the current line
+    ///
+    /// Returns `true` for left-to-right lines, `false` for RTL.
+    ///
+    /// Panics if `line >= self.num_lines()`.
+    pub fn line_is_ltr(&self, line: usize) -> bool {
+        let first_run = self.lines[line].run_range.start();
+        let glyph_run = self.wrapped_runs[first_run].glyph_run as usize;
+        self.glyph_runs[glyph_run].level.is_ltr()
+    }
+
+    /// Get the directionality of the current line
+    ///
+    /// Returns `true` for right-to-left lines, `false` for LTR.
+    ///
+    /// Panics if `line >= self.num_lines()`.
+    #[inline]
+    pub fn line_is_rtl(&self, line: usize) -> bool {
+        !self.line_is_ltr(line)
+    }
+
     /// Find the text index for the glyph nearest the given `pos`
     ///
     /// This includes the index immediately after the last glyph, thus
