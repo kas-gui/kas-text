@@ -51,11 +51,9 @@ impl Action {
 ///
 /// Navigating to the start or end of a line can be done with [`Text::find_line`].
 ///
-/// The functions [`Text::nav_left`] and [`Text::nav_right`] allow navigating
-/// one *glyph* left or right. This may not be what you want: ligatures count
-/// as a single glyph and combining diacritics may count as separate glyphs.
-/// Alternatively, one may use a library such as `unicode-segmentation` which
-/// provides a `GraphemeCursor` to step back/forward one "grapheme".
+/// Navigating left or right should be done via a library such as
+/// `unicode-segmentation` which provides a `GraphemeCursor` to step back or
+/// forward one "grapheme".
 ///
 /// Navigating "up" and "down" is trickier; use [`Text::text_glyph_pos`]
 /// to get the position of the cursor, [`Text::find_line`] to get the line
@@ -219,12 +217,18 @@ impl Text {
     /// `index` is within a mult-byte line break).
     pub fn find_line(&self, index: usize) -> Option<(usize, std::ops::Range<usize>)> {
         assert!(self.action.is_none(), "kas-text::prepared::Text: not ready");
+        let mut first = None;
         for (n, line) in self.lines.iter().enumerate() {
-            if line.text_range.includes(index) {
+            if line.text_range.end() == index {
+                // When line wrapping, this also matches the start of the next
+                // line which is the preferred location. At the end of other
+                // lines it does not match any other location.
+                first = Some((n, line.text_range.to_std()));
+            } else if line.text_range.includes(index) {
                 return Some((n, line.text_range.to_std()));
             }
         }
-        None
+        first
     }
 
     /// Get the range of a line, by line number
