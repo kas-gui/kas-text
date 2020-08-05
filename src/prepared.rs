@@ -351,24 +351,39 @@ impl Text {
 
         let mut best = line.text_range.start;
         let mut best_dist = f32::INFINITY;
+        let mut try_best = |dist, index| {
+            if dist < best_dist {
+                best = index;
+                best_dist = dist;
+            }
+        };
 
         for run_part in &self.wrapped_runs[run_range] {
             let glyph_run = &self.glyph_runs[run_part.glyph_run as usize];
             let rel_pos = x - run_part.offset.0;
 
-            for glyph in &glyph_run.glyphs[run_part.glyph_range.to_std()] {
-                let dist = (glyph.position.0 - rel_pos).abs();
-                if dist < best_dist {
-                    best = glyph.index;
-                    best_dist = dist;
+            let end_index;
+            if glyph_run.level.is_ltr() {
+                for glyph in &glyph_run.glyphs[run_part.glyph_range.to_std()] {
+                    let dist = (glyph.position.0 - rel_pos).abs();
+                    try_best(dist, glyph.index);
+                }
+                end_index = run_part.text_end;
+            } else {
+                let mut index = run_part.text_end;
+                for glyph in &glyph_run.glyphs[run_part.glyph_range.to_std()] {
+                    let dist = (glyph.position.0 - rel_pos).abs();
+                    try_best(dist, index);
+                    index = glyph.index
+                }
+                if run_part.glyph_range.end() < glyph_run.glyphs.len() {
+                    end_index = glyph_run.glyphs[run_part.glyph_range.end()].index;
+                } else {
+                    end_index = glyph_run.range.start;
                 }
             }
 
-            let dist = (glyph_run.caret - rel_pos).abs();
-            if dist < best_dist {
-                best = glyph_run.range.end;
-                best_dist = dist;
-            }
+            try_best((glyph_run.caret - rel_pos).abs(), end_index);
         }
 
         Some(best as usize)
