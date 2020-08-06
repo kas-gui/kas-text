@@ -169,9 +169,8 @@ impl Text {
     /// yields a separate rect for each "run" within this range (where "run" is
     /// is a line or part of a line). Rects are represented by the top-left
     /// vertex and the bottom-right vertex.
-    pub fn highlight_lines<R: Into<std::ops::Range<usize>>>(&self, range: R) -> Vec<(Vec2, Vec2)> {
+    pub fn highlight_lines(&self, range: std::ops::Range<usize>) -> Vec<(Vec2, Vec2)> {
         assert!(self.action.is_none(), "kas-text::prepared::Text: not ready");
-        let range = range.into();
         if range.len() == 0 {
             return vec![];
         }
@@ -256,9 +255,8 @@ impl Text {
     /// is a line or part of a line). Rects are represented by the top-left
     /// vertex and the bottom-right vertex.
     #[inline]
-    pub fn highlight_runs<R: Into<std::ops::Range<usize>>>(&self, range: R) -> Vec<(Vec2, Vec2)> {
+    pub fn highlight_runs(&self, range: std::ops::Range<usize>) -> Vec<(Vec2, Vec2)> {
         assert!(self.action.is_none(), "kas-text::prepared::Text: not ready");
-        let range = range.into();
         if range.len() == 0 {
             return vec![];
         }
