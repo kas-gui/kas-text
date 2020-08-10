@@ -88,6 +88,8 @@ impl Text {
     ///
     /// Note: if the text's bounding rect does not start at the origin, then
     /// the coordinates of the top-left corner should be added to the result(s).
+    /// The result is also not guaranteed to be within the expected window
+    /// between 0 and `self.env().bounds`. The user should clamp the result.
     pub fn text_glyph_pos(&self, index: usize) -> MarkerPosIter {
         assert!(self.action.is_none(), "kas-text::prepared::Text: not ready");
 
@@ -124,7 +126,6 @@ impl Text {
                 };
 
                 let pos = run_part.offset + pos;
-                let pos = pos.min(self.env.bounds).max(Vec2::ZERO); // text may exceed bounds
                 push_result(pos, sf.ascent(), sf.descent());
                 continue;
             }
@@ -150,7 +151,6 @@ impl Text {
             };
 
             let pos = run_part.offset + pos;
-            let pos = pos.min(self.env.bounds).max(Vec2::ZERO); // text may exceed bounds
             push_result(pos, sf.ascent(), sf.descent());
             break;
         }
@@ -169,9 +169,13 @@ impl Text {
     /// yields a separate rect for each "run" within this range (where "run" is
     /// is a line or part of a line). Rects are represented by the top-left
     /// vertex and the bottom-right vertex.
-    pub fn highlight_lines<R: Into<std::ops::Range<usize>>>(&self, range: R) -> Vec<(Vec2, Vec2)> {
+    ///
+    /// Note: if the text's bounding rect does not start at the origin, then
+    /// the coordinates of the top-left corner should be added to the result(s).
+    /// The result is also not guaranteed to be within the expected window
+    /// between 0 and `self.env().bounds`. The user should clamp the result.
+    pub fn highlight_lines(&self, range: std::ops::Range<usize>) -> Vec<(Vec2, Vec2)> {
         assert!(self.action.is_none(), "kas-text::prepared::Text: not ready");
-        let range = range.into();
         if range.len() == 0 {
             return vec![];
         }
@@ -255,10 +259,14 @@ impl Text {
     /// yields a separate rect for each "run" within this range (where "run" is
     /// is a line or part of a line). Rects are represented by the top-left
     /// vertex and the bottom-right vertex.
+    ///
+    /// Note: if the text's bounding rect does not start at the origin, then
+    /// the coordinates of the top-left corner should be added to the result(s).
+    /// The result is also not guaranteed to be within the expected window
+    /// between 0 and `self.env().bounds`. The user should clamp the result.
     #[inline]
-    pub fn highlight_runs<R: Into<std::ops::Range<usize>>>(&self, range: R) -> Vec<(Vec2, Vec2)> {
+    pub fn highlight_runs(&self, range: std::ops::Range<usize>) -> Vec<(Vec2, Vec2)> {
         assert!(self.action.is_none(), "kas-text::prepared::Text: not ready");
-        let range = range.into();
         if range.len() == 0 {
             return vec![];
         }
@@ -280,14 +288,11 @@ impl Text {
     ) {
         assert!(run_range.end <= self.wrapped_runs.len());
 
-        let bounds = self.env.bounds;
         let mut push_rect = |mut a: Vec2, mut b: Vec2, offset, ascent, descent| {
             a = a + offset;
             b = b + offset;
             a.1 -= ascent;
             b.1 -= descent;
-            a = a.min(bounds).max(Vec2::ZERO);
-            b = b.min(bounds).max(Vec2::ZERO);
             rects.push((a, b));
         };
         let mut a;

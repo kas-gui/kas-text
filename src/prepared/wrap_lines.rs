@@ -28,10 +28,15 @@ pub struct Line {
 }
 
 impl Text {
-    pub fn wrap_lines(&mut self) {
+    pub(crate) fn wrap_lines(&mut self) {
         let fonts = fonts();
+        let width_bound = if self.env.wrap {
+            self.env.bounds.0
+        } else {
+            f32::INFINITY
+        };
         // Use a crude estimate of the number of runs:
-        let mut adder = LineAdder::new(self.text_len() / 16, self.env.halign, self.env.bounds.0);
+        let mut adder = LineAdder::new(self.text_len() / 16, self.env.halign, width_bound);
 
         // Almost everything in "this" method depends on the line direction, so
         // we determine that then call the appropriate implementation.
