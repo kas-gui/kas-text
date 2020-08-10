@@ -7,6 +7,7 @@
 
 use ab_glyph::PxScale;
 use smallvec::SmallVec;
+use std::ops::{BitOr, BitOrAssign};
 
 use crate::{rich, shaper, FontId, Glyph, Vec2};
 use crate::{Environment, UpdateEnv};
@@ -17,6 +18,77 @@ mod wrap_lines;
 pub use glyph_pos::{MarkerPos, MarkerPosIter};
 pub(crate) use text_runs::{LineRun, Run};
 use wrap_lines::{Line, RunPart};
+
+/// Type used to indicate whether the [`Text`] object is ready for use
+///
+/// The user doesn't need to *do* anything with this value when returned from
+/// [`Text`] methods, but if [`Prepare::prepare`] returns true then the user
+/// must call [`Text::prepare`] before calling most other methods.
+/// Exceptions are [`Text::update_env`] (which can be used instead of `prepare`)
+/// and methods operating on the environment or the source text.
+///
+/// Multiple instances may be combined via the `|` (bit or) and `|=` operators.
+#[must_use]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Ord, PartialOrd, Hash)]
+pub struct Prepare(bool);
+
+impl Prepare {
+    /// Construct an instance not requiring prepare
+    ///
+    /// This may be useful when optionally calling multiple update methods:
+    /// ```
+    /// # use kas_text::prepared::{Prepare, Text};
+    /// fn update_text(text: &mut Text, opt_new_text: Option<String>) {
+    ///     let mut prepare = Prepare::none();
+    ///     if let Some(new_text) = opt_new_text {
+    ///         prepare |= text.set_text(new_text.into());
+    ///     }
+    ///     if prepare.prepare() {
+    ///         text.prepare();
+    ///     }
+    /// }
+    /// ```
+    #[inline]
+    pub fn none() -> Self {
+        Prepare(false)
+    }
+
+    /// When true, [`Text::prepare`] must be called
+    #[inline]
+    pub fn prepare(self) -> bool {
+        self.0
+    }
+}
+
+impl BitOr for Prepare {
+    type Output = Self;
+
+    #[inline]
+    fn bitor(self, rhs: Self) -> Self {
+        Prepare(self.0 || rhs.0)
+    }
+}
+
+impl BitOrAssign for Prepare {
+    #[inline]
+    fn bitor_assign(&mut self, rhs: Self) {
+        self.0 = self.0 || rhs.0;
+    }
+}
+
+impl From<bool> for Prepare {
+    #[inline]
+    fn from(prepare: bool) -> Self {
+        Prepare(prepare)
+    }
+}
+
+impl From<Action> for Prepare {
+    #[inline]
+    fn from(action: Action) -> Self {
+        Prepare(action != Action::None)
+    }
+}
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Ord, PartialOrd, Hash)]
 pub(crate) enum Action {
@@ -91,8 +163,27 @@ impl Text {
             env,
             ..Default::default()
         };
-        result.set_text(text);
+        let _ = result.set_text(text);
         result
+    }
+
+    /// Construct from a default environment (single-line) and text
+    ///
+    /// The environment is default-constructed, with [`Environment::wrap`]
+    /// turned off.
+    #[inline]
+    pub fn new_single(text: rich::Text) -> Text {
+        let mut env = Environment::new();
+        env.wrap = false;
+        Self::new(env, text)
+    }
+
+    /// Construct from a default environment (multi-line) and text
+    ///
+    /// The environment is default-constructed (line-wrap on).
+    #[inline]
+    pub fn new_multi(text: rich::Text) -> Text {
+        Self::new(Environment::new(), text)
     }
 
     /// Reconstruct the [`rich::Text`] model defining this `Text`
@@ -100,6 +191,11 @@ impl Text {
         rich::Text {
             text: self.text.clone(),
         }
+    }
+
+    /// Clone the raw string
+    pub fn clone_string(&self) -> String {
+        self.text.clone()
     }
 
     /// Length of text
@@ -128,9 +224,10 @@ impl Text {
     ///
     /// Currently this is not significantly more efficent than
     /// [`PreparedText::set_text`]. This may change in the future (TODO).
-    pub fn insert_char(&mut self, index: usize, c: char) {
+    pub fn insert_char(&mut self, index: usize, c: char) -> Prepare {
         self.text.insert(index, c);
         self.action = Action::Runs;
+        true.into()
     }
 
     /// Replace a section of text
@@ -143,12 +240,13 @@ impl Text {
     /// Currently this is not significantly more efficent than
     /// [`Text::set_text`]. This may change in the future (TODO).
     #[inline]
-    pub fn replace_range<R>(&mut self, range: R, replace_with: &str)
+    pub fn replace_range<R>(&mut self, range: R, replace_with: &str) -> Prepare
     where
         R: std::ops::RangeBounds<usize>,
     {
         self.text.replace_range(range, replace_with);
         self.action = Action::Runs;
+        true.into()
     }
 
     /// Swap the raw text with a `String`
@@ -160,27 +258,23 @@ impl Text {
     ///
     /// Currently this is not significantly more efficent than
     /// [`PreparedText::set_text`]. This may change in the future (TODO).
-    pub fn swap_string(&mut self, string: &mut String) {
+    pub fn swap_string(&mut self, string: &mut String) -> Prepare {
         std::mem::swap(&mut self.text, string);
         self.action = Action::Runs;
+        true.into()
     }
 
     /// Set the text
-    ///
-    /// Returns true when the contents have changed, in which case
-    /// [`Text::prepare`] must be called and size-requirements may have changed.
-    /// Note that [`Text::prepare`] is not called automatically since it must
-    /// not be called before fonts are loaded.
-    pub fn set_text(&mut self, text: rich::Text) -> bool {
+    pub fn set_text(&mut self, text: rich::Text) -> Prepare {
         if self.text == text.text {
-            return false; // no change
+            return self.action.into(); // no change
         }
 
         self.text = text.text;
         self.font_id = Default::default();
         self.prepare_runs();
         self.action = Action::Shape;
-        true
+        true.into()
     }
 
     /// Read the environment
@@ -190,7 +284,7 @@ impl Text {
 
     /// Update the environment and prepare for display
     ///
-    /// This calls [`Text::prepare`] to prepare text for display.
+    /// This calls [`Text::prepare`] internally.
     #[inline]
     pub fn update_env<F: FnOnce(&mut UpdateEnv)>(&mut self, f: F) {
         let mut update = UpdateEnv::new(&mut self.env);
@@ -200,6 +294,11 @@ impl Text {
     }
 
     /// Prepare text for display
+    ///
+    /// The required preparation/update steps are tracked internally; this
+    /// method only performs the required steps. Updating line-wrapping due to
+    /// changes in available width is significantly faster than updating the
+    /// source text.
     pub fn prepare(&mut self) {
         let action = self.action;
         if action == Action::None {
@@ -269,6 +368,7 @@ impl Text {
 
     /// Get the number of lines
     pub fn num_lines(&self) -> usize {
+        assert!(self.action.is_none(), "kas-text::prepared::Text: not ready");
         self.lines.len()
     }
 
@@ -307,6 +407,7 @@ impl Text {
     ///
     /// Panics if `line >= self.num_lines()`.
     pub fn line_is_ltr(&self, line: usize) -> bool {
+        assert!(self.action.is_none(), "kas-text::prepared::Text: not ready");
         let first_run = self.lines[line].run_range.start();
         let glyph_run = self.wrapped_runs[first_run].glyph_run as usize;
         self.glyph_runs[glyph_run].level.is_ltr()
@@ -319,6 +420,7 @@ impl Text {
     /// Panics if `line >= self.num_lines()`.
     #[inline]
     pub fn line_is_rtl(&self, line: usize) -> bool {
+        assert!(self.action.is_none(), "kas-text::prepared::Text: not ready");
         !self.line_is_ltr(line)
     }
 
@@ -330,6 +432,7 @@ impl Text {
     /// Note: if the font's rect does not start at the origin, then its top-left
     /// coordinate should first be subtracted from `pos`.
     pub fn text_index_nearest(&self, pos: Vec2) -> usize {
+        assert!(self.action.is_none(), "kas-text::prepared::Text: not ready");
         let mut n = 0;
         for (i, line) in self.lines.iter().enumerate() {
             if line.top > pos.1 {
@@ -346,6 +449,7 @@ impl Text {
     /// This is similar to [`Text::text_index_nearest`], but allows the line to
     /// be specified explicitly. Returns `None` only on invalid `line`.
     pub fn line_index_nearest(&self, line: usize, x: f32) -> Option<usize> {
+        assert!(self.action.is_none(), "kas-text::prepared::Text: not ready");
         if line >= self.lines.len() {
             return None;
         }

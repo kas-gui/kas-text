@@ -28,7 +28,7 @@ pub struct Line {
 }
 
 impl Text {
-    pub fn wrap_lines(&mut self) {
+    pub(crate) fn wrap_lines(&mut self) {
         let fonts = fonts();
         // Use a crude estimate of the number of runs:
         let mut adder = LineAdder::new(self.text_len() / 16, self.env.halign, self.env.bounds.0);
