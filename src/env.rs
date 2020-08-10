@@ -5,7 +5,7 @@
 
 //! KAS Rich-Text library — text-display enviroment
 
-use crate::{prepared::Action, Vec2};
+use crate::{fonts, prepared::Action, FontId, Vec2};
 
 /// Environment in which text is prepared for display
 ///
@@ -89,6 +89,16 @@ impl Environment {
     /// default font [`FontScale`] and zero-sized bounds.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Returns the height of a standard line
+    ///
+    /// This depends on the `pt_size` and `dpp` fields.
+    ///
+    /// To use "the standard font", use `Default::default()`.
+    pub fn line_height(&self, font_id: FontId) -> f32 {
+        let dpem = self.pt_size * self.dpp;
+        fonts().get(font_id).line_height(dpem)
     }
 }
 
