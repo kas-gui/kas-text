@@ -3,28 +3,33 @@ KAS Text
 
 A rich-text processing library suitable for KAS and other GUI tools.
 
-Development status
-----------------
+What it does (or plans to) do:
 
-An initial [design document](design/requirements.md) was posted (see
-[#1](https://github.com/kas-gui/kas-text/issues/1)).
+- [ ] Provides a representation for rich-text
+- [ ] Manages loading and selection of fonts (partial)
+- [x] Transforms input text to a sequence of positioned glyphs
+- [x] Performs line-wrapping and alignment
+- [x] Supports bi-directional text
+- [x] Supports font shaping via HarfBuzz (optional: `shaping` feature; requires HarfBuzz library)
+- [x] Simple integrated "shaper" supporting kerning
+- [x] Provides helpers for text editing / navigation
+- [x] Fast line-wrapping when only width changes
+- [ ] Scale well to large documents
 
-Glyph layout is implemented twice: via a simple algorithm (supporting kerning
-but not shaping), and via [HarfBuzz](https://harfbuzz.github.io/). The `shaping`
-feature flag enables the latter implementation, at the cost of extra dependencies.
+What it does not do:
 
-Text wrapping is enabled using `xi-unicode` to find break points. Bidirectional
-text support is enabled, using `unicode-bidi` to find embedding levels and an
-internal algorithm to rearrange text runs, but with some limitations (see
-[#9](https://github.com/kas-gui/kas-text/pull/9)).
-These two features are necessarily interlinked.
+-   Draw glyphs — this is left to other libraries such as glyph-brush
+-   Directly handle text editing — this is mostly about handling input, however
+    this library does provide helper methods for navigating prepared text
 
-Currently missing features:
+What it arguably should do, but is beyond the current scope:
 
--   text navigation is somewhat broken
--   font fallback support (not planned, but potentially required to support
-    many texts, depending on the primary font used)
--   rich text formatting
+-   Support font fallbacks for missing glyphs
+-   Emojis, vertical text, sub-ligature navigation, correctly positioning
+    multiple diacritics, and many more details
+
+For more, see the initial [design document](design/requirements.md) and
+[issue #1](https://github.com/kas-gui/kas-text/issues/1).
 
 
 Contributing

@@ -9,6 +9,8 @@
 ///
 /// This format may be used to input and share text, but does not include
 /// details specific to the presentation or presentation environment.
+///
+/// TODO: this is very much incomplete
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Text {
     /// The raw text

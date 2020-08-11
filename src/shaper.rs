@@ -13,7 +13,7 @@
 //! > inclusion in a document.
 //!
 //! This module provides the [`shape`] function, which produces a sequence of
-//! [`PositionedGlyph`]s based on the given text.
+//! [`Glyph`]s based on the given text.
 //!
 //! This module *does not* perform line-breaking, wrapping or text reversal.
 

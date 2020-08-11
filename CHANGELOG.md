@@ -1,0 +1,21 @@
+# Changelog
+The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [0.1.0] — 2020-08-11
+
+Initial release version, comprising:
+
+-   basic font loading and font metrics
+-   `Environment` specifying font and layout properties
+-   `rich::Text` struct (mostly placeholder around a raw `String`)
+-   `prepared::Text` struct with state tracking required preparation steps
+
+Text preparation includes:
+
+-   run-breaking with BIDI support
+-   glyph shaping via internal algorithm or via HarfBuzz
+-   line wrapping and alignment
+-   generating a vec of positioned glyphs
+-   cursor position lookup (index→coord and coord→index)
+-   generating highlighting rects for a range

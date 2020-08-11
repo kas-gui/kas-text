@@ -124,8 +124,10 @@ impl Action {
 /// Navigating to the start or end of a line can be done with [`Text::find_line`].
 ///
 /// Navigating left or right should be done via a library such as
-/// `unicode-segmentation` which provides a `GraphemeCursor` to step back or
-/// forward one "grapheme".
+/// [`unicode-segmentation`](https://github.com/unicode-rs/unicode-segmentation)
+/// which provides a
+/// [`GraphemeCursor`](https://unicode-rs.github.io/unicode-segmentation/unicode_segmentation/struct.GraphemeCursor.html)
+/// to step back or forward one "grapheme".
 ///
 /// Navigating "up" and "down" is trickier; use [`Text::text_glyph_pos`]
 /// to get the position of the cursor, [`Text::find_line`] to get the line
@@ -218,12 +220,12 @@ impl Text {
     /// Insert a char at the given position
     ///
     /// This may be used to edit the raw text instead of replacing it.
-    /// One must call [`PreparedText::prepare`] afterwards.
+    /// One must call [`Text::prepare`] afterwards.
     ///
     /// TODO: document how this affects formatting.
     ///
     /// Currently this is not significantly more efficent than
-    /// [`PreparedText::set_text`]. This may change in the future (TODO).
+    /// [`Text::set_text`]. This may change in the future (TODO).
     pub fn insert_char(&mut self, index: usize, c: char) -> Prepare {
         self.text.insert(index, c);
         self.action = Action::Runs;
@@ -252,12 +254,12 @@ impl Text {
     /// Swap the raw text with a `String`
     ///
     /// This may be used to edit the raw text instead of replacing it.
-    /// One must call [`PreparedText::prepare`] afterwards.
+    /// One must call [`Text::prepare`] afterwards.
     ///
     /// TODO: document how this affects formatting.
     ///
     /// Currently this is not significantly more efficent than
-    /// [`PreparedText::set_text`]. This may change in the future (TODO).
+    /// [`Text::set_text`]. This may change in the future (TODO).
     pub fn swap_string(&mut self, string: &mut String) -> Prepare {
         std::mem::swap(&mut self.text, string);
         self.action = Action::Runs;

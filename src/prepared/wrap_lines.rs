@@ -7,7 +7,7 @@
 
 use super::Text;
 use crate::shaper::{GlyphBreak, GlyphRun};
-use crate::{fonts, Align, FontLibrary, Range, Vec2};
+use crate::{fonts, Align, Environment, FontLibrary, Range, Vec2};
 use ab_glyph::{Font, ScaleFont};
 use unicode_bidi::Level;
 
@@ -30,13 +30,8 @@ pub struct Line {
 impl Text {
     pub(crate) fn wrap_lines(&mut self) {
         let fonts = fonts();
-        let width_bound = if self.env.wrap {
-            self.env.bounds.0
-        } else {
-            f32::INFINITY
-        };
         // Use a crude estimate of the number of runs:
-        let mut adder = LineAdder::new(self.text_len() / 16, self.env.halign, width_bound);
+        let mut adder = LineAdder::new(self.text_len() / 16, &self.env);
 
         // Almost everything in "this" method depends on the line direction, so
         // we determine that then call the appropriate implementation.
@@ -71,7 +66,7 @@ impl LineAdder {
 
         let mut line_len = self.caret.0 + run.end_no_space();
         let mut glyph_end = run.glyphs.len() as u32;
-        if !self.justify && line_len <= self.width_bound {
+        if !self.wrap || (!self.justify && line_len <= self.width_bound) {
             // Short-cut: we can add the entire run.
             self.prep_add(&scale_font, line_len, false, &run);
             self.add_part(run.range.end, run_index, 0..glyph_end);
@@ -168,7 +163,7 @@ impl LineAdder {
         self.caret.0 -= run.caret;
         let mut line_len = run.caret - run.start_no_space() - initial_caret;
         let glyph_end = run.glyphs.len() as u32;
-        if !self.justify && line_len <= self.width_bound {
+        if !self.wrap || (!self.justify && line_len <= self.width_bound) {
             // Short-cut: we can add the entire run.
             self.prep_add(&scale_font, line_len, true, &run);
             self.add_part(run.range.end, run_index, 0..glyph_end);
@@ -268,18 +263,20 @@ struct LineAdder {
     num_glyphs: u32,
     halign: Align,
     justify: bool,
+    wrap: bool,
     line_is_rtl: bool,
     width_bound: f32,
 }
 impl LineAdder {
-    fn new(run_capacity: usize, halign: Align, width_bound: f32) -> Self {
+    fn new(run_capacity: usize, env: &Environment) -> Self {
         let runs = Vec::with_capacity(run_capacity);
-        let justify = halign == Align::Stretch;
+        let justify = env.halign == Align::Stretch;
         LineAdder {
             runs,
-            halign,
+            halign: env.halign,
             justify,
-            width_bound,
+            wrap: env.wrap,
+            width_bound: env.bounds.0,
             ..Default::default()
         }
     }
