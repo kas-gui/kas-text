@@ -7,6 +7,10 @@
 
 use crate::{fonts, prepared::Action, FontId, Vec2};
 
+// doc imports
+#[allow(unused)]
+use crate::FontScale;
+
 /// Environment in which text is prepared for display
 ///
 /// An `Environment` can be default-constructed (without line-wrapping).
