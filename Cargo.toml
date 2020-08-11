@@ -1,8 +1,9 @@
 [package]
 name = "kas-text"
-version = "0.0.0"
+version = "0.1.0"
 authors = ["Diggory Hardy <git@dhardy.name>"]
 edition = "2018"
+exclude = ["design"]
 
 [features]
 # Enable shaping. Prefer to depend on "shaping" since we may replace harfbuzz_rs.
