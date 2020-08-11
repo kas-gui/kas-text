@@ -3,6 +3,13 @@ name = "kas-text"
 version = "0.1.0"
 authors = ["Diggory Hardy <git@dhardy.name>"]
 edition = "2018"
+license = "Apache-2.0"
+description = "Text layout and font management"
+readme = "README.md"
+documentation = "https://docs.rs/kas-text/"
+keywords = ["text", "bidi", "shaping"]
+categories = ["text-processing"]
+repository = "https://github.com/kas-gui/kas-text"
 exclude = ["design"]
 
 [features]
