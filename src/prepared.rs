@@ -340,7 +340,10 @@ impl Text {
     /// method, it is still computationally-intensive enough that it may be
     /// worth caching the result for reuse. Since the type is defined by the
     /// function `f`, caching is left to the caller.
-    pub fn positioned_glyphs<G, F: Fn(&str, FontId, PxScale, Glyph) -> G>(&self, f: F) -> Vec<G> {
+    pub fn positioned_glyphs<G, F: FnMut(&str, FontId, PxScale, Glyph) -> G>(
+        &self,
+        mut f: F,
+    ) -> Vec<G> {
         assert!(self.action.is_none(), "kas-text::prepared::Text: not ready");
         let text = &self.text;
 
