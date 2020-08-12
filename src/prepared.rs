@@ -336,6 +336,9 @@ impl Text {
     /// origin and the bound given by the environment, the function may also
     /// wish to translate glyphs.
     ///
+    /// Glyphs are passed in logical order: that is, `glyph.index` monotonically
+    /// increases. `glyph.position` may change in any direction.
+    ///
     /// Although glyph positions are already calculated prior to calling this
     /// method, it is still computationally-intensive enough that it may be
     /// worth caching the result for reuse. Since the type is defined by the
@@ -348,14 +351,27 @@ impl Text {
         let text = &self.text;
 
         let mut glyphs = Vec::with_capacity(self.num_glyphs as usize);
+        // self.wrapped_runs is in logical order
         for run_part in self.wrapped_runs.iter().cloned() {
             let run = &self.glyph_runs[run_part.glyph_run as usize];
             let font_id = run.font_id;
             let font_scale = run.font_scale;
 
-            for mut glyph in run.glyphs[run_part.glyph_range.to_std()].iter().cloned() {
-                glyph.position = glyph.position + run_part.offset;
-                glyphs.push(f(text, font_id, font_scale.into(), glyph));
+            // Pass glyphs in logical order: this allows more optimal evaluation of effects.
+            if run.level.is_ltr() {
+                for mut glyph in run.glyphs[run_part.glyph_range.to_std()].iter().cloned() {
+                    glyph.position = glyph.position + run_part.offset;
+                    glyphs.push(f(text, font_id, font_scale.into(), glyph));
+                }
+            } else {
+                for mut glyph in run.glyphs[run_part.glyph_range.to_std()]
+                    .iter()
+                    .rev()
+                    .cloned()
+                {
+                    glyph.position = glyph.position + run_part.offset;
+                    glyphs.push(f(text, font_id, font_scale.into(), glyph));
+                }
             }
         }
         glyphs
