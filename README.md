@@ -1,6 +1,9 @@
 KAS Text
 ==========
 
+[![kas](https://img.shields.io/badge/GitHub-kas-blueviolet)](https://github.com/kas-gui/kas/)
+[![Docs](https://docs.rs/kas-text/badge.svg)](https://docs.rs/kas-text/)
+
 A rich-text processing library suitable for KAS and other GUI tools.
 
 What it does (or plans to) do:
