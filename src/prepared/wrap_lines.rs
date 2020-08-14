@@ -393,9 +393,9 @@ impl LineAdder {
                         self.runs[self.line_start + k].offset.0 += b;
                     }
                     self.runs[self.line_start + i].offset.0 += a;
-                    self.runs[self.line_start + j].offset.0 -= a;
-                    // swap field 2 (but since we never read i again, forget that):
-                    self.line_runs[j].2 = self.line_runs[i].2;
+                    self.runs[self.line_start + j].offset.0 -= a - b;
+                    self.line_runs.swap(i, j);
+                    continue;
                 }
                 i += 1;
             }
