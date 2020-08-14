@@ -167,7 +167,7 @@ impl Text {
     ///
     /// This locates the ends of a range as with [`Text::text_glyph_pos`], but
     /// yields a separate rect for each "run" within this range (where "run" is
-    /// is a line or part of a line). Rects are represented by the top-left
+    /// a line or part of a line). Rects are represented by the top-left
     /// vertex and the bottom-right vertex.
     ///
     /// Note: if the text's bounding rect does not start at the origin, then
