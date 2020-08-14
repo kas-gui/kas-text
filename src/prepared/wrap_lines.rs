@@ -68,7 +68,7 @@ impl LineAdder {
         let mut glyph_end = run.glyphs.len() as u32;
         if !self.wrap || (!self.justify && line_len <= self.width_bound) {
             // Short-cut: we can add the entire run.
-            self.prep_add(&scale_font, line_len, false, &run);
+            self.prep_add(&scale_font, line_len, run.caret, false, &run);
             self.add_part(run.range.end, run_index, 0..glyph_end);
             self.caret.0 += run.caret;
         } else if run.level.is_rtl() {
@@ -79,7 +79,7 @@ impl LineAdder {
             line_len = run.end_no_space();
             if line_len < self.width_bound {
                 self.new_line(run.range.start, 0.0);
-                self.prep_add(&scale_font, line_len, false, &run);
+                self.prep_add(&scale_font, line_len, run.caret, false, &run);
                 self.add_part(run.range.end, run_index, 0..glyph_end);
                 self.caret.0 += run.caret;
             } else {
@@ -123,7 +123,8 @@ impl LineAdder {
                 }
 
                 if glyph_start < glyph_end {
-                    self.prep_add(&scale_font, line_len, false, &run);
+                    let part_len = line_len - self.line_len;
+                    self.prep_add(&scale_font, line_len, part_len, false, &run);
                     let text_end = run
                         .glyphs
                         .get(glyph_end as usize)
@@ -165,7 +166,7 @@ impl LineAdder {
         let glyph_end = run.glyphs.len() as u32;
         if !self.wrap || (!self.justify && line_len <= self.width_bound) {
             // Short-cut: we can add the entire run.
-            self.prep_add(&scale_font, line_len, true, &run);
+            self.prep_add(&scale_font, line_len, run.caret, true, &run);
             self.add_part(run.range.end, run_index, 0..glyph_end);
         } else if run.level.is_ltr() {
             // It makes little sense to wrap a run against its direction.
@@ -176,7 +177,7 @@ impl LineAdder {
             if line_len < self.width_bound {
                 self.new_line(run.range.start, 0.0);
                 self.caret.0 -= run.caret;
-                self.prep_add(&scale_font, line_len, true, &run);
+                self.prep_add(&scale_font, line_len, run.caret, true, &run);
                 self.add_part(run.range.end, run_index, 0..glyph_end);
             } else {
                 return self.add_ltr(fonts, run_index, run, false);
@@ -219,7 +220,8 @@ impl LineAdder {
                 }
 
                 if glyph_start < glyph_end {
-                    self.prep_add(&scale_font, line_len, true, &run);
+                    let part_len = line_len - self.line_len;
+                    self.prep_add(&scale_font, line_len, part_len, true, &run);
                     let mut text_end = run.range.end;
                     if glyph_start > 0 {
                         text_end = run.glyphs[glyph_start as usize - 1].index;
@@ -293,6 +295,7 @@ impl LineAdder {
         &mut self,
         scale_font: &SF,
         line_len: f32,
+        part_len: f32,
         rtl: bool,
         run: &GlyphRun,
     ) {
@@ -314,7 +317,7 @@ impl LineAdder {
         self.descent = self.descent.min(scale_font.descent());
         self.line_gap = self.line_gap.max(scale_font.line_gap());
 
-        let part_len = (if rtl { -1.0 } else { 1.0 }) * (line_len - self.line_len);
+        let part_len = (if rtl { -1.0 } else { 1.0 }) * part_len;
         self.line_runs.push((self.runs.len(), run.level, part_len));
         self.line_max_level = self
             .line_max_level
@@ -393,9 +396,9 @@ impl LineAdder {
                         self.runs[self.line_start + k].offset.0 += b;
                     }
                     self.runs[self.line_start + i].offset.0 += a;
-                    self.runs[self.line_start + j].offset.0 -= a;
-                    // swap field 2 (but since we never read i again, forget that):
-                    self.line_runs[j].2 = self.line_runs[i].2;
+                    self.runs[self.line_start + j].offset.0 -= a - b;
+                    self.line_runs.swap(i, j);
+                    continue;
                 }
                 i += 1;
             }

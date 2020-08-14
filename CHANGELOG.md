@@ -2,6 +2,10 @@
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3] — 2020-08-14
+
+-   Fix re-ordering of runs on a line (#18)
+
 ## [0.1.2] — 2020-08-14
 
 -   Add embedding level to result of `Text::text_glyph_pos` (#17)
