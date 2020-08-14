@@ -504,14 +504,15 @@ impl Text {
                     try_best(dist, index);
                     index = glyph.index
                 }
-                if run_part.glyph_range.end() < glyph_run.glyphs.len() {
-                    end_index = glyph_run.glyphs[run_part.glyph_range.end()].index;
-                } else {
-                    end_index = glyph_run.range.start;
-                }
+                end_index = index;
             }
 
-            try_best((glyph_run.caret - rel_pos).abs(), end_index);
+            let end_pos = if run_part.glyph_range.end() < glyph_run.glyphs.len() {
+                glyph_run.glyphs[run_part.glyph_range.end()].position.0
+            } else {
+                glyph_run.caret
+            };
+            try_best((end_pos - rel_pos).abs(), end_index);
         }
 
         Some(best as usize)
