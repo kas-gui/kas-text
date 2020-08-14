@@ -18,6 +18,31 @@ pub struct MarkerPos {
     pub ascent: f32,
     /// Descent (subtract from y to get bottom)
     pub descent: f32,
+    level: u8,
+}
+
+impl MarkerPos {
+    /// Returns the embedding level
+    ///
+    /// According to Unicode Technical Report #9, the embedding level is
+    /// guaranteed to be between 0 and 125 (inclusive), with a default level of
+    /// zero and where odd levels are right-to-left.
+    #[inline]
+    pub fn embedding_level(&self) -> u8 {
+        self.level
+    }
+
+    /// Returns true if the cursor is left-to-right
+    #[inline]
+    pub fn is_ltr(&self) -> bool {
+        self.level % 2 == 0
+    }
+
+    /// Returns true if the cursor is right-to-left
+    #[inline]
+    pub fn is_rtl(&self) -> bool {
+        self.level % 2 == 1
+    }
 }
 
 pub struct MarkerPosIter {
@@ -95,11 +120,12 @@ impl Text {
 
         let mut v: [MarkerPos; 2] = Default::default();
         let (a, mut b) = (0, 0);
-        let mut push_result = |pos, ascent, descent| {
+        let mut push_result = |pos, ascent, descent, level| {
             v[b as usize] = MarkerPos {
                 pos,
                 ascent,
                 descent,
+                level,
             };
             b += 1;
         };
@@ -126,7 +152,7 @@ impl Text {
                 };
 
                 let pos = run_part.offset + pos;
-                push_result(pos, sf.ascent(), sf.descent());
+                push_result(pos, sf.ascent(), sf.descent(), glyph_run.level.number());
                 continue;
             }
 
@@ -151,7 +177,7 @@ impl Text {
             };
 
             let pos = run_part.offset + pos;
-            push_result(pos, sf.ascent(), sf.descent());
+            push_result(pos, sf.ascent(), sf.descent(), glyph_run.level.number());
             break;
         }
 
@@ -167,7 +193,7 @@ impl Text {
     ///
     /// This locates the ends of a range as with [`Text::text_glyph_pos`], but
     /// yields a separate rect for each "run" within this range (where "run" is
-    /// is a line or part of a line). Rects are represented by the top-left
+    /// a line or part of a line). Rects are represented by the top-left
     /// vertex and the bottom-right vertex.
     ///
     /// Note: if the text's bounding rect does not start at the origin, then

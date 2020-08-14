@@ -237,8 +237,9 @@ impl LineAdder {
                 if line_break {
                     // Offset new line since we are not at the start of the run
                     let g = run.glyphs[glyph_start as usize - 1];
-                    self.new_line(g.index, -g.position.0);
-                    initial_caret = run.caret - g.position.0;
+                    let pos = g.position.0 + scale_font.h_advance(g.id);
+                    self.new_line(g.index, -pos);
+                    initial_caret = run.caret - pos;
                 }
             }
         }
