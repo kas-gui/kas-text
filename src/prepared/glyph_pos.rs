@@ -141,14 +141,16 @@ impl Text {
 
             // If index is at the end of a run, we potentially get two matches.
             if index == run_part.text_end as usize {
-                let pos = if glyph_run.level.is_ltr() {
-                    if run_part.glyph_range.end() < glyph_run.glyphs.len() {
-                        glyph_run.glyphs[run_part.glyph_range.end()].position
-                    } else {
-                        Vec2(glyph_run.caret, 0.0)
-                    }
+                let i = if glyph_run.level.is_ltr() {
+                    run_part.glyph_range.end()
                 } else {
-                    glyph_run.glyphs[run_part.glyph_range.start()].position
+                    run_part.glyph_range.start()
+                };
+                let pos = if i < glyph_run.glyphs.len() {
+                    glyph_run.glyphs[i].position
+                } else {
+                    // NOTE: for RTL we only hit this case if glyphs.len() == 0
+                    Vec2(glyph_run.caret, 0.0)
                 };
 
                 let pos = run_part.offset + pos;
