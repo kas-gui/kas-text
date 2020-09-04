@@ -60,7 +60,7 @@ impl LineAdder {
     fn add_ltr(&mut self, fonts: &FontLibrary, run_index: usize, run: &GlyphRun, append: bool) {
         let scale_font = fonts.get(run.font_id).scaled(run.font_scale);
 
-        if !append || self.line_is_rtl {
+        if !append || self.line_is_rtl == Some(true) {
             self.new_line(run.range.start, 0.0);
         }
 
@@ -68,8 +68,16 @@ impl LineAdder {
         let mut glyph_end = run.glyphs.len() as u32;
         if !self.wrap || (!self.justify && line_len <= self.width_bound) {
             // Short-cut: we can add the entire run.
-            self.prep_add(&scale_font, line_len, run.caret, false, &run);
-            self.add_part(run.range.end, run_index, 0..glyph_end);
+            self.add_part(
+                &scale_font,
+                line_len,
+                run.caret,
+                false,
+                &run,
+                run.range.end,
+                run_index,
+                0..glyph_end,
+            );
             self.caret.0 += run.caret;
         } else if run.level.is_rtl() {
             // It makes little sense to wrap a run against its direction.
@@ -79,8 +87,16 @@ impl LineAdder {
             line_len = run.end_no_space();
             if line_len < self.width_bound {
                 self.new_line(run.range.start, 0.0);
-                self.prep_add(&scale_font, line_len, run.caret, false, &run);
-                self.add_part(run.range.end, run_index, 0..glyph_end);
+                self.add_part(
+                    &scale_font,
+                    line_len,
+                    run.caret,
+                    false,
+                    &run,
+                    run.range.end,
+                    run_index,
+                    0..glyph_end,
+                );
                 self.caret.0 += run.caret;
             } else {
                 self.add_rtl(fonts, run_index, run, false);
@@ -124,13 +140,21 @@ impl LineAdder {
 
                 if glyph_start < glyph_end {
                     let part_len = line_len - self.line_len;
-                    self.prep_add(&scale_font, line_len, part_len, false, &run);
                     let text_end = run
                         .glyphs
                         .get(glyph_end as usize)
                         .map(|g| g.index)
                         .unwrap_or(run.range.end);
-                    self.add_part(text_end, run_index, glyph_start..glyph_end);
+                    self.add_part(
+                        &scale_font,
+                        line_len,
+                        part_len,
+                        false,
+                        &run,
+                        text_end,
+                        run_index,
+                        glyph_start..glyph_end,
+                    );
                 }
 
                 // If we are already at the end of the run, stop. This
@@ -152,7 +176,7 @@ impl LineAdder {
     fn add_rtl(&mut self, fonts: &FontLibrary, run_index: usize, run: &GlyphRun, append: bool) {
         let scale_font = fonts.get(run.font_id).scaled(run.font_scale);
 
-        if !append || !self.line_is_rtl {
+        if !append || self.line_is_rtl == Some(false) {
             self.new_line(run.range.start, 0.0);
         }
 
@@ -166,8 +190,16 @@ impl LineAdder {
         let glyph_end = run.glyphs.len() as u32;
         if !self.wrap || (!self.justify && line_len <= self.width_bound) {
             // Short-cut: we can add the entire run.
-            self.prep_add(&scale_font, line_len, run.caret, true, &run);
-            self.add_part(run.range.end, run_index, 0..glyph_end);
+            self.add_part(
+                &scale_font,
+                line_len,
+                run.caret,
+                true,
+                &run,
+                run.range.end,
+                run_index,
+                0..glyph_end,
+            );
         } else if run.level.is_ltr() {
             // It makes little sense to wrap a run against its direction.
             // Instead we push the run to the next line, and if it still needs
@@ -177,10 +209,18 @@ impl LineAdder {
             if line_len < self.width_bound {
                 self.new_line(run.range.start, 0.0);
                 self.caret.0 -= run.caret;
-                self.prep_add(&scale_font, line_len, run.caret, true, &run);
-                self.add_part(run.range.end, run_index, 0..glyph_end);
+                self.add_part(
+                    &scale_font,
+                    line_len,
+                    run.caret,
+                    true,
+                    &run,
+                    run.range.end,
+                    run_index,
+                    0..glyph_end,
+                );
             } else {
-                return self.add_ltr(fonts, run_index, run, false);
+                self.add_ltr(fonts, run_index, run, false);
             }
         } else {
             // We perform line-wrapping on this run.
@@ -221,12 +261,20 @@ impl LineAdder {
 
                 if glyph_start < glyph_end {
                     let part_len = line_len - self.line_len;
-                    self.prep_add(&scale_font, line_len, part_len, true, &run);
                     let mut text_end = run.range.end;
                     if glyph_start > 0 {
                         text_end = run.glyphs[glyph_start as usize - 1].index;
                     }
-                    self.add_part(text_end, run_index, glyph_start..glyph_end);
+                    self.add_part(
+                        &scale_font,
+                        line_len,
+                        part_len,
+                        true,
+                        &run,
+                        text_end,
+                        run_index,
+                        glyph_start..glyph_end,
+                    );
                 }
 
                 // If we are already at the end of the run, stop. This
@@ -267,7 +315,7 @@ struct LineAdder {
     halign: Align,
     justify: bool,
     wrap: bool,
-    line_is_rtl: bool,
+    line_is_rtl: Option<bool>,
     width_bound: f32,
 }
 impl LineAdder {
@@ -286,21 +334,22 @@ impl LineAdder {
 
     /// Does the current line have any content?
     fn line_is_empty(&self) -> bool {
-        self.runs[self.line_start..]
-            .iter()
-            .all(|run| run.glyph_range.len() == 0)
+        self.line_is_rtl.is_none()
     }
 
-    fn prep_add<F: Font, SF: ScaleFont<F>>(
+    fn add_part<F: Font, SF: ScaleFont<F>>(
         &mut self,
         scale_font: &SF,
         line_len: f32,
         part_len: f32,
         rtl: bool,
         run: &GlyphRun,
+        text_end: u32,
+        run_index: usize,
+        glyph_range: std::ops::Range<u32>,
     ) {
-        if self.line_is_empty() {
-            self.line_is_rtl = rtl;
+        if self.line_is_rtl.is_none() && glyph_range.start < glyph_range.end {
+            self.line_is_rtl = Some(rtl);
         }
 
         // Adjust vertical position if necessary
@@ -325,13 +374,9 @@ impl LineAdder {
             .or(Some(run.level));
 
         self.line_len = line_len;
-    }
-
-    // Call prep_add first!
-    #[inline]
-    fn add_part(&mut self, text_end: u32, run_index: usize, glyph_range: std::ops::Range<u32>) {
         self.line_text_end = text_end;
         self.num_glyphs += glyph_range.len() as u32;
+
         self.runs.push(RunPart {
             text_end,
             glyph_run: run_index as u32,
@@ -342,6 +387,7 @@ impl LineAdder {
 
     fn finish_line(&mut self, text_index: u32) {
         let num_runs = self.runs.len() - self.line_start;
+        let rtl = self.line_is_rtl == Some(true);
 
         // Unic TR#9 L2: reverse items on the line
         // This implementation does not correspond directly to the Unicode
@@ -361,10 +407,7 @@ impl LineAdder {
                 slice[len1].0 = a;
                 slice = &mut slice[1..len1];
             };
-            let line_level = match self.line_is_rtl {
-                false => Level::ltr(),
-                true => Level::rtl(),
-            };
+            let line_level = if rtl { Level::rtl() } else { Level::ltr() };
             while level > line_level {
                 let mut start = None;
                 for i in 0..num_runs {
@@ -406,22 +449,22 @@ impl LineAdder {
             let runs = &mut self.runs[self.line_start..];
 
             let offset = match self.halign {
-                Align::Default => match self.line_is_rtl {
+                Align::Default => match rtl {
                     false => 0.0,
                     true => self.width_bound,
                 },
-                Align::TL => match self.line_is_rtl {
+                Align::TL => match rtl {
                     false => 0.0,
                     true => self.line_len,
                 },
                 Align::Centre => {
                     let mut offset = 0.5 * (self.width_bound - self.line_len);
-                    if self.line_is_rtl {
+                    if rtl {
                         offset += self.line_len;
                     }
                     offset
                 }
-                Align::BR => match self.line_is_rtl {
+                Align::BR => match rtl {
                     false => self.width_bound - self.line_len,
                     true => self.width_bound,
                 },
@@ -431,7 +474,7 @@ impl LineAdder {
                     let num_gaps = (num_runs - 1) as f32;
                     let per_gap = (self.width_bound - self.line_len) / num_gaps;
 
-                    if !self.line_is_rtl {
+                    if !rtl {
                         let mut offset = per_gap;
                         for run in &mut runs[1..] {
                             run.offset.0 += offset;
@@ -481,6 +524,7 @@ impl LineAdder {
         self.ascent = 0.0;
         self.descent = 0.0;
         self.line_gap = 0.0;
+        self.line_is_rtl = None;
     }
 
     // Returns: required dimensions
