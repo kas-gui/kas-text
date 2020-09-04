@@ -101,6 +101,8 @@ impl GlyphRun {
     }
 }
 
+pub(crate) type ShapeResult = (Vec<Glyph>, SmallVec<[GlyphBreak; 2]>, f32, f32);
+
 /// Shape a `run` of text
 ///
 /// A "run" is expected to be the maximal sequence of code points of the same
@@ -118,10 +120,13 @@ pub(crate) fn shape(font_id: FontId, dpem: f32, text: &str, run: &prepared::Run)
     let font_scale = font.font_scale(dpem);
 
     if dpem >= 0.0 {
-        #[cfg(feature = "harfbuzz_rs")]
+        #[cfg(feature = "allsorts")]
+        let r = crate::allsorts::shape(font_id, dpem, text, run).unwrap();
+
+        #[cfg(all(not(feature = "allsorts"), feature = "harfbuzz_rs"))]
         let r = shape_harfbuzz(font_id, dpem, text, run);
 
-        #[cfg(not(feature = "harfbuzz_rs"))]
+        #[cfg(all(not(feature = "allsorts"), not(feature = "harfbuzz_rs")))]
         let r = shape_simple(font, font_scale, text, run);
 
         glyphs = r.0;
@@ -172,12 +177,7 @@ pub(crate) fn shape(font_id: FontId, dpem: f32, text: &str, run: &prepared::Run)
 
 // Use HarfBuzz lib
 #[cfg(feature = "harfbuzz_rs")]
-fn shape_harfbuzz(
-    font_id: FontId,
-    dpem: f32,
-    text: &str,
-    run: &prepared::Run,
-) -> (Vec<Glyph>, SmallVec<[GlyphBreak; 2]>, f32, f32) {
+fn shape_harfbuzz(font_id: FontId, dpem: f32, text: &str, run: &prepared::Run) -> ShapeResult {
     let mut font = fonts().get_harfbuzz(font_id);
 
     // ppem affects hinting but does not scale layout, so this has little effect:
@@ -266,7 +266,7 @@ fn shape_simple(
     font_scale: f32,
     text: &str,
     run: &prepared::Run,
-) -> (Vec<Glyph>, SmallVec<[GlyphBreak; 2]>, f32, f32) {
+) -> ShapeResult {
     use ab_glyph::Font;
     use unicode_bidi_mirroring::get_mirrored;
 

@@ -15,14 +15,35 @@ use thiserror::Error;
 
 /// Font loading errors
 #[derive(Error, Debug)]
-enum FontError {
+pub(crate) enum FontError {
     #[error("invalid font data")]
     Invalid,
+    #[error("font collection index is invalid")]
+    InvalidIndex,
+    #[cfg(feature = "allsorts")]
+    #[error(transparent)]
+    AllSorts(allsorts::error::ParseError),
+    #[cfg(feature = "allsorts")]
+    #[error("no cmap table")]
+    NoCmap,
+    #[cfg(feature = "allsorts")]
+    #[error("no suitable cmap subtable")]
+    NoCmapSubtable,
+    #[cfg(feature = "allsorts")]
+    #[error("no maxp table")]
+    NoMaxp,
 }
 
 impl From<InvalidFont> for FontError {
     fn from(_: InvalidFont) -> Self {
         FontError::Invalid
+    }
+}
+
+#[cfg(feature = "allsorts")]
+impl From<allsorts::error::ParseError> for FontError {
+    fn from(error: allsorts::error::ParseError) -> Self {
+        FontError::AllSorts(error)
     }
 }
 
@@ -90,6 +111,8 @@ impl Font {
 
 struct FontStore<'a> {
     ab_glyph: FontRef<'a>,
+    #[cfg(feature = "allsorts")]
+    allsorts: crate::allsorts::AllsortsFont<'a>,
     #[cfg(feature = "harfbuzz_rs")]
     harfbuzz: harfbuzz_rs::Shared<harfbuzz_rs::Face<'a>>,
 }
@@ -98,6 +121,8 @@ impl<'a> FontStore<'a> {
     fn new(data: &'a [u8], index: u32) -> Result<Self, FontError> {
         Ok(FontStore {
             ab_glyph: FontRef::try_from_slice_and_index(data, index)?,
+            #[cfg(feature = "allsorts")]
+            allsorts: crate::allsorts::AllsortsFont::try_from_bytes(data, index)?,
             #[cfg(feature = "harfbuzz_rs")]
             harfbuzz: harfbuzz_rs::Face::from_bytes(data, index).into(),
         })
@@ -128,9 +153,17 @@ impl FontLibrary {
         Font { font }
     }
 
+    /// Get an AllSorts font face
+    #[cfg(feature = "allsorts")]
+    pub(crate) fn get_allsorts(&self, id: FontId) -> &crate::allsorts::AllsortsFont<'static> {
+        let fonts = self.fonts.read().unwrap();
+        assert!(id.get() < fonts.len(), "FontLibrary: invalid {:?}!", id);
+        let face = &fonts[id.get()].allsorts;
+        // Safety: elements of self.fonts are never dropped or modified
+        unsafe { extend_lifetime(face) }
+    }
+
     /// Get a HarfBuzz font face
-    ///
-    /// `font_scale` should be "point size × screen DPI / 72" (units: px/em).
     #[cfg(feature = "harfbuzz_rs")]
     pub fn get_harfbuzz(&self, id: FontId) -> harfbuzz_rs::Owned<harfbuzz_rs::Font<'static>> {
         let fonts = self.fonts.read().unwrap();

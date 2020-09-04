@@ -21,3 +21,6 @@ pub mod rich;
 
 pub(crate) mod shaper;
 pub use shaper::Glyph;
+
+#[cfg(feature = "allsorts")]
+mod allsorts;
