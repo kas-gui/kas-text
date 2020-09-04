@@ -11,6 +11,20 @@ use font_kit::{family_name::FamilyName, handle::Handle, properties::Properties};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::RwLock;
+use thiserror::Error;
+
+/// Font loading errors
+#[derive(Error, Debug)]
+enum FontError {
+    #[error("invalid font data")]
+    Invalid,
+}
+
+impl From<InvalidFont> for FontError {
+    fn from(_: InvalidFont) -> Self {
+        FontError::Invalid
+    }
+}
 
 /// Font identifier
 ///
@@ -81,7 +95,7 @@ struct FontStore<'a> {
 }
 
 impl<'a> FontStore<'a> {
-    fn new(data: &'a [u8], index: u32) -> Result<Self, InvalidFont> {
+    fn new(data: &'a [u8], index: u32) -> Result<Self, FontError> {
         Ok(FontStore {
             ab_glyph: FontRef::try_from_slice_and_index(data, index)?,
             #[cfg(feature = "harfbuzz_rs")]
@@ -138,6 +152,7 @@ impl FontLibrary {
     }
 
     /// Load a default font
+    // TODO(breaking): replace error type with FontError?
     pub fn load_default(&self) -> Result<FontId, Box<dyn std::error::Error>> {
         // 1st lock: early exit if we already have this font
         let fonts = self.fonts.read().unwrap();
