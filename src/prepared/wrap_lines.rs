@@ -37,15 +37,18 @@ impl Text {
         // we determine that then call the appropriate implementation.
         for line in self.line_runs.iter() {
             adder.line_is_rtl = line.rtl;
-            let mut append = false;
+            let mut first_line = true;
             let mut index = line.range.start();
             while index < line.range.end() {
                 let run = &self.glyph_runs[index];
-                match line.rtl {
-                    false => adder.add_ltr(&fonts, index, run, append),
-                    true => adder.add_rtl(&fonts, index, run, append),
+                if first_line {
+                    adder.new_line(run.range.start);
                 }
-                append = true;
+                match line.rtl {
+                    false => adder.add_ltr(&fonts, index, run),
+                    true => adder.add_rtl(&fonts, index, run),
+                }
+                first_line = false;
                 index += 1;
             }
         }
@@ -58,12 +61,8 @@ impl Text {
 }
 
 impl LineAdder {
-    fn add_ltr(&mut self, fonts: &FontLibrary, run_index: usize, run: &GlyphRun, append: bool) {
+    fn add_ltr(&mut self, fonts: &FontLibrary, run_index: usize, run: &GlyphRun) {
         let scale_font = fonts.get(run.font_id).scaled(run.font_scale);
-
-        if !append {
-            self.new_line(run.range.start);
-        }
 
         let mut line_len = self.caret.0 + run.end_no_space();
         if !self.wrap || (!self.justify && line_len <= self.cur_width_bound) {
@@ -74,7 +73,7 @@ impl LineAdder {
             // It starts from the edge like usual, but is shorter.
             self.cur_width_bound = self.width_bound - self.caret.0;
             self.caret.0 = 0.0;
-            self.add_rtl(fonts, run_index, run, true);
+            self.add_rtl(fonts, run_index, run);
             self.caret.0 = -self.caret.0;
         } else {
             // We perform line-wrapping on this run.
@@ -159,12 +158,8 @@ impl LineAdder {
         }
     }
 
-    fn add_rtl(&mut self, fonts: &FontLibrary, run_index: usize, run: &GlyphRun, append: bool) {
+    fn add_rtl(&mut self, fonts: &FontLibrary, run_index: usize, run: &GlyphRun) {
         let scale_font = fonts.get(run.font_id).scaled(run.font_scale);
-
-        if !append {
-            self.new_line(run.range.start);
-        }
 
         // In RTL mode, caret.0 starts at zero goes negative. We avoid adding
         // or subtracting width_bound until alignment since it may be infinite
@@ -179,7 +174,7 @@ impl LineAdder {
             // It starts from the edge like usual, but is shorter.
             self.cur_width_bound = self.width_bound + self.caret.0;
             self.caret.0 = 0.0;
-            self.add_ltr(fonts, run_index, run, true);
+            self.add_ltr(fonts, run_index, run);
             self.caret.0 = -self.caret.0;
         } else {
             // We perform line-wrapping on this run.
