@@ -36,6 +36,7 @@ impl Text {
         // Almost everything in "this" method depends on the line direction, so
         // we determine that then call the appropriate implementation.
         for line in self.line_runs.iter() {
+            adder.line_is_rtl = line.rtl;
             let mut append = false;
             let mut index = line.range.start();
             while index < line.range.end() {
@@ -60,7 +61,7 @@ impl LineAdder {
     fn add_ltr(&mut self, fonts: &FontLibrary, run_index: usize, run: &GlyphRun, append: bool) {
         let scale_font = fonts.get(run.font_id).scaled(run.font_scale);
 
-        if !append || self.line_is_rtl == Some(true) {
+        if !append || (!self.line_is_empty && self.line_is_rtl) {
             self.new_line(run.range.start);
         }
 
@@ -158,7 +159,7 @@ impl LineAdder {
     fn add_rtl(&mut self, fonts: &FontLibrary, run_index: usize, run: &GlyphRun, append: bool) {
         let scale_font = fonts.get(run.font_id).scaled(run.font_scale);
 
-        if !append || self.line_is_rtl == Some(false) {
+        if !append || (!self.line_is_empty && !self.line_is_rtl) {
             self.new_line(run.range.start);
         }
 
@@ -276,7 +277,8 @@ struct LineAdder {
     halign: Align,
     justify: bool,
     wrap: bool,
-    line_is_rtl: Option<bool>,
+    line_is_rtl: bool,
+    line_is_empty: bool,
     width_bound: f32,
 }
 impl LineAdder {
@@ -295,7 +297,7 @@ impl LineAdder {
 
     /// Does the current line have any content?
     fn line_is_empty(&self) -> bool {
-        self.line_is_rtl.is_none()
+        self.line_is_empty
     }
 
     fn add_run<F: Font, SF: ScaleFont<F>>(
@@ -338,8 +340,8 @@ impl LineAdder {
         run_index: usize,
         glyph_range: std::ops::Range<u32>,
     ) {
-        if self.line_is_rtl.is_none() && glyph_range.start < glyph_range.end {
-            self.line_is_rtl = Some(rtl);
+        if self.line_is_empty {
+            self.line_is_empty = glyph_range.start == glyph_range.end;
         }
 
         // Adjust vertical position if necessary
@@ -381,7 +383,7 @@ impl LineAdder {
 
     fn finish_line(&mut self, text_index: u32) {
         let num_runs = self.runs.len() - self.line_start;
-        let rtl = self.line_is_rtl == Some(true);
+        let rtl = self.line_is_rtl;
 
         // Unic TR#9 L2: reverse items on the line
         // This implementation does not correspond directly to the Unicode
@@ -518,7 +520,7 @@ impl LineAdder {
         self.ascent = 0.0;
         self.descent = 0.0;
         self.line_gap = 0.0;
-        self.line_is_rtl = None;
+        self.line_is_empty = true;
     }
 
     // Returns: required dimensions
