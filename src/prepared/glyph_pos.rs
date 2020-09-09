@@ -393,7 +393,12 @@ impl Text {
                         b = Vec2(glyph_run.caret, 0.0);
                     }
                 } else {
-                    let p = glyph_run.glyphs[run_part.glyph_range.start()].position;
+                    let p = if run_part.glyph_range.start() < glyph_run.glyphs.len() {
+                        glyph_run.glyphs[run_part.glyph_range.start()].position
+                    } else {
+                        // NOTE: for RTL we only hit this case if glyphs.len() == 0
+                        Vec2(glyph_run.caret, 0.0)
+                    };
                     b = Vec2(a.0, p.1);
                     a.0 = p.0;
                 };
