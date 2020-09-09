@@ -36,13 +36,13 @@ impl Text {
         // Almost everything in "this" method depends on the line direction, so
         // we determine that then call the appropriate implementation.
         for line in self.line_runs.iter() {
-            adder.line_is_rtl = line.rtl;
             let mut first_line = true;
             let mut index = line.range.start();
             while index < line.range.end() {
                 let run = &self.glyph_runs[index];
                 if first_line {
                     adder.new_line(run.range.start);
+                    adder.line_is_rtl = line.rtl;
                 }
                 match line.rtl {
                     false => adder.add_ltr(&fonts, index, run),
