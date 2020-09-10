@@ -87,17 +87,18 @@ impl LineAdder {
             let mut xoffset = self.caret.0;
             line_len = self.line_len;
 
+            // Force adding something if run disables break-at-start or line is empty
+            let mut no_break = run.no_break || self.line_is_empty();
+
             loop {
-                // Find how much of the run we can add, ensuring that we
-                // do not leave a line empty but otherwise respecting width.
-                let mut empty = self.line_is_empty();
+                // Calculate maximal glyph_end which fits the line
                 let mut line_break = true;
                 let glyph_start = glyph_end;
                 loop {
                     let gb = run_breaks.peek().map(|gb| **gb).unwrap_or(run_gb);
                     let part_line_len = xoffset + gb.no_space_end;
-                    if empty || (part_line_len <= self.cur_width_bound) {
-                        empty = empty && gb.pos == glyph_end;
+                    if no_break || (part_line_len <= self.cur_width_bound) {
+                        no_break = no_break && gb.pos == glyph_end;
                         glyph_end = gb.pos;
                         run_breaks.next();
                         line_len = part_line_len;
@@ -154,6 +155,8 @@ impl LineAdder {
                     xoffset = -glyph.position.0;
                     self.new_line(glyph.index);
                 }
+
+                no_break = self.line_is_empty();
             }
         }
     }
@@ -188,17 +191,18 @@ impl LineAdder {
             let mut xoffset = self.caret.0 - run.caret;
             line_len = self.line_len;
 
+            // Force adding something if run disables break-at-start or line is empty
+            let mut no_break = run.no_break || self.line_is_empty();
+
             loop {
-                // Find how much of the run we can add, ensuring that we
-                // do not leave a line empty but otherwise respecting width.
-                let mut empty = self.line_is_empty();
+                // Calculate maximal glyph_end which fits the line
                 let mut line_break = true;
                 let glyph_end = glyph_start;
                 loop {
                     let gb = run_breaks.peek().map(|gb| **gb).unwrap_or(run_gb);
                     let part_line_len = -gb.no_space_end - xoffset;
-                    if empty || (part_line_len <= self.cur_width_bound) {
-                        empty = empty && gb.pos == glyph_start;
+                    if no_break || (part_line_len <= self.cur_width_bound) {
+                        no_break = no_break && gb.pos == glyph_start;
                         glyph_start = gb.pos;
                         run_breaks.next();
                         line_len = part_line_len;
@@ -255,6 +259,8 @@ impl LineAdder {
                     xoffset = -(g.position.0 + scale_font.h_advance(g.id));
                     self.new_line(g.index);
                 }
+
+                no_break = self.line_is_empty();
             }
         }
     }

@@ -18,7 +18,10 @@ pub(crate) struct Run {
     /// BIDI level
     pub level: Level,
     /// All soft-break locations within this range (excludes end)
+    // TODO: replace this with more `Run` instances?
     pub breaks: SmallVec<[u32; 5]>,
+    /// If true, the logical-start of this Run is not a valid break point
+    pub no_break: bool,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -72,6 +75,7 @@ impl Text {
         let mut next_break = breaks_iter.next().unwrap_or((0, false));
 
         let mut line_start = 0;
+        let mut no_break = false;
 
         for pos in 1..self.text.len() {
             let is_break = next_break.0 == pos;
@@ -86,7 +90,9 @@ impl Text {
                     range,
                     level,
                     breaks,
+                    no_break,
                 });
+                no_break = !is_break;
 
                 if hard_break {
                     let range = Range::from(line_start..self.runs.len());
@@ -120,6 +126,7 @@ impl Text {
             range,
             level,
             breaks,
+            no_break,
         });
         if line_start < self.runs.len() {
             let range = Range::from(line_start..self.runs.len());
@@ -141,6 +148,7 @@ impl Text {
                     range,
                     level,
                     breaks,
+                    no_break: false,
                 });
 
                 let range = Range::from(line_start..self.runs.len());

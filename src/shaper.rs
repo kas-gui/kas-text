@@ -69,10 +69,13 @@ pub struct GlyphRun {
     /// Position of next glyph, if this run is followed by another
     pub caret: f32,
 
+    // TODO: maybe we shouldn't duplicate this information?
     /// Range of text represented
     pub range: Range,
     /// BIDI level (odd levels are right-to-left)
     pub level: Level,
+    /// If true, the logical-start of this Run is not a valid break point
+    pub no_break: bool,
 }
 
 impl GlyphRun {
@@ -167,6 +170,7 @@ pub(crate) fn shape(font_id: FontId, dpem: f32, text: &str, run: &prepared::Run)
         caret,
         range: run.range,
         level: run.level,
+        no_break: run.no_break,
     }
 }
 
