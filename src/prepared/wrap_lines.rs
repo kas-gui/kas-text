@@ -126,11 +126,14 @@ impl LineAdder {
                         part_len = line_len - self.line_len;
                     }
                     self.line_len = line_len;
-                    let text_end = run
-                        .glyphs
-                        .get(glyph_end as usize)
-                        .map(|g| g.index)
-                        .unwrap_or(run.range.end);
+                    let mut text_end = run.range.end;
+                    let mut end_glyph = glyph_end;
+                    if (end_glyph as usize) < run.glyphs.len() {
+                        // In this case we are wrapping; to prevent a location
+                        // from occurring on two lines, we go back one glyph.
+                        end_glyph -= 1;
+                        text_end = run.glyphs[end_glyph as usize].index;
+                    }
                     self.add_part(
                         &scale_font,
                         xoffset,
@@ -139,7 +142,7 @@ impl LineAdder {
                         &run,
                         text_end,
                         run_index,
-                        glyph_start..glyph_end,
+                        glyph_start..end_glyph,
                     );
                 }
 
@@ -231,9 +234,13 @@ impl LineAdder {
                         part_len = line_len - self.line_len;
                     }
                     self.line_len = line_len;
+                    let mut start_glyph = glyph_start;
                     let mut text_end = run.range.end;
-                    if glyph_start > 0 {
-                        text_end = run.glyphs[glyph_start as usize - 1].index;
+                    if start_glyph > 0 {
+                        // In this case we are wrapping; to prevent a location
+                        // from occurring on two lines, we go back one glyph.
+                        text_end = run.glyphs[start_glyph as usize].index;
+                        start_glyph += 1;
                     }
                     self.add_part(
                         &scale_font,
@@ -243,7 +250,7 @@ impl LineAdder {
                         &run,
                         text_end,
                         run_index,
-                        glyph_start..glyph_end,
+                        start_glyph..glyph_end,
                     );
                 }
 
