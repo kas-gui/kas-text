@@ -474,7 +474,7 @@ impl Text {
         if line >= self.lines.len() {
             return None;
         }
-        let line = self.lines[line];
+        let line = &self.lines[line];
         let run_range = line.run_range.to_std();
 
         let mut best = line.text_range.start;

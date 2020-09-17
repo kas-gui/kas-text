@@ -6,12 +6,12 @@
 //! Text prepared for display
 
 use super::Text;
-use crate::shaper::{GlyphBreak, GlyphRun};
+use crate::shaper::GlyphRun;
 use crate::{fonts, Align, Environment, FontLibrary, Range, Vec2};
-use ab_glyph::{Font, ScaleFont};
+use ab_glyph::ScaleFont;
 use unicode_bidi::Level;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct RunPart {
     pub text_end: u32,
     pub glyph_run: u32,
@@ -19,7 +19,7 @@ pub struct RunPart {
     pub offset: Vec2,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct Line {
     pub text_range: Range, // range in text
     pub run_range: Range,  // range in wrapped_runs
@@ -27,248 +27,117 @@ pub struct Line {
     pub bottom: f32,
 }
 
+#[derive(Clone, Debug)]
+struct PartInfo {
+    run: u32,
+    len: f32,
+    offset: f32,
+    line_len: f32,
+    glyph_range: Range,
+}
+
 impl Text {
     pub(crate) fn wrap_lines(&mut self) {
         let fonts = fonts();
         // Use a crude estimate of the number of runs:
         let mut adder = LineAdder::new(self.text_len() / 16, &self.env);
+        let width_bound = adder.width_bound;
+        //         let justify = self.env.halign == Align::Stretch;
+        let mut parts = Vec::with_capacity(16);
 
         // Almost everything in "this" method depends on the line direction, so
         // we determine that then call the appropriate implementation.
+        println!("have {} lines", self.line_runs.len());
         for line in self.line_runs.iter() {
             // Each LineRun contains at least one Run, though a Run may be empty
+            let end_index = line.range.end();
             debug_assert!(line.range.start < line.range.end);
-            let mut index = line.range.start();
-            adder.new_line(self.glyph_runs[index].range.start);
-            adder.line_is_rtl = line.rtl;
+            assert!(end_index <= self.glyph_runs.len());
+            let level = match line.rtl {
+                false => Level::ltr(),
+                true => Level::rtl(),
+            };
+            println!(
+                "line [rtl={}] has runs {}..{}",
+                line.rtl, line.range.start, end_index
+            );
 
-            while index < line.range.end() {
+            // Tuples: (index, part)
+            let mut start = (line.range.start(), 0, 0);
+            let mut end = start;
+            parts.clear();
+            //             let mut no_part_for_current_run = true;
+
+            let mut caret = 0.0;
+            let mut index = start.0;
+            'a: while index < end_index {
                 let run = &self.glyph_runs[index];
-                match line.rtl {
-                    false => adder.add_ltr(&fonts, index, run),
-                    true => adder.add_rtl(&fonts, index, run),
+                let num_parts = run.num_parts();
+                println!("run {} has {} parts", index, run.num_parts());
+                println!("start={:?}, end={:?}", start, end);
+                let allow_break = !run.no_break; // break allowed at end of run
+
+                let mut last_part = start.1;
+                let mut part = last_part + 1;
+                while part <= num_parts {
+                    let (part_offset, part_len_no_space, part_len) =
+                        run.part_lengths(last_part..part);
+                    let line_len = caret + part_len_no_space;
+                    if line_len > width_bound && end.2 > 0 {
+                        println!("add_line — wrapping — start={:?}, end={:?}", start, end);
+                        // Add up to last valid break point then wrap and reset
+                        adder.add_line(fonts, level, &self.glyph_runs, &parts[0..end.2]);
+
+                        end.2 = 0;
+                        start = end;
+                        parts.clear();
+                        caret = 0.0;
+                        index = start.0;
+                        continue 'a;
+                    }
+                    caret += part_len;
+                    //                     if justify || no_part_for_current_run {
+                    // TODO: we shouldn't need to store glyph start *and* end for each
+                    let glyph_range = run.to_glyph_range(last_part..part);
+                    parts.push(PartInfo {
+                        run: index as u32,
+                        len: part_len,
+                        offset: part_offset,
+                        line_len,
+                        glyph_range,
+                    });
+                    //                         no_part_for_current_run = false;
+                    //                     } else {
+                    //                         let g_end = run.part_to_glyph_index(part);
+                    //                         if let Some(part) = parts.last_mut() {
+                    //                             part.len = part_len;
+                    //                             part.offset = part_offset; // only differs when RTL
+                    //                             part.glyph_range.end = g_end as u32;
+                    //                         }
+                    //                     }
+                    if part < num_parts || allow_break {
+                        end = (index, part, parts.len());
+                    }
+                    last_part = part;
+                    part += 1;
                 }
+
                 index += 1;
+                start.1 = 0;
+                //                 no_part_for_current_run = true;
+            }
+
+            if parts.len() > 0 {
+                println!("add_line — end-of-line — start={:?}, end={:?}", start, end);
+                adder.add_line(fonts, level, &self.glyph_runs, &parts);
             }
         }
+        println!();
 
-        self.required = adder.finish(self.text.len() as u32, self.env.valign, self.env.bounds.1);
+        self.required = adder.finish(self.env.valign, self.env.bounds.1);
         self.wrapped_runs = adder.runs;
         self.lines = adder.lines;
         self.num_glyphs = adder.num_glyphs;
-    }
-}
-
-impl LineAdder {
-    fn add_ltr(&mut self, fonts: &FontLibrary, run_index: usize, run: &GlyphRun) {
-        let scale_font = fonts.get(run.font_id).scaled(run.font_scale);
-
-        let mut line_len = self.caret.0 + run.end_no_space();
-        if !self.wrap || (!self.justify && line_len <= self.cur_width_bound) {
-            // Short-cut: we can add the entire run.
-            self.add_run(&scale_font, false, &run, run_index);
-        } else if run.level.is_rtl() && self.caret.0 != 0.0 {
-            // We cannot add the entire run, and its direction opposes ours.
-            // It starts from the edge like usual, but is shorter.
-            self.cur_width_bound = self.width_bound - self.caret.0;
-            self.caret.0 = 0.0;
-            self.add_rtl(fonts, run_index, run);
-            self.caret.0 = -self.caret.0;
-        } else {
-            // We perform line-wrapping on this run.
-
-            let mut run_breaks = run.breaks.iter().peekable();
-            let run_gb = GlyphBreak {
-                pos: run.glyphs.len() as u32,
-                no_space_end: run.end_no_space(),
-            };
-            let mut glyph_end = 0;
-            let mut xoffset = self.caret.0;
-            line_len = self.line_len;
-
-            // Force adding something if run disables break-at-start or line is empty
-            let mut no_break = run.no_break || self.line_is_empty();
-
-            loop {
-                // Calculate maximal glyph_end which fits the line
-                let mut line_break = true;
-                let glyph_start = glyph_end;
-                loop {
-                    let gb = run_breaks.peek().map(|gb| **gb).unwrap_or(run_gb);
-                    let part_line_len = xoffset + gb.no_space_end;
-                    if no_break || (part_line_len <= self.cur_width_bound) {
-                        no_break = no_break && gb.pos == glyph_end;
-                        glyph_end = gb.pos;
-                        run_breaks.next();
-                        line_len = part_line_len;
-                        if glyph_end == run_gb.pos {
-                            break;
-                        } else if self.justify {
-                            // When justifying text we must add each word
-                            // separately to allow independent positioning.
-                            line_break = false;
-                            break;
-                        }
-                        continue;
-                    }
-                    break;
-                }
-
-                if glyph_start < glyph_end {
-                    let part_len;
-                    if self.line_is_rtl {
-                        // Special case: wrapping LTR on a RTL line
-                        part_len = line_len;
-                        line_len = self.width_bound - self.cur_width_bound + part_len;
-                        xoffset -= line_len;
-                    } else {
-                        part_len = line_len - self.line_len;
-                    }
-                    self.line_len = line_len;
-                    let mut text_end = run.range.end;
-                    let mut end_glyph = glyph_end;
-                    if (end_glyph as usize) < run.glyphs.len() {
-                        // In this case we are wrapping; to prevent a location
-                        // from occurring on two lines, we go back one glyph.
-                        end_glyph -= 1;
-                        text_end = run.glyphs[end_glyph as usize].index;
-                    }
-                    self.add_part(
-                        &scale_font,
-                        xoffset,
-                        line_len,
-                        part_len,
-                        &run,
-                        text_end,
-                        run_index,
-                        glyph_start..end_glyph,
-                    );
-                }
-
-                // If we are already at the end of the run, stop. This
-                // should not happen on the first iteration.
-                if glyph_end as usize >= run.glyphs.len() {
-                    break;
-                }
-
-                if line_break {
-                    // Offset new line since we are not at the start of the run
-                    let glyph = run.glyphs[glyph_end as usize];
-                    xoffset = -glyph.position.0;
-                    self.new_line(glyph.index);
-                }
-
-                no_break = self.line_is_empty();
-            }
-        }
-    }
-
-    fn add_rtl(&mut self, fonts: &FontLibrary, run_index: usize, run: &GlyphRun) {
-        let scale_font = fonts.get(run.font_id).scaled(run.font_scale);
-
-        // In RTL mode, caret.0 starts at zero goes negative. We avoid adding
-        // or subtracting width_bound until alignment since it may be infinite
-        // during size requirement computations.
-
-        let mut line_len = run.caret - run.start_no_space() - self.caret.0;
-        if !self.wrap || (!self.justify && line_len <= self.cur_width_bound) {
-            // Short-cut: we can add the entire run.
-            self.add_run(&scale_font, true, &run, run_index);
-        } else if run.level.is_ltr() && self.caret.0 != 0.0 {
-            // We cannot add the entire run, and its direction opposes ours.
-            // It starts from the edge like usual, but is shorter.
-            self.cur_width_bound = self.width_bound + self.caret.0;
-            self.caret.0 = 0.0;
-            self.add_ltr(fonts, run_index, run);
-            self.caret.0 = -self.caret.0;
-        } else {
-            // We perform line-wrapping on this run.
-
-            let mut run_breaks = run.breaks.iter().rev().peekable();
-            let run_gb = GlyphBreak {
-                pos: 0,
-                no_space_end: run.start_no_space(),
-            };
-            let mut glyph_start = run.glyphs.len() as u32;
-            let mut xoffset = self.caret.0 - run.caret;
-            line_len = self.line_len;
-
-            // Force adding something if run disables break-at-start or line is empty
-            let mut no_break = run.no_break || self.line_is_empty();
-
-            loop {
-                // Calculate maximal glyph_end which fits the line
-                let mut line_break = true;
-                let glyph_end = glyph_start;
-                loop {
-                    let gb = run_breaks.peek().map(|gb| **gb).unwrap_or(run_gb);
-                    let part_line_len = -gb.no_space_end - xoffset;
-                    if no_break || (part_line_len <= self.cur_width_bound) {
-                        no_break = no_break && gb.pos == glyph_start;
-                        glyph_start = gb.pos;
-                        run_breaks.next();
-                        line_len = part_line_len;
-                        if glyph_start == 0 {
-                            break;
-                        } else if self.justify {
-                            // When justifying text we must add each word
-                            // separately to allow independent positioning.
-                            line_break = false;
-                            break;
-                        }
-                        continue;
-                    }
-                    break;
-                }
-
-                if glyph_start < glyph_end {
-                    let part_len;
-                    if !self.line_is_rtl {
-                        // Special case: wrapping RTL on a LTR line
-                        part_len = line_len;
-                        let start = self.width_bound - self.cur_width_bound;
-                        line_len = start + part_len;
-                        xoffset += line_len;
-                    } else {
-                        part_len = line_len - self.line_len;
-                    }
-                    self.line_len = line_len;
-                    let mut start_glyph = glyph_start;
-                    let mut text_end = run.range.end;
-                    if start_glyph > 0 {
-                        // In this case we are wrapping; to prevent a location
-                        // from occurring on two lines, we go back one glyph.
-                        text_end = run.glyphs[start_glyph as usize].index;
-                        start_glyph += 1;
-                    }
-                    self.add_part(
-                        &scale_font,
-                        xoffset,
-                        -line_len,
-                        part_len,
-                        &run,
-                        text_end,
-                        run_index,
-                        start_glyph..glyph_end,
-                    );
-                }
-
-                // If we are already at the end of the run, stop. This
-                // should not happen on the first iteration.
-                if glyph_start == 0 {
-                    break;
-                }
-
-                if line_break {
-                    // Offset new line since we are not at the start of the run
-                    let g = run.glyphs[glyph_start as usize - 1];
-                    xoffset = -(g.position.0 + scale_font.h_advance(g.id));
-                    self.new_line(g.index);
-                }
-
-                no_break = self.line_is_empty();
-            }
-        }
     }
 }
 
@@ -276,130 +145,117 @@ impl LineAdder {
 struct LineAdder {
     runs: Vec<RunPart>,
     lines: Vec<Line>,
-    line_start: usize,
-    line_text_start: u32,
-    line_text_end: u32,
-    line_len: f32,
     line_runs: Vec<(usize, Level, f32)>,
-    line_max_level: Option<Level>,
-    ascent: f32,
-    descent: f32,
     line_gap: f32,
     longest: f32,
-    caret: Vec2,
+    vcaret: f32,
     num_glyphs: u32,
     halign: Align,
-    justify: bool,
-    wrap: bool,
-    line_is_rtl: bool,
-    line_is_empty: bool,
-    cur_width_bound: f32,
     width_bound: f32,
 }
 impl LineAdder {
     fn new(run_capacity: usize, env: &Environment) -> Self {
         let runs = Vec::with_capacity(run_capacity);
-        let justify = env.halign == Align::Stretch;
         LineAdder {
             runs,
             halign: env.halign,
-            justify,
-            wrap: env.wrap,
-            cur_width_bound: env.bounds.0,
             width_bound: env.bounds.0,
             ..Default::default()
         }
     }
 
-    /// Does the current line have any content?
-    fn line_is_empty(&self) -> bool {
-        self.line_is_empty
-    }
-
-    fn add_run<F: Font, SF: ScaleFont<F>>(
+    fn add_line(
         &mut self,
-        scale_font: &SF,
-        rtl: bool,
-        run: &GlyphRun,
-        run_index: usize,
+        fonts: &FontLibrary,
+        line_level: Level,
+        runs: &[GlyphRun],
+        parts: &[PartInfo],
     ) {
-        let pos = self.caret.0;
-        let mut xoffset = pos;
-        let mut caret = pos;
-        let part_len = run.caret;
-        if !rtl {
-            caret += part_len;
-            self.line_len = pos + run.end_no_space();
-        } else {
-            caret -= part_len;
-            xoffset = pos - run.caret;
-            self.line_len = -run.start_no_space() - pos;
-        }
-        let text_end = run.range.end;
-        let glyph_range = 0..(run.glyphs.len() as u32);
-        self.add_part(
-            scale_font,
-            xoffset,
-            caret,
-            part_len,
-            run,
-            text_end,
-            run_index,
-            glyph_range,
-        );
-    }
-
-    fn add_part<F: Font, SF: ScaleFont<F>>(
-        &mut self,
-        scale_font: &SF,
-        xoffset: f32,
-        caret: f32,
-        part_len: f32,
-        run: &GlyphRun,
-        text_end: u32,
-        run_index: usize,
-        glyph_range: std::ops::Range<u32>,
-    ) {
-        if self.line_is_empty {
-            self.line_is_empty = glyph_range.start == glyph_range.end;
+        let line_start = self.runs.len();
+        let line_is_rtl = line_level.is_rtl();
+        println!("add_line has parts:");
+        for part in parts {
+            println!("\t{:?}", part);
         }
 
-        // Adjust vertical position if necessary
-        let ascent = scale_font.ascent();
-        if ascent > self.ascent {
-            let extra = ascent - self.ascent;
-            for run in &mut self.runs[self.line_start..] {
-                run.offset.1 += extra;
+        let mut last_run = u32::MAX;
+        let (mut ascent, mut descent, mut line_gap) = (0f32, 0f32, 0f32);
+        let mut max_level = line_level;
+        for part in parts {
+            if last_run == part.run {
+                continue;
             }
-            self.caret.1 += extra;
-            self.ascent = ascent;
+            last_run = part.run;
+            let run = &runs[last_run as usize];
+
+            let scale_font = fonts.get(run.font_id).scaled(run.font_scale);
+            ascent = ascent.max(scale_font.ascent());
+            descent = descent.min(scale_font.descent());
+            line_gap = line_gap.max(scale_font.line_gap());
+
+            debug_assert!(run.level >= line_level);
+            max_level = max_level.max(run.level);
         }
 
-        self.descent = self.descent.min(scale_font.descent());
-        self.line_gap = self.line_gap.max(scale_font.line_gap());
+        self.vcaret += line_gap.max(self.line_gap) + ascent;
+        self.line_gap = line_gap;
 
-        let part_len = (if self.line_is_rtl { -1.0 } else { 1.0 }) * part_len;
-        self.line_runs.push((self.runs.len(), run.level, part_len));
-        self.line_max_level = self
-            .line_max_level
-            .map(|level| level.max(run.level))
-            .or(Some(run.level));
+        let line_text_start = {
+            let part = &parts[0];
+            let run = &runs[part.run as usize];
+            if run.level.is_ltr() {
+                if part.glyph_range.start() < run.glyphs.len() {
+                    run.glyphs[part.glyph_range.start()].index
+                } else {
+                    run.range.start
+                }
+            } else {
+                let end = part.glyph_range.end();
+                if 0 < end && end < run.glyphs.len() {
+                    run.glyphs[end - 1].index
+                } else {
+                    run.range.start
+                }
+            }
+        };
 
-        self.caret.0 = caret;
-        self.line_text_end = text_end;
-        self.num_glyphs += glyph_range.len() as u32;
+        let mut x = 0.0;
+        let mut line_len = 0.0;
+        let mut line_text_end = line_text_start;
+        for part in parts {
+            let run = &runs[part.run as usize];
+            self.line_runs.push((self.runs.len(), run.level, part.len));
 
-        self.runs.push(RunPart {
-            text_end,
-            glyph_run: run_index as u32,
-            glyph_range: glyph_range.into(),
-            offset: Vec2(xoffset, self.caret.1),
-        });
-    }
+            self.num_glyphs += part.glyph_range.len() as u32;
 
-    fn finish_line(&mut self, text_index: u32) {
-        let num_runs = self.runs.len() - self.line_start;
-        let rtl = self.line_is_rtl;
+            let mut text_end = run.range.end;
+            if run.level.is_ltr() {
+                if part.glyph_range.end() < run.glyphs.len() {
+                    text_end = run.glyphs[part.glyph_range.end()].index;
+                }
+            } else {
+                let start = part.glyph_range.start();
+                if 0 < start && start < run.glyphs.len() {
+                    text_end = run.glyphs[start - 1].index
+                }
+            }
+            line_text_end = text_end;
+
+            // FIXME: if first item is RTL on RTL line, then offset and len should exclude whitespace!
+            let xoffset = x - part.offset;
+            self.runs.push(RunPart {
+                text_end,
+                glyph_run: part.run,
+                glyph_range: part.glyph_range.into(),
+                offset: Vec2(xoffset, self.vcaret),
+            });
+            x += part.len;
+            line_len = part.line_len;
+        }
+
+        // Finish line
+
+        let num_runs = self.runs.len() - line_start;
 
         // Unic TR#9 L2: reverse items on the line
         // This implementation does not correspond directly to the Unicode
@@ -408,7 +264,7 @@ impl LineAdder {
         // Our shaper(s) accept both LTR and RTL input; additionally, our line
         // wrapping must explicitly handle both LTR and RTL lines; the missing
         // step is to rearrange non-wrapped runs on the line.
-        if let Some(mut level) = self.line_max_level {
+        if let Some(mut level) = Some(max_level) {
             let reverse_first = |mut slice: &mut [(usize, Level, f32)]| loop {
                 if slice.len() < 2 {
                     return;
@@ -419,8 +275,7 @@ impl LineAdder {
                 slice[len1].0 = a;
                 slice = &mut slice[1..len1];
             };
-            let line_level = if rtl { Level::rtl() } else { Level::ltr() };
-            while level > line_level {
+            while level > Level::ltr() {
                 let mut start = None;
                 for i in 0..num_runs {
                     if let Some(s) = start {
@@ -442,62 +297,42 @@ impl LineAdder {
 
             let mut i = 0;
             while i < self.line_runs.len() {
-                let j = self.line_runs[i].0 - self.line_start;
+                let j = self.line_runs[i].0 - line_start;
                 if j > i {
                     let mut a = self.line_runs[j].2;
                     let b = a - self.line_runs[i].2;
                     for k in (i + 1)..j {
                         a += self.line_runs[k].2;
-                        self.runs[self.line_start + k].offset.0 += b;
+                        self.runs[line_start + k].offset.0 += b;
                     }
-                    self.runs[self.line_start + i].offset.0 += a;
-                    self.runs[self.line_start + j].offset.0 -= a - b;
+                    self.runs[line_start + i].offset.0 += a;
+                    self.runs[line_start + j].offset.0 -= a - b;
                     self.line_runs.swap(i, j);
                     continue;
                 }
                 i += 1;
             }
 
-            let runs = &mut self.runs[self.line_start..];
+            let runs = &mut self.runs[line_start..];
 
             let offset = match self.halign {
-                Align::Default => match rtl {
+                Align::Default => match line_is_rtl {
                     false => 0.0,
-                    true => self.width_bound,
+                    true => self.width_bound - line_len,
                 },
-                Align::TL => match rtl {
-                    false => 0.0,
-                    true => self.line_len,
-                },
-                Align::Centre => {
-                    let mut offset = 0.5 * (self.width_bound - self.line_len);
-                    if rtl {
-                        offset += self.line_len;
-                    }
-                    offset
-                }
-                Align::BR => match rtl {
-                    false => self.width_bound - self.line_len,
-                    true => self.width_bound,
-                },
+                Align::TL => 0.0,
+                Align::Centre => 0.5 * (self.width_bound - line_len),
+                Align::BR => self.width_bound - line_len,
                 Align::Stretch => {
                     // Justify text: expand the gaps between runs
                     // We should have at least one run, so subtraction won't wrap:
                     let num_gaps = (num_runs - 1) as f32;
-                    let per_gap = (self.width_bound - self.line_len) / num_gaps;
+                    let per_gap = (self.width_bound - line_len) / num_gaps;
 
-                    if !rtl {
-                        let mut offset = per_gap;
-                        for run in &mut runs[1..] {
-                            run.offset.0 += offset;
-                            offset += per_gap;
-                        }
-                    } else {
-                        let mut offset = self.width_bound;
-                        for run in &mut runs[..] {
-                            run.offset.0 += offset;
-                            offset -= per_gap;
-                        }
+                    let mut offset = per_gap;
+                    for run in &mut runs[1..] {
+                        run.offset.0 += offset;
+                        offset += per_gap;
                     }
                     0.0 // do not offset below
                 }
@@ -510,44 +345,21 @@ impl LineAdder {
         }
 
         self.line_runs.clear();
-        self.line_max_level = None;
 
-        let top = self.caret.1 - self.ascent;
-        self.caret.1 -= self.descent;
-        self.longest = self.longest.max(self.line_len);
-        self.line_len = 0.0;
+        let top = self.vcaret - ascent;
+        self.vcaret -= descent;
+        self.longest = self.longest.max(line_len);
         self.lines.push(Line {
-            text_range: Range::from(self.line_text_start..self.line_text_end),
-            run_range: (self.line_start..self.runs.len()).into(),
+            text_range: Range::from(line_text_start..line_text_end),
+            run_range: (line_start..self.runs.len()).into(),
             top,
-            bottom: self.caret.1,
+            bottom: self.vcaret,
         });
-        self.line_text_start = text_index;
-    }
-
-    fn new_line(&mut self, text_index: u32) {
-        if self.line_start != self.runs.len() {
-            self.finish_line(text_index);
-        }
-        self.line_start = self.runs.len();
-        self.caret.0 = 0.0;
-        self.caret.1 += self.line_gap;
-
-        self.ascent = 0.0;
-        self.descent = 0.0;
-        self.line_gap = 0.0;
-        self.line_is_empty = true;
-        self.cur_width_bound = self.width_bound;
     }
 
     // Returns: required dimensions
-    fn finish(&mut self, text_index: u32, valign: Align, height_bound: f32) -> Vec2 {
-        // If any (even empty) run was added to the line, add v-space
-        if self.line_start != self.runs.len() {
-            self.finish_line(text_index);
-        }
-
-        let height = self.caret.1;
+    fn finish(&mut self, valign: Align, height_bound: f32) -> Vec2 {
+        let height = self.vcaret;
         let offset = match valign {
             Align::Default | Align::TL | Align::Stretch => 0.0, // nothing to do
             Align::Centre => 0.5 * (height_bound - height),
