@@ -48,7 +48,6 @@ impl Text {
 
         // Almost everything in "this" method depends on the line direction, so
         // we determine that then call the appropriate implementation.
-        println!("have {} lines", self.line_runs.len());
         for line in self.line_runs.iter() {
             // Each LineRun contains at least one Run, though a Run may be empty
             let end_index = line.range.end();
@@ -58,10 +57,6 @@ impl Text {
                 false => Level::ltr(),
                 true => Level::rtl(),
             };
-            println!(
-                "line [rtl={}] has runs {}..{}",
-                line.rtl, line.range.start, end_index
-            );
 
             // Tuples: (index, part)
             let mut start = (line.range.start(), 0, 0);
@@ -75,8 +70,6 @@ impl Text {
             'a: while index < end_index {
                 let run = &self.glyph_runs[index];
                 let num_parts = run.num_parts();
-                println!("run {} has {} parts", index, run.num_parts());
-                println!("start={:?}, end={:?}", start, end);
                 let allow_break = !run.no_break; // break allowed at end of run
 
                 let mut last_part = start.1;
@@ -86,7 +79,6 @@ impl Text {
                         run.part_lengths(last_part..part);
                     let line_len = caret + part_len_no_space;
                     if line_len > width_bound && end.2 > 0 {
-                        println!("add_line — wrapping — start={:?}, end={:?}", start, end);
                         // Add up to last valid break point then wrap and reset
                         let slice = &mut parts[0..end.2];
                         adder.add_line(fonts, level, end_len, &self.glyph_runs, slice);
@@ -134,11 +126,9 @@ impl Text {
             if parts.len() > 0 {
                 // It should not be possible for a line to end with a no-break, so:
                 debug_assert_eq!(parts.len(), end.2);
-                println!("add_line — end-of-line — start={:?}, end={:?}", start, end);
                 adder.add_line(fonts, level, end_len, &self.glyph_runs, &mut parts);
             }
         }
-        println!();
 
         self.required = adder.finish(self.env.valign, self.env.bounds.1);
         self.wrapped_runs = adder.runs;
@@ -182,12 +172,10 @@ impl LineAdder {
         let line_is_rtl = line_level.is_rtl();
 
         // Iterate runs to determine max ascent, level, etc.
-        println!("add_line has parts:");
         let mut last_run = u32::MAX;
         let (mut ascent, mut descent, mut line_gap) = (0f32, 0f32, 0f32);
         let mut max_level = line_level;
         for part in parts.iter() {
-            println!("\t{:?}", part);
             if last_run == part.run {
                 continue;
             }
@@ -329,7 +317,6 @@ impl LineAdder {
                     is_gap.copy_within(1..len, 0);
                 }
 
-                println!("num gaps: {}", num_gaps);
                 per_gap = spare / (num_gaps as f32);
                 0.0
             }
@@ -380,11 +367,6 @@ impl LineAdder {
             top,
             bottom: self.vcaret,
         });
-
-        println!("line: {:?}", self.lines[self.lines.len() - 1]);
-        for run in &self.runs[line_start..] {
-            println!("run: {:?}", run);
-        }
     }
 
     // Returns: required dimensions

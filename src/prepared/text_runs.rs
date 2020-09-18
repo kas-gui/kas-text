@@ -155,6 +155,7 @@ impl Text {
             }
         }
 
+        /*
         println!("text: {}", &self.text);
         for line in self.line_runs.iter() {
             println!("line (rtl={}) runs:", line.rtl);
@@ -166,6 +167,7 @@ impl Text {
                 );
             }
         }
+        */
     }
 }
 

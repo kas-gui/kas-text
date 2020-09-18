@@ -183,7 +183,6 @@ impl Text {
             break;
         }
 
-        println!("text_glyph_pos: {:?}", v);
         MarkerPosIter { v, a, b }
     }
 
