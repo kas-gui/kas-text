@@ -303,6 +303,11 @@ impl LineAdder {
         }
         let line_len = caret; // we already excluded whitespace from last part's length
 
+        // Other parts of this library expect runs to be in logical order, so
+        // we re-order now (does not affect display position).
+        // TODO: should we change this, e.g. for visual-order navigation?
+        self.runs[line_start..].sort_by_key(|run| run.text_end);
+
         // Apply alignment
         {
             let num_runs = self.runs.len() - line_start;
