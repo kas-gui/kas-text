@@ -220,12 +220,26 @@ impl LineAdder {
         };
 
         // Adjust the logically-last part: exclude whitespace from length
+        let mut line_text_end;
         {
             let part = &mut parts[parts.len() - 1];
-            if runs[part.run as usize].level.is_rtl() {
+            let run = &runs[part.run as usize];
+            if run.level.is_rtl() {
                 part.offset += part.len - part.len_no_space;
             }
             part.len = part.len_no_space;
+
+            line_text_end = run.range.end;
+            if run.level.is_ltr() {
+                if part.glyph_range.end() < run.glyphs.len() {
+                    line_text_end = run.glyphs[part.glyph_range.end()].index;
+                }
+            } else {
+                let start = part.glyph_range.start();
+                if 0 < start && start < run.glyphs.len() {
+                    line_text_end = run.glyphs[start - 1].index
+                }
+            }
         }
 
         // Unic TR#9 L2: reverse items on the line
@@ -260,7 +274,6 @@ impl LineAdder {
         }
 
         let mut caret = 0.0;
-        let mut line_text_end = line_text_start;
         for part in parts {
             let run = &runs[part.run as usize];
             self.line_runs.push((self.runs.len(), run.level, part.len));
@@ -278,7 +291,6 @@ impl LineAdder {
                     text_end = run.glyphs[start - 1].index
                 }
             }
-            line_text_end = text_end;
 
             let xoffset = caret - part.offset;
             self.runs.push(RunPart {
@@ -296,6 +308,7 @@ impl LineAdder {
             let num_runs = self.runs.len() - line_start;
             let runs = &mut self.runs[line_start..];
 
+            // TODO: stretch with no-break parts
             let offset = match self.halign {
                 Align::Default => match line_is_rtl {
                     false => 0.0,
@@ -336,6 +349,11 @@ impl LineAdder {
             top,
             bottom: self.vcaret,
         });
+
+        println!("line: {:?}", self.lines[self.lines.len() - 1]);
+        for run in &self.runs[line_start..] {
+            println!("run: {:?}", run);
+        }
     }
 
     // Returns: required dimensions
