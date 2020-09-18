@@ -30,9 +30,9 @@ pub struct Line {
 #[derive(Clone, Debug)]
 struct PartInfo {
     run: u32,
-    len: f32,
     offset: f32,
-    line_len: f32,
+    len: f32,
+    len_no_space: f32,
     glyph_range: Range,
 }
 
@@ -86,7 +86,7 @@ impl Text {
                     if line_len > width_bound && end.2 > 0 {
                         println!("add_line — wrapping — start={:?}, end={:?}", start, end);
                         // Add up to last valid break point then wrap and reset
-                        adder.add_line(fonts, level, &self.glyph_runs, &parts[0..end.2]);
+                        adder.add_line(fonts, level, &self.glyph_runs, &mut parts[0..end.2]);
 
                         end.2 = 0;
                         start = end;
@@ -101,9 +101,9 @@ impl Text {
                     let glyph_range = run.to_glyph_range(last_part..part);
                     parts.push(PartInfo {
                         run: index as u32,
-                        len: part_len,
                         offset: part_offset,
-                        line_len,
+                        len: part_len,
+                        len_no_space: part_len_no_space,
                         glyph_range,
                     });
                     //                         no_part_for_current_run = false;
@@ -129,7 +129,7 @@ impl Text {
 
             if parts.len() > 0 {
                 println!("add_line — end-of-line — start={:?}, end={:?}", start, end);
-                adder.add_line(fonts, level, &self.glyph_runs, &parts);
+                adder.add_line(fonts, level, &self.glyph_runs, &mut parts);
             }
         }
         println!();
@@ -169,19 +169,19 @@ impl LineAdder {
         fonts: &FontLibrary,
         line_level: Level,
         runs: &[GlyphRun],
-        parts: &[PartInfo],
+        parts: &mut [PartInfo],
     ) {
+        assert!(parts.len() > 0);
         let line_start = self.runs.len();
         let line_is_rtl = line_level.is_rtl();
-        println!("add_line has parts:");
-        for part in parts {
-            println!("\t{:?}", part);
-        }
 
+        // Iterate runs to determine max ascent, level, etc.
+        println!("add_line has parts:");
         let mut last_run = u32::MAX;
         let (mut ascent, mut descent, mut line_gap) = (0f32, 0f32, 0f32);
         let mut max_level = line_level;
-        for part in parts {
+        for part in parts.iter() {
+            println!("\t{:?}", part);
             if last_run == part.run {
                 continue;
             }
@@ -219,8 +219,47 @@ impl LineAdder {
             }
         };
 
-        let mut x = 0.0;
-        let mut line_len = 0.0;
+        // Adjust the logically-last part: exclude whitespace from length
+        {
+            let part = &mut parts[parts.len() - 1];
+            if runs[part.run as usize].level.is_rtl() {
+                part.offset += part.len - part.len_no_space;
+            }
+            part.len = part.len_no_space;
+        }
+
+        // Unic TR#9 L2: reverse items on the line
+        // This implementation does not correspond directly to the Unicode
+        // algorithm, which assumes that shaping happens *after* re-arranging
+        // chars (but also *before*, in order to calculate line-wrap points).
+        // Our shaper(s) accept both LTR and RTL input; additionally, our line
+        // wrapping must explicitly handle both LTR and RTL lines; the missing
+        // step is to rearrange non-wrapped runs on the line.
+        {
+            let mut level = max_level;
+            while level > Level::ltr() {
+                let mut start = None;
+                for i in 0..parts.len() {
+                    let part_level = runs[parts[i].run as usize].level;
+                    if let Some(s) = start {
+                        if part_level < level {
+                            parts[s..i].reverse();
+                            start = None;
+                        }
+                    } else {
+                        if part_level >= level {
+                            start = Some(i);
+                        }
+                    }
+                }
+                if let Some(s) = start {
+                    parts[s..].reverse();
+                }
+                level.lower(1).unwrap();
+            }
+        }
+
+        let mut caret = 0.0;
         let mut line_text_end = line_text_start;
         for part in parts {
             let run = &runs[part.run as usize];
@@ -241,78 +280,20 @@ impl LineAdder {
             }
             line_text_end = text_end;
 
-            // FIXME: if first item is RTL on RTL line, then offset and len should exclude whitespace!
-            let xoffset = x - part.offset;
+            let xoffset = caret - part.offset;
             self.runs.push(RunPart {
                 text_end,
                 glyph_run: part.run,
                 glyph_range: part.glyph_range.into(),
                 offset: Vec2(xoffset, self.vcaret),
             });
-            x += part.len;
-            line_len = part.line_len;
+            caret += part.len;
         }
+        let line_len = caret; // we already excluded whitespace from last part's length
 
-        // Finish line
-
-        let num_runs = self.runs.len() - line_start;
-
-        // Unic TR#9 L2: reverse items on the line
-        // This implementation does not correspond directly to the Unicode
-        // algorithm, which assumes that shaping happens *after* re-arranging
-        // chars (but also *before*, in order to calculate line-wrap points).
-        // Our shaper(s) accept both LTR and RTL input; additionally, our line
-        // wrapping must explicitly handle both LTR and RTL lines; the missing
-        // step is to rearrange non-wrapped runs on the line.
-        if let Some(mut level) = Some(max_level) {
-            let reverse_first = |mut slice: &mut [(usize, Level, f32)]| loop {
-                if slice.len() < 2 {
-                    return;
-                }
-                let len1 = slice.len() - 1;
-                let a = slice[0].0;
-                slice[0].0 = slice[len1].0;
-                slice[len1].0 = a;
-                slice = &mut slice[1..len1];
-            };
-            while level > Level::ltr() {
-                let mut start = None;
-                for i in 0..num_runs {
-                    if let Some(s) = start {
-                        if self.line_runs[i].1 < level {
-                            reverse_first(&mut self.line_runs[s..i]);
-                            start = None;
-                        }
-                    } else {
-                        if self.line_runs[i].1 >= level {
-                            start = Some(i);
-                        }
-                    }
-                }
-                if let Some(s) = start {
-                    reverse_first(&mut self.line_runs[s..]);
-                }
-                level.lower(1).unwrap();
-            }
-
-            let mut i = 0;
-            while i < self.line_runs.len() {
-                let j = self.line_runs[i].0 - line_start;
-                if j > i {
-                    let mut a = self.line_runs[j].2;
-                    let b = a - self.line_runs[i].2;
-                    for k in (i + 1)..j {
-                        a += self.line_runs[k].2;
-                        self.runs[line_start + k].offset.0 += b;
-                    }
-                    self.runs[line_start + i].offset.0 += a;
-                    self.runs[line_start + j].offset.0 -= a - b;
-                    self.line_runs.swap(i, j);
-                    continue;
-                }
-                i += 1;
-            }
-
+        // Apply alignment
+        {
+            let num_runs = self.runs.len() - line_start;
             let runs = &mut self.runs[line_start..];
 
             let offset = match self.halign {
