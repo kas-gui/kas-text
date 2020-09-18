@@ -155,18 +155,17 @@ impl Text {
             }
         }
 
-        /*
         println!("text: {}", &self.text);
         for line in self.line_runs.iter() {
             println!("line (rtl={}) runs:", line.rtl);
             for run in &self.runs[line.range.to_std()] {
+                let slice = &self.text[run.range];
                 println!(
-                    "{:?}, text[{}..{}]: '{}', breaks={:?}",
-                    run.level, run.range.start, run.range.end, &self.text[run.range], run.breaks
+                    "{:?}, text[{}..{}]: '{}', breaks={:?}, no_break={}",
+                    run.level, run.range.start, run.range.end, slice, run.breaks, run.no_break,
                 );
             }
         }
-        */
     }
 }
 

@@ -9,6 +9,7 @@ use super::Text;
 use crate::shaper::GlyphRun;
 use crate::{fonts, Align, Environment, FontLibrary, Range, Vec2};
 use ab_glyph::ScaleFont;
+use smallvec::SmallVec;
 use unicode_bidi::Level;
 
 #[derive(Clone, Debug)]
@@ -65,6 +66,7 @@ impl Text {
             // Tuples: (index, part)
             let mut start = (line.range.start(), 0, 0);
             let mut end = start;
+            let mut end_len = 0.0;
             parts.clear();
             //             let mut no_part_for_current_run = true;
 
@@ -86,7 +88,8 @@ impl Text {
                     if line_len > width_bound && end.2 > 0 {
                         println!("add_line — wrapping — start={:?}, end={:?}", start, end);
                         // Add up to last valid break point then wrap and reset
-                        adder.add_line(fonts, level, &self.glyph_runs, &mut parts[0..end.2]);
+                        let slice = &mut parts[0..end.2];
+                        adder.add_line(fonts, level, end_len, &self.glyph_runs, slice);
 
                         end.2 = 0;
                         start = end;
@@ -117,6 +120,7 @@ impl Text {
                     //                     }
                     if part < num_parts || allow_break {
                         end = (index, part, parts.len());
+                        end_len = line_len;
                     }
                     last_part = part;
                     part += 1;
@@ -128,8 +132,10 @@ impl Text {
             }
 
             if parts.len() > 0 {
+                // It should not be possible for a line to end with a no-break, so:
+                debug_assert_eq!(parts.len(), end.2);
                 println!("add_line — end-of-line — start={:?}, end={:?}", start, end);
-                adder.add_line(fonts, level, &self.glyph_runs, &mut parts);
+                adder.add_line(fonts, level, end_len, &self.glyph_runs, &mut parts);
             }
         }
         println!();
@@ -145,7 +151,6 @@ impl Text {
 struct LineAdder {
     runs: Vec<RunPart>,
     lines: Vec<Line>,
-    line_runs: Vec<(usize, Level, f32)>,
     line_gap: f32,
     longest: f32,
     vcaret: f32,
@@ -168,6 +173,7 @@ impl LineAdder {
         &mut self,
         fonts: &FontLibrary,
         line_level: Level,
+        line_len: f32,
         runs: &[GlyphRun],
         parts: &mut [PartInfo],
     ) {
@@ -273,10 +279,64 @@ impl LineAdder {
             }
         }
 
-        let mut caret = 0.0;
-        for part in parts {
+        let spare = self.width_bound - line_len;
+        let mut is_gap = SmallVec::<[bool; 16]>::new();
+        let mut per_gap = 0.0;
+        let mut caret = match self.halign {
+            Align::Default => match line_is_rtl {
+                false => 0.0,
+                true => spare,
+            },
+            Align::TL => 0.0,
+            Align::Centre => 0.5 * spare,
+            Align::BR => spare,
+            Align::Stretch => {
+                let len = parts.len();
+                is_gap.resize(len, false);
+                let mut num_gaps = 0;
+                for (i, part) in parts[..len - 1].iter().enumerate() {
+                    let run = &runs[part.run as usize];
+                    let not_at_end = if run.level.is_ltr() {
+                        part.glyph_range.end() < run.glyphs.len()
+                    } else {
+                        part.glyph_range.start > 0
+                    };
+                    if not_at_end || !run.no_break {
+                        is_gap[i] = true;
+                        num_gaps += 1;
+                    }
+                }
+
+                // Apply per-level reversing to is_gap
+                let mut start = 0;
+                let mut level = runs[parts[0].run as usize].level;
+                for i in 1..len {
+                    let new_level = runs[parts[i].run as usize].level;
+                    if level != new_level {
+                        if level > line_level {
+                            is_gap[start..i].reverse();
+                        }
+                        start = i;
+                        level = new_level;
+                    }
+                }
+                if level > line_level {
+                    is_gap[start..len - 1].reverse();
+                }
+
+                // Shift left 1 part for RTL lines
+                if line_level.is_rtl() {
+                    is_gap.copy_within(1..len, 0);
+                }
+
+                println!("num gaps: {}", num_gaps);
+                per_gap = spare / (num_gaps as f32);
+                0.0
+            }
+        };
+
+        for (i, part) in parts.iter().enumerate() {
             let run = &runs[part.run as usize];
-            self.line_runs.push((self.runs.len(), run.level, part.len));
 
             self.num_glyphs += part.glyph_range.len() as u32;
 
@@ -300,50 +360,16 @@ impl LineAdder {
                 offset: Vec2(xoffset, self.vcaret),
             });
             caret += part.len;
+
+            if is_gap.len() > 0 && is_gap[i] {
+                caret += per_gap;
+            }
         }
-        let line_len = caret; // we already excluded whitespace from last part's length
 
         // Other parts of this library expect runs to be in logical order, so
         // we re-order now (does not affect display position).
         // TODO: should we change this, e.g. for visual-order navigation?
         self.runs[line_start..].sort_by_key(|run| run.text_end);
-
-        // Apply alignment
-        {
-            let num_runs = self.runs.len() - line_start;
-            let runs = &mut self.runs[line_start..];
-
-            // TODO: stretch with no-break parts
-            let offset = match self.halign {
-                Align::Default => match line_is_rtl {
-                    false => 0.0,
-                    true => self.width_bound - line_len,
-                },
-                Align::TL => 0.0,
-                Align::Centre => 0.5 * (self.width_bound - line_len),
-                Align::BR => self.width_bound - line_len,
-                Align::Stretch => {
-                    // Justify text: expand the gaps between runs
-                    // We should have at least one run, so subtraction won't wrap:
-                    let num_gaps = (num_runs - 1) as f32;
-                    let per_gap = (self.width_bound - line_len) / num_gaps;
-
-                    let mut offset = per_gap;
-                    for run in &mut runs[1..] {
-                        run.offset.0 += offset;
-                        offset += per_gap;
-                    }
-                    0.0 // do not offset below
-                }
-            };
-            if offset != 0.0 {
-                for run in &mut runs[..] {
-                    run.offset.0 += offset;
-                }
-            }
-        }
-
-        self.line_runs.clear();
 
         let top = self.vcaret - ascent;
         self.vcaret -= descent;
