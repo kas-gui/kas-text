@@ -43,7 +43,7 @@ impl Text {
         // Use a crude estimate of the number of runs:
         let mut adder = LineAdder::new(self.text_len() / 16, &self.env);
         let width_bound = adder.width_bound;
-        //         let justify = self.env.halign == Align::Stretch;
+        let justify = self.env.halign == Align::Stretch;
         let mut parts = Vec::with_capacity(16);
 
         // Almost everything in "this" method depends on the line direction, so
@@ -63,7 +63,6 @@ impl Text {
             let mut end = start;
             let mut end_len = 0.0;
             parts.clear();
-            //             let mut no_part_for_current_run = true;
 
             let mut caret = 0.0;
             let mut index = start.0;
@@ -91,26 +90,37 @@ impl Text {
                         continue 'a;
                     }
                     caret += part_len;
-                    //                     if justify || no_part_for_current_run {
-                    // TODO: we shouldn't need to store glyph start *and* end for each
                     let glyph_range = run.to_glyph_range(last_part..part);
-                    parts.push(PartInfo {
-                        run: index as u32,
-                        offset: part_offset,
-                        len: part_len,
-                        len_no_space: part_len_no_space,
-                        glyph_range,
-                    });
-                    //                         no_part_for_current_run = false;
-                    //                     } else {
-                    //                         let g_end = run.part_to_glyph_index(part);
-                    //                         if let Some(part) = parts.last_mut() {
-                    //                             part.len = part_len;
-                    //                             part.offset = part_offset; // only differs when RTL
-                    //                             part.glyph_range.end = g_end as u32;
-                    //                         }
-                    //                     }
-                    if part < num_parts || allow_break {
+                    let checkpoint = part < num_parts || allow_break;
+                    if justify
+                        || parts
+                            .last()
+                            .map(|part| (part.run as usize) < index)
+                            .unwrap_or(true)
+                        || !checkpoint
+                    {
+                        parts.push(PartInfo {
+                            run: index as u32,
+                            offset: part_offset,
+                            len: part_len,
+                            len_no_space: part_len_no_space,
+                            glyph_range,
+                        });
+                    } else {
+                        // Combine with last part (not strictly necessary)
+                        if let Some(part) = parts.last_mut() {
+                            if run.level.is_ltr() {
+                                part.len_no_space = part.len + part_len_no_space;
+                                part.glyph_range.end = glyph_range.end;
+                            } else {
+                                part.len_no_space += part_len;
+                                part.offset = part_offset;
+                                part.glyph_range.start = glyph_range.start;
+                            }
+                            part.len += part_len;
+                        }
+                    }
+                    if checkpoint {
                         end = (index, part, parts.len());
                         end_len = line_len;
                     }
@@ -120,7 +130,6 @@ impl Text {
 
                 index += 1;
                 start.1 = 0;
-                //                 no_part_for_current_run = true;
             }
 
             if parts.len() > 0 {
