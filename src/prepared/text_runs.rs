@@ -18,7 +18,9 @@ pub(crate) struct Run {
     /// BIDI level
     pub level: Level,
     /// All soft-break locations within this range (excludes end)
-    // TODO: replace this with more `Run` instances?
+    ///
+    /// Note: it would be equivalent to use a separate `Run` for each sub-range
+    /// in the text instead of tracking breaks via this field.
     pub breaks: SmallVec<[u32; 5]>,
     /// If true, the logical-end of this Run is not a valid break point
     pub no_break: bool,
