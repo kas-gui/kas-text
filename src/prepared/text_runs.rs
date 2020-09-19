@@ -18,7 +18,12 @@ pub(crate) struct Run {
     /// BIDI level
     pub level: Level,
     /// All soft-break locations within this range (excludes end)
+    ///
+    /// Note: it would be equivalent to use a separate `Run` for each sub-range
+    /// in the text instead of tracking breaks via this field.
     pub breaks: SmallVec<[u32; 5]>,
+    /// If true, the logical-end of this Run is not a valid break point
+    pub no_break: bool,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -86,6 +91,7 @@ impl Text {
                     range,
                     level,
                     breaks,
+                    no_break: !is_break,
                 });
 
                 if hard_break {
@@ -120,6 +126,7 @@ impl Text {
             range,
             level,
             breaks,
+            no_break: false,
         });
         if line_start < self.runs.len() {
             let range = Range::from(line_start..self.runs.len());
@@ -141,6 +148,7 @@ impl Text {
                     range,
                     level,
                     breaks,
+                    no_break: false,
                 });
 
                 let range = Range::from(line_start..self.runs.len());
@@ -154,9 +162,10 @@ impl Text {
         for line in self.line_runs.iter() {
             println!("line (rtl={}) runs:", line.rtl);
             for run in &self.runs[line.range.to_std()] {
+                let slice = &self.text[run.range];
                 println!(
-                    "{:?}, text[{}..{}]: '{}', breaks={:?}",
-                    run.level, run.range.start, run.range.end, &self.text[run.range], run.breaks
+                    "{:?}, text[{}..{}]: '{}', breaks={:?}, no_break={}",
+                    run.level, run.range.start, run.range.end, slice, run.breaks, run.no_break,
                 );
             }
         }

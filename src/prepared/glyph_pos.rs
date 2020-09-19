@@ -10,7 +10,7 @@ use crate::{fonts, Vec2};
 use ab_glyph::ScaleFont;
 
 /// Used to return the position of a glyph with associated metrics
-#[derive(Copy, Clone, Default, PartialEq)]
+#[derive(Copy, Clone, Debug, Default, PartialEq)]
 pub struct MarkerPos {
     /// (x, y) coordinate of glyph
     pub pos: Vec2,

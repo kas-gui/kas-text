@@ -54,9 +54,9 @@ pub struct GlyphBreak {
 /// text, this is the end nearer the origin than `caret`).
 #[derive(Clone, Debug)]
 pub struct GlyphRun {
-    /// Sequence of all glyphs, with index in text
+    /// Sequence of all glyphs, in left-to-right order
     pub glyphs: Vec<Glyph>,
-    /// Sequence of all break points
+    /// Sequence of all break points, in left-to-right order
     pub breaks: SmallVec<[GlyphBreak; 2]>,
 
     pub font_id: FontId,
@@ -69,35 +69,119 @@ pub struct GlyphRun {
     /// Position of next glyph, if this run is followed by another
     pub caret: f32,
 
+    // TODO: maybe we shouldn't duplicate this information?
     /// Range of text represented
     pub range: Range,
     /// BIDI level (odd levels are right-to-left)
     pub level: Level,
+    /// If true, the logical-start of this Run is not a valid break point
+    pub no_break: bool,
 }
 
 impl GlyphRun {
-    /// Starting offset of the run, excluding space
+    /// Number of parts
     ///
-    /// Note that runs never have space at the logical start, thus we only
-    /// need to save this value for the logical end of the run.
-    pub fn start_no_space(&self) -> f32 {
-        if self.level.is_ltr() {
-            0.0
-        } else {
-            self.no_space_end
-        }
+    /// Parts are in logical order
+    pub fn num_parts(&self) -> usize {
+        self.breaks.len() + 1
     }
 
-    /// Ending offset of the run, excluding space
+    /// Calculate lengths for a part range
     ///
-    /// Note that runs never have space at the logical start, thus we only
-    /// need to save this value for the logical end of the run.
-    pub fn end_no_space(&self) -> f32 {
+    /// Parts are identified in logical order with end index up to
+    /// `self.num_parts()`.
+    ///
+    /// Returns `(offset, len_no_space, len)` where `offset` is the distance to
+    /// from the origin to the start of the left-most part, `len` is the
+    /// horizontal length of the given parts, and `len_no_space` is `len` but
+    /// excluding whitespace at the logical end.
+    pub fn part_lengths(&self, range: std::ops::Range<usize>) -> (f32, f32, f32) {
+        // TODO: maybe we should adjust self.breaks to clean this up?
+        assert!(range.start <= range.end);
+
+        let (mut offset, mut len_no_space, mut len) = (0.0, 0.0, 0.0);
         if self.level.is_ltr() {
-            self.no_space_end
+            if range.end > 0 {
+                len_no_space = self.no_space_end;
+                len = self.caret;
+                if range.end <= self.breaks.len() {
+                    let b = self.breaks[range.end - 1];
+                    len_no_space = b.no_space_end;
+                    if (b.pos as usize) < self.glyphs.len() {
+                        len = self.glyphs[b.pos as usize].position.0
+                    }
+                }
+            }
+
+            if range.start > 0 {
+                let glyph = self.breaks[range.start - 1].pos as usize;
+                offset = self.glyphs[glyph].position.0;
+                len_no_space -= offset;
+                len -= offset;
+            }
         } else {
-            self.caret
+            if range.start <= self.breaks.len() {
+                len = self.caret;
+                if range.start > 0 {
+                    let b = self.breaks.len() - range.start;
+                    let pos = self.breaks[b].pos as usize;
+                    if pos < self.glyphs.len() {
+                        len = self.glyphs[pos].position.0;
+                        //                     let scale_font = fonts().get(self.font_id).scaled(self.font_scale);
+                        //                     len = g.position.0 + scale_font.h_advance(g.id);
+                    }
+                }
+                len_no_space = len;
+            }
+            if range.end <= self.breaks.len() {
+                offset = self.caret;
+                if range.end == 0 {
+                    len_no_space = 0.0;
+                } else {
+                    let b = self.breaks.len() - range.end;
+                    let b = self.breaks[b];
+                    len_no_space -= b.no_space_end;
+                    if (b.pos as usize) < self.glyphs.len() {
+                        offset = self.glyphs[b.pos as usize].position.0;
+                    }
+                }
+                len -= offset;
+            }
         }
+        (offset, len_no_space, len)
+    }
+
+    /// Get glyph index from part index
+    pub fn to_glyph_range(&self, range: std::ops::Range<usize>) -> Range {
+        let mut start = range.start;
+        let mut end = range.end;
+
+        let rtl = self.level.is_rtl();
+        if rtl {
+            let num_parts = self.num_parts();
+            start = num_parts - start;
+            end = num_parts - end;
+        }
+
+        let map = |part: usize| {
+            if part == 0 {
+                0
+            } else if part <= self.breaks.len() {
+                self.breaks[part - 1].pos as usize
+            } else {
+                debug_assert_eq!(part, self.breaks.len() + 1);
+                self.glyphs.len()
+            }
+        };
+
+        let mut start = map(start);
+        let mut end = map(end);
+
+        if rtl {
+            std::mem::swap(&mut start, &mut end);
+        }
+
+        Range::from(start..end)
     }
 }
 
@@ -167,6 +251,7 @@ pub(crate) fn shape(font_id: FontId, dpem: f32, text: &str, run: &prepared::Run)
         caret,
         range: run.range,
         level: run.level,
+        no_break: run.no_break,
     }
 }
 
