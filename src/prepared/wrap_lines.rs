@@ -222,11 +222,27 @@ impl LineAdder {
             }
         };
 
-        // Adjust the logically-last part: exclude whitespace from length
+        // Adjust the logically-last part: exclude trailing whitespace
         let mut line_text_end;
         {
             let part = &mut parts[parts.len() - 1];
             let run = &runs[part.run as usize];
+
+            if part.len > part.len_no_space {
+                // When wrapping on whitespace: exclude the last glyph
+                // This excludes only one glyph; the main aim is to make the
+                // 'End' key exclude the wrapping position (which is also the
+                // next line's start). It also avoids highlighting whitespace
+                // when selecting wrapped bidi text, for a single space.
+                if part.glyph_range.start < part.glyph_range.end {
+                    if run.level.is_ltr() {
+                        part.glyph_range.end -= 1;
+                    } else {
+                        part.glyph_range.start += 1;
+                    }
+                }
+            }
+
             if run.level.is_rtl() {
                 part.offset += part.len - part.len_no_space;
             }
