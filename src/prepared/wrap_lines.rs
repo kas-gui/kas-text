@@ -92,12 +92,12 @@ impl Text {
                     caret += part_len;
                     let glyph_range = run.to_glyph_range(last_part..part);
                     let checkpoint = part < num_parts || allow_break;
-                    if justify
+                    if !checkpoint
+                        || (justify && part_len_no_space > 0.0)
                         || parts
                             .last()
                             .map(|part| (part.run as usize) < index)
                             .unwrap_or(true)
-                        || !checkpoint
                     {
                         parts.push(PartInfo {
                             run: index as u32,
@@ -110,12 +110,14 @@ impl Text {
                         // Combine with last part (not strictly necessary)
                         if let Some(part) = parts.last_mut() {
                             if run.level.is_ltr() {
-                                part.len_no_space = part.len + part_len_no_space;
                                 part.glyph_range.end = glyph_range.end;
                             } else {
-                                part.len_no_space += part_len;
                                 part.offset = part_offset;
                                 part.glyph_range.start = glyph_range.start;
+                            }
+                            debug_assert!(part.glyph_range.start <= part.glyph_range.end);
+                            if part_len_no_space > 0.0 {
+                                part.len_no_space = part.len + part_len_no_space;
                             }
                             part.len += part_len;
                         }
@@ -222,7 +224,8 @@ impl LineAdder {
             }
         };
 
-        // Adjust the logically-last part: exclude trailing whitespace
+        // Adjust the (logical) tail: optionally exclude last glyph, calculate
+        // line_text_end, trim whitespace for the purposes of layout.
         let mut line_text_end;
         {
             let part = &mut parts[parts.len() - 1];
@@ -243,11 +246,6 @@ impl LineAdder {
                 }
             }
 
-            if run.level.is_rtl() {
-                part.offset += part.len - part.len_no_space;
-            }
-            part.len = part.len_no_space;
-
             line_text_end = run.range.end;
             if run.level.is_ltr() {
                 if part.glyph_range.end() < run.glyphs.len() {
@@ -257,6 +255,19 @@ impl LineAdder {
                 let start = part.glyph_range.start();
                 if 0 < start && start < run.glyphs.len() {
                     line_text_end = run.glyphs[start - 1].index
+                }
+            }
+
+            for part in parts.iter_mut().rev() {
+                let run = &runs[part.run as usize];
+
+                if run.level.is_rtl() {
+                    part.offset += part.len - part.len_no_space;
+                }
+                part.len = part.len_no_space;
+
+                if part.len_no_space > 0.0 {
+                    break;
                 }
             }
         }
