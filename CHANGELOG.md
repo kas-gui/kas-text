@@ -2,6 +2,13 @@
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.5] — 2020-09-21
+
+-   Rewrite line-wrapping code, supporting must-not-wrap-at-end runs and
+    resulting in much cleaner code (#24)
+-   Do not allow selection of the position after a space causing a line-wrap (#25)
+-   Fix alignment for wrapped RTL text with multiple spaces at wrap point (#26)
+
 ## [0.1.4] — 2020-09-09
 
 -   Fixes for empty RTL lines (#21, #23)
