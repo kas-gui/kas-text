@@ -127,8 +127,6 @@ impl GlyphRun {
                     let pos = self.breaks[b].pos as usize;
                     if pos < self.glyphs.len() {
                         len = self.glyphs[pos].position.0;
-                        //                     let scale_font = fonts().get(self.font_id).scaled(self.font_scale);
-                        //                     len = g.position.0 + scale_font.h_advance(g.id);
                     }
                 }
                 len_no_space = len;
