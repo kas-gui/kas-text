@@ -152,7 +152,6 @@ impl FontLibrary {
     }
 
     /// Load a default font
-    // TODO(breaking): replace error type with FontError?
     pub fn load_default(&self) -> Result<FontId, Box<dyn std::error::Error>> {
         // 1st lock: early exit if we already have this font
         let fonts = self.fonts.read().unwrap();
