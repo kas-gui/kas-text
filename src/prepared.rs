@@ -95,6 +95,7 @@ pub(crate) enum Action {
     None,  // do nothing
     Wrap,  // do line-wrapping and alignment
     Shape, // do text shaping and above
+    Dpem,  // update font size, redo shaping and above
     Runs,  // do splitting into runs, BIDI and above
 }
 
@@ -311,12 +312,16 @@ impl Text {
             self.prepare_runs();
         }
 
+        if action == Action::Dpem {
+            // Note: this is only needed if we didn't just call prepare_runs()
+            self.update_run_dpem();
+        }
+
         if action >= Action::Shape {
-            let dpem = self.env.pt_size * self.env.dpp;
             self.glyph_runs = self
                 .runs
                 .iter()
-                .map(|run| shaper::shape(self.font_id, dpem, &self.text, &run))
+                .map(|run| shaper::shape(&self.text, &run))
                 .collect();
         }
 

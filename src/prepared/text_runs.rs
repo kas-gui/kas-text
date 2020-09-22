@@ -6,7 +6,7 @@
 //! Text preparation: line breaking and BIDI
 
 use super::Text;
-use crate::{Direction, Range};
+use crate::{Direction, FontId, Range};
 use smallvec::SmallVec;
 use unicode_bidi::{BidiInfo, Level, LTR_LEVEL, RTL_LEVEL};
 use xi_unicode::LineBreakIterator;
@@ -15,8 +15,10 @@ use xi_unicode::LineBreakIterator;
 pub(crate) struct Run {
     /// Range in source text
     pub range: Range,
-    /// BIDI level
-    pub level: Level,
+    /// Font size (pixels/em)
+    pub dpem: f32,
+    /// Font identifier
+    pub font_id: FontId,
     /// All soft-break locations within this range (excludes end)
     ///
     /// Note: it would be equivalent to use a separate `Run` for each sub-range
@@ -24,6 +26,8 @@ pub(crate) struct Run {
     pub breaks: SmallVec<[u32; 5]>,
     /// If true, the logical-end of this Run is not a valid break point
     pub no_break: bool,
+    /// BIDI level
+    pub level: Level,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -38,6 +42,13 @@ pub(crate) struct LineRun {
 }
 
 impl Text {
+    pub(crate) fn update_run_dpem(&mut self) {
+        let dpem = self.env.pt_size * self.env.dpp;
+        for run in &mut self.runs {
+            run.dpem = dpem;
+        }
+    }
+
     /// Bi-directional text and line-break processing
     ///
     /// Prerequisite: self.text is assigned, formatting is assigned
@@ -52,6 +63,9 @@ impl Text {
     pub(crate) fn prepare_runs(&mut self) {
         self.runs.clear();
         self.line_runs.clear();
+
+        let dpem = self.env.pt_size * self.env.dpp;
+        let font_id = self.font_id;
 
         let bidi = self.env.bidi;
         let default_para_level = match self.env.dir {
@@ -89,9 +103,11 @@ impl Text {
 
                 self.runs.push(Run {
                     range,
-                    level,
+                    dpem,
+                    font_id,
                     breaks,
                     no_break: !is_break,
+                    level,
                 });
 
                 if hard_break {
@@ -124,9 +140,11 @@ impl Text {
         range.end += start as u32;
         self.runs.push(Run {
             range,
-            level,
+            dpem,
+            font_id,
             breaks,
             no_break: false,
+            level,
         });
         if line_start < self.runs.len() {
             let range = Range::from(line_start..self.runs.len());
@@ -146,9 +164,11 @@ impl Text {
                 line_start = self.runs.len();
                 self.runs.push(Run {
                     range,
-                    level,
+                    dpem,
+                    font_id,
                     breaks,
                     no_break: false,
+                    level,
                 });
 
                 let range = Range::from(line_start..self.runs.len());
