@@ -138,11 +138,11 @@ pub struct Text {
     env: Environment,
     /// Contiguous text in logical order
     text: String,
+    formatting: SmallVec<[rich::FormatSpec; 1]>,
     /// Level runs within the text, in logical order
     runs: SmallVec<[Run; 1]>,
     /// Subsets of runs forming a line, with line direction
     line_runs: SmallVec<[LineRun; 1]>,
-    font_id: FontId,
     action: Action,
     required: Vec2,
     /// Runs of glyphs (same order as `runs` sequence)
@@ -190,9 +190,12 @@ impl Text {
     }
 
     /// Reconstruct the [`rich::Text`] model defining this `Text`
+    ///
+    /// FIXME: currently this removes all formatting
     pub fn clone_text(&self) -> rich::Text {
         rich::Text {
             text: self.text.clone(),
+            formatting: Default::default(),
         }
     }
 
@@ -223,12 +226,22 @@ impl Text {
     /// This may be used to edit the raw text instead of replacing it.
     /// One must call [`Text::prepare`] afterwards.
     ///
-    /// TODO: document how this affects formatting.
+    /// Formatting is adjusted: any specifiers starting at or after `index` are
+    /// delayed by the length of `c`.
     ///
     /// Currently this is not significantly more efficent than
     /// [`Text::set_text`]. This may change in the future (TODO).
     pub fn insert_char(&mut self, index: usize, c: char) -> Prepare {
         self.text.insert(index, c);
+
+        let index = index as u32;
+        let len = c.len_utf8() as u32;
+        for spec in &mut self.formatting {
+            if spec.start >= index {
+                spec.start += len;
+            }
+        }
+
         self.action = Action::Runs;
         true.into()
     }
@@ -238,18 +251,59 @@ impl Text {
     /// This may be used to edit the raw text instead of replacing it.
     /// One must call [`Text::prepare`] afterwards.
     ///
-    /// TODO: document how this affects formatting.
+    /// Formatting is adjusted: any specifiers within the replaced text are
+    /// pushed back to the end of the replacement, and the position of any
+    /// specifiers after the replaced section is adjusted as appropriate.
     ///
     /// Currently this is not significantly more efficent than
     /// [`Text::set_text`]. This may change in the future (TODO).
     #[inline]
     pub fn replace_range<R>(&mut self, range: R, replace_with: &str) -> Prepare
     where
-        R: std::ops::RangeBounds<usize>,
+        R: std::ops::RangeBounds<usize> + std::iter::ExactSizeIterator + Clone,
     {
-        self.text.replace_range(range, replace_with);
-        self.action = Action::Runs;
+        self.text.replace_range(range.clone(), replace_with);
+
+        use std::ops::Bound;
+        let start = match range.start_bound() {
+            Bound::Included(b) => *b as u32,
+            Bound::Excluded(_) => unreachable!(),
+            Bound::Unbounded => 0,
+        };
+        let src_len = range.len() as u32;
+        let dst_len = replace_with.len() as u32;
+        let old_end = start + src_len;
+        let new_end = start + dst_len;
+
+        self.fix_formatting_replace(start, old_end, new_end);
         true.into()
+    }
+
+    fn fix_formatting_replace(&mut self, start: u32, old_end: u32, new_end: u32) {
+        let diff = new_end.wrapping_sub(old_end);
+        let mut last = None;
+        let mut i = 0;
+        while i < self.formatting.len() {
+            let spec = &mut self.formatting[i];
+            if spec.start >= start {
+                if spec.start < old_end {
+                    spec.start = new_end;
+                } else {
+                    // wrapping_add effectively allows subtraction despite unsigned type
+                    spec.start = spec.start.wrapping_add(diff);
+                }
+                if let Some((index, start)) = last {
+                    if start == spec.start {
+                        self.formatting.remove(index as usize);
+                        continue;
+                    }
+                }
+                last = Some((i, spec.start));
+            }
+            i += 1;
+        }
+
+        self.action = Action::Runs;
     }
 
     /// Swap the raw text with a `String`
@@ -257,7 +311,8 @@ impl Text {
     /// This may be used to edit the raw text instead of replacing it.
     /// One must call [`Text::prepare`] afterwards.
     ///
-    /// TODO: document how this affects formatting.
+    /// Warning: formatting information is not adjusted, even if existing
+    /// formatting does not fit the new text.
     ///
     /// Currently this is not significantly more efficent than
     /// [`Text::set_text`]. This may change in the future (TODO).
@@ -269,14 +324,15 @@ impl Text {
 
     /// Set the text
     pub fn set_text(&mut self, text: rich::Text) -> Prepare {
+        /* TODO(opt): no change if both text and formatting is unchanged
         if self.text == text.text {
             return self.action.into(); // no change
         }
+        */
 
         self.text = text.text;
-        self.font_id = Default::default();
-        self.prepare_runs();
-        self.action = Action::Shape;
+        text.formatting.compile(&self.env, &mut self.formatting);
+        self.action = Action::Runs;
         true.into()
     }
 

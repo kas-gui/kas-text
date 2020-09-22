@@ -64,8 +64,9 @@ impl Text {
         self.runs.clear();
         self.line_runs.clear();
 
-        let dpem = self.env.pt_size * self.env.dpp;
-        let font_id = self.font_id;
+        let mut fmt_iter = self.formatting.iter();
+        let mut fmt = fmt_iter.next().unwrap();
+        let mut next_fmt = fmt_iter.next();
 
         let bidi = self.env.bidi;
         let default_para_level = match self.env.dir {
@@ -95,16 +96,25 @@ impl Text {
         for pos in 1..self.text.len() {
             let is_break = next_break.0 == pos;
             let hard_break = is_break && next_break.1;
-            if hard_break || (bidi && levels[pos] != level) {
+            let bidi_break = bidi && levels[pos] != level;
+            let fmt_break = next_fmt
+                .map(|fmt| fmt.start as usize == pos)
+                .unwrap_or(false);
+            if hard_break || bidi_break || fmt_break {
                 let mut range = trim_control(&self.text[start..pos]);
                 // trim_control gives us a range within the slice; we need to offset:
                 range.start += start as u32;
                 range.end += start as u32;
 
+                if fmt_break {
+                    fmt = next_fmt.unwrap();
+                    next_fmt = fmt_iter.next();
+                }
+
                 self.runs.push(Run {
                     range,
-                    dpem,
-                    font_id,
+                    dpem: fmt.dpem,
+                    font_id: fmt.font_id,
                     breaks,
                     no_break: !is_break,
                     level,
@@ -140,8 +150,8 @@ impl Text {
         range.end += start as u32;
         self.runs.push(Run {
             range,
-            dpem,
-            font_id,
+            dpem: fmt.dpem,
+            font_id: fmt.font_id,
             breaks,
             no_break: false,
             level,
@@ -164,8 +174,8 @@ impl Text {
                 line_start = self.runs.len();
                 self.runs.push(Run {
                     range,
-                    dpem,
-                    font_id,
+                    dpem: fmt.dpem,
+                    font_id: fmt.font_id,
                     breaks,
                     no_break: false,
                     level,
