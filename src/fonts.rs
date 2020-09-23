@@ -6,10 +6,11 @@
 //! KAS Rich-Text library — fonts
 
 use ab_glyph::{FontRef, InvalidFont, PxScale, PxScaleFont};
+use font_kit::error::SelectionError;
 use font_kit::source::SystemSource;
 use font_kit::{family_name::FamilyName, handle::Handle, properties::Properties};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::RwLock;
 use thiserror::Error;
 
@@ -18,6 +19,8 @@ use thiserror::Error;
 enum FontError {
     #[error("invalid font data")]
     Invalid,
+    #[error("FontLibrary::load_default is not first font load")]
+    NotDefault,
 }
 
 impl From<InvalidFont> for FontError {
@@ -113,7 +116,7 @@ pub struct FontLibrary {
     data: RwLock<HashMap<PathBuf, Box<[u8]>>>,
     // Fonts defined over the above data (see safety note).
     // Additional safety: boxed so that instances do not move
-    fonts: RwLock<Vec<Box<FontStore<'static>>>>,
+    fonts: RwLock<(Vec<Box<FontStore<'static>>>, Vec<(u64, FontId)>)>,
 }
 
 // public API
@@ -121,8 +124,8 @@ impl FontLibrary {
     /// Get a font from its identifier
     pub fn get(&self, id: FontId) -> Font {
         let fonts = self.fonts.read().unwrap();
-        assert!(id.get() < fonts.len(), "FontLibrary: invalid {:?}!", id);
-        let font: &FontRef<'static> = &fonts[id.get()].ab_glyph;
+        assert!(id.get() < fonts.0.len(), "FontLibrary: invalid {:?}!", id);
+        let font: &FontRef<'static> = &fonts.0[id.get()].ab_glyph;
         // Safety: elements of self.fonts are never dropped or modified
         let font = unsafe { extend_lifetime(font) };
         Font { font }
@@ -134,8 +137,8 @@ impl FontLibrary {
     #[cfg(feature = "harfbuzz_rs")]
     pub fn get_harfbuzz(&self, id: FontId) -> harfbuzz_rs::Owned<harfbuzz_rs::Font<'static>> {
         let fonts = self.fonts.read().unwrap();
-        assert!(id.get() < fonts.len(), "FontLibrary: invalid {:?}!", id);
-        harfbuzz_rs::Font::new(fonts[id.get()].harfbuzz.clone())
+        assert!(id.get() < fonts.0.len(), "FontLibrary: invalid {:?}!", id);
+        harfbuzz_rs::Font::new(fonts.0[id.get()].harfbuzz.clone())
     }
 
     /// Get a list of all fonts
@@ -146,30 +149,54 @@ impl FontLibrary {
         // Safety: each font is boxed so that its address never changes and
         // fonts are never modified or freed before program exit.
         fonts
+            .0
             .iter()
             .map(|font| unsafe { extend_lifetime(&font.ab_glyph) })
             .collect()
     }
 
     /// Load a default font
+    ///
+    /// This should be at least once before attempting to query any font-derived
+    /// properties (such as text dimensions).
+    #[inline]
     pub fn load_default(&self) -> Result<FontId, Box<dyn std::error::Error>> {
+        let id = self.load_font(FontSelector::default())?;
+        if id != FontId::default() {
+            return Err(Box::new(FontError::NotDefault));
+        }
+        Ok(id)
+    }
+
+    /// Load a font
+    #[inline]
+    pub fn load_font(&self, selector: FontSelector) -> Result<FontId, Box<dyn std::error::Error>> {
+        let (path, index) = selector.select()?;
+        self.load_pathbuf(path, index)
+    }
+
+    /// Load a font by path
+    ///
+    /// In case the `(path, index)` combination has already been loaded, the
+    /// existing font object's [`FontId`] will be returned.
+    ///
+    /// The `index` is used to select fonts from a font-collection. If the font
+    /// is not a collection, use `0`.
+    pub fn load_pathbuf(
+        &self,
+        path: PathBuf,
+        index: u32,
+    ) -> Result<FontId, Box<dyn std::error::Error>> {
+        let hash = self.hash_path(&path, index);
+
         // 1st lock: early exit if we already have this font
         let fonts = self.fonts.read().unwrap();
-        if fonts.len() > 0 {
-            // We already have a default font
-            return Ok(FontId(0));
+        for (h, id) in &fonts.1 {
+            if *h == hash {
+                return Ok(*id);
+            }
         }
         drop(fonts);
-
-        let families = [FamilyName::SansSerif];
-        let properties = Properties::new();
-        let handle = SOURCE.with(|source| source.select_best_match(&families, &properties))?;
-        let (path, index) = match handle {
-            Handle::Path { path, font_index } => (path, font_index),
-            // Note: handling the following would require changes to data
-            // management and should not occur anyway:
-            Handle::Memory { .. } => panic!("Unexpected: font in memory"),
-        };
 
         // 2nd lock: load and store file data / get reference
         let mut data = self.data.write().unwrap();
@@ -188,10 +215,38 @@ impl FontLibrary {
         // 3rd lock: insert into font list
         let store = FontStore::new(slice, index)?;
         let mut fonts = self.fonts.write().unwrap();
-        let id = FontId(fonts.len() as u32);
-        fonts.push(Box::new(store));
+        let id = FontId(fonts.0.len() as u32);
+        fonts.0.push(Box::new(store));
+        fonts.1.push((hash, id));
 
         Ok(id)
+    }
+
+    fn hash_path(&self, path: &Path, index: u32) -> u64 {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        let mut hasher = DefaultHasher::new();
+        path.hash(&mut hasher);
+        hasher.write_u32(index);
+        hasher.finish()
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct FontSelector;
+
+impl FontSelector {
+    fn select(&self) -> Result<(PathBuf, u32), SelectionError> {
+        let families = [FamilyName::SansSerif];
+        let properties = Properties::new();
+        let handle = SOURCE.with(|source| source.select_best_match(&families, &properties))?;
+        Ok(match handle {
+            Handle::Path { path, font_index } => (path, font_index),
+            // Note: handling the following would require changes to data
+            // management and should not occur anyway:
+            Handle::Memory { .. } => panic!("Unexpected: font in memory"),
+        })
     }
 }
 
