@@ -6,13 +6,13 @@
 //! KAS Rich-Text library — fonts
 
 use ab_glyph::{FontRef, InvalidFont, PxScale, PxScaleFont};
-use font_kit::error::SelectionError;
-use font_kit::source::SystemSource;
-use font_kit::{family_name::FamilyName, handle::Handle, properties::Properties};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::RwLock;
 use thiserror::Error;
+
+mod selector;
+pub use selector::*;
 
 /// Font loading errors
 #[derive(Error, Debug)]
@@ -233,23 +233,6 @@ impl FontLibrary {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct FontSelector;
-
-impl FontSelector {
-    fn select(&self) -> Result<(PathBuf, u32), SelectionError> {
-        let families = [FamilyName::SansSerif];
-        let properties = Properties::new();
-        let handle = SOURCE.with(|source| source.select_best_match(&families, &properties))?;
-        Ok(match handle {
-            Handle::Path { path, font_index } => (path, font_index),
-            // Note: handling the following would require changes to data
-            // management and should not occur anyway:
-            Handle::Memory { .. } => panic!("Unexpected: font in memory"),
-        })
-    }
-}
-
 unsafe fn extend_lifetime<'b, T: ?Sized>(r: &'b T) -> &'static T {
     std::mem::transmute::<&'b T, &'static T>(r)
 }
@@ -267,11 +250,6 @@ impl FontLibrary {
 
 lazy_static::lazy_static! {
     static ref LIBRARY: FontLibrary = FontLibrary::new();
-}
-thread_local! {
-    // This type is not Send, so we cannot store in a Mutex within lazy_static.
-    // TODO: avoid multiple instances, since initialisation may be slow.
-    static SOURCE: SystemSource = SystemSource::new();
 }
 
 /// Access the [`FontLibrary`] singleton
