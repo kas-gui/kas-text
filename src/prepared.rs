@@ -138,7 +138,7 @@ pub struct Text {
     env: Environment,
     /// Contiguous text in logical order
     text: String,
-    formatting: SmallVec<[rich::FormatSpec; 1]>,
+    formatting: Vec<rich::FormatSpecifier>,
     /// Level runs within the text, in logical order
     runs: SmallVec<[Run; 1]>,
     /// Subsets of runs forming a line, with line direction
@@ -190,12 +190,12 @@ impl Text {
     }
 
     /// Reconstruct the [`rich::Text`] model defining this `Text`
-    ///
-    /// FIXME: currently this removes all formatting
     pub fn clone_text(&self) -> rich::Text {
         rich::Text {
             text: self.text.clone(),
-            formatting: Default::default(),
+            formatting: rich::FormatList {
+                seq: self.formatting.clone(),
+            },
         }
     }
 
@@ -331,7 +331,7 @@ impl Text {
         */
 
         self.text = text.text;
-        text.formatting.compile(&self.env, &mut self.formatting);
+        self.formatting = text.formatting.seq;
         self.action = Action::Runs;
         true.into()
     }

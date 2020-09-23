@@ -43,8 +43,23 @@ pub(crate) struct LineRun {
 
 impl Text {
     pub(crate) fn update_run_dpem(&mut self) {
-        let dpem = self.env.pt_size * self.env.dpp;
+        let dpp = self.env.dpp;
+        let mut dpem = self.env.pt_size * dpp;
+
+        let mut fmt_iter = self.formatting.iter();
+        let mut next_fmt = fmt_iter.next();
+
         for run in &mut self.runs {
+            while let Some(fmt) = next_fmt {
+                if fmt.start > run.range.start {
+                    break;
+                }
+                if fmt.pt_size.is_finite() {
+                    dpem = fmt.pt_size * dpp;
+                }
+                next_fmt = fmt_iter.next();
+            }
+
             run.dpem = dpem;
         }
     }
@@ -64,9 +79,23 @@ impl Text {
         self.runs.clear();
         self.line_runs.clear();
 
+        let mut font_id = FontId::default();
+        let dpp = self.env.dpp;
+        let mut dpem = self.env.pt_size * dpp;
+
         let mut fmt_iter = self.formatting.iter();
-        let mut fmt = fmt_iter.next().unwrap();
         let mut next_fmt = fmt_iter.next();
+        if let Some(fmt) = next_fmt {
+            if fmt.start == 0 {
+                if let Some(id) = fmt.font_id {
+                    font_id = id;
+                }
+                if fmt.pt_size.is_finite() {
+                    dpem = fmt.pt_size * dpp;
+                }
+                next_fmt = fmt_iter.next();
+            }
+        }
 
         let bidi = self.env.bidi;
         let default_para_level = match self.env.dir {
@@ -97,24 +126,34 @@ impl Text {
             let is_break = next_break.0 == pos;
             let hard_break = is_break && next_break.1;
             let bidi_break = bidi && levels[pos] != level;
-            let fmt_break = next_fmt
-                .map(|fmt| fmt.start as usize == pos)
-                .unwrap_or(false);
+
+            let fmt_break = if let Some(fmt) = next_fmt {
+                if fmt.start as usize == pos {
+                    if let Some(id) = fmt.font_id {
+                        font_id = id;
+                    }
+                    if fmt.pt_size.is_finite() {
+                        dpem = fmt.pt_size * dpp;
+                    }
+                    next_fmt = fmt_iter.next();
+                    true
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+
             if hard_break || bidi_break || fmt_break {
                 let mut range = trim_control(&self.text[start..pos]);
                 // trim_control gives us a range within the slice; we need to offset:
                 range.start += start as u32;
                 range.end += start as u32;
 
-                if fmt_break {
-                    fmt = next_fmt.unwrap();
-                    next_fmt = fmt_iter.next();
-                }
-
                 self.runs.push(Run {
                     range,
-                    dpem: fmt.dpem,
-                    font_id: fmt.font_id,
+                    dpem,
+                    font_id,
                     breaks,
                     no_break: !is_break,
                     level,
@@ -150,8 +189,8 @@ impl Text {
         range.end += start as u32;
         self.runs.push(Run {
             range,
-            dpem: fmt.dpem,
-            font_id: fmt.font_id,
+            dpem,
+            font_id,
             breaks,
             no_break: false,
             level,
@@ -174,8 +213,8 @@ impl Text {
                 line_start = self.runs.len();
                 self.runs.push(Run {
                     range,
-                    dpem: fmt.dpem,
-                    font_id: fmt.font_id,
+                    dpem,
+                    font_id,
                     breaks,
                     no_break: false,
                     level,

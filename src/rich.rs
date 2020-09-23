@@ -5,6 +5,7 @@
 
 //! Models of rich text in abstract from an environment
 
+use crate::FontId;
 use std::convert::TryFrom;
 use thiserror::Error;
 
@@ -69,7 +70,7 @@ impl<'a> From<&'a str> for Text {
 /// This is a wrapper over `Vec<FormatSpecifier>` to enforce ordering.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct FormatList {
-    seq: Vec<FormatSpecifier>,
+    pub(crate) seq: Vec<FormatSpecifier>,
 }
 
 impl FormatList {
@@ -201,9 +202,9 @@ impl TryFrom<&[FormatSpecifier]> for FormatList {
 /// This type can be default-constructed, but the default instance does nothing.
 #[derive(Clone, Debug, PartialEq)]
 pub struct FormatSpecifier {
-    start: u32, // index in text
-    font_sel: FontSelector,
-    pt_size: f32, // if NAN, use previous/environment value
+    pub(crate) start: u32,              // index in text
+    pub(crate) font_id: Option<FontId>, // if None, use previous/default value
+    pub(crate) pt_size: f32,            // if NAN, use previous/environment value
 }
 
 impl Default for FormatSpecifier {
@@ -211,7 +212,7 @@ impl Default for FormatSpecifier {
     fn default() -> Self {
         FormatSpecifier {
             start: 0,
-            font_sel: FontSelector::default(),
+            font_id: None,
             pt_size: f32::NAN,
         }
     }
@@ -220,11 +221,11 @@ impl Default for FormatSpecifier {
 impl FormatSpecifier {
     /// Construct with `start` and a font selector
     #[inline]
-    pub fn new_font(start: usize, font_sel: FontSelector) -> Self {
+    pub fn new_font(start: usize, font_id: FontId) -> Self {
         let start = start as u32;
         FormatSpecifier {
             start,
-            font_sel,
+            font_id: Some(font_id),
             ..Default::default()
         }
     }
@@ -242,11 +243,11 @@ impl FormatSpecifier {
 
     /// Construct with `start`, a font selector and a font size
     #[inline]
-    pub fn new_font_size(start: usize, font_sel: FontSelector, pt_size: f32) -> Self {
+    pub fn new_font_size(start: usize, font_id: FontId, pt_size: f32) -> Self {
         let start = start as u32;
         FormatSpecifier {
             start,
-            font_sel,
+            font_id: Some(font_id),
             pt_size,
         }
     }
@@ -257,71 +258,27 @@ impl FormatSpecifier {
         self.start = start as u32;
     }
 
-    /// Adjust the font selector
+    /// Adjust the font
+    ///
+    /// If `None` is passed, this `FormatSpecifier` will not adjust the font.
     #[inline]
-    pub fn set_font_sel(&mut self, font_sel: FontSelector) {
-        self.font_sel = font_sel;
+    pub fn set_font(&mut self, font_id: Option<FontId>) {
+        self.font_id = font_id;
     }
 
     /// Adjust the font size (Points)
+    ///
+    /// If `f32::NAN` is passed, this `FormatSpecifier` will not adjust the
+    /// font size.
     #[inline]
     pub fn set_size(&mut self, pt_size: f32) {
         self.pt_size = pt_size;
     }
 }
 
-/// Used to select a font variant. TODO
-#[derive(Clone, Debug, Default, PartialEq, Hash)]
-pub struct FontSelector;
-
 /// Error returned if [`FormatList`]'s order constraints are not met.
 #[derive(Error, Debug)]
 pub enum FormatListError {
     #[error("order constraints of FormatList violated")]
     Order,
-}
-
-use crate::{env::Environment, FontId};
-use smallvec::SmallVec;
-
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct FormatSpec {
-    pub(crate) start: u32, // index in text
-    pub(crate) font_id: FontId,
-    pub(crate) dpem: f32,
-}
-
-impl FormatList {
-    pub(crate) fn compile(&self, env: &Environment, seq: &mut SmallVec<[FormatSpec; 1]>) {
-        seq.clear();
-        let add_first = self.seq.get(0).map(|item| item.start > 0).unwrap_or(true);
-        seq.reserve(self.seq.len() + (add_first as usize));
-
-        let mut start = 0;
-        let font_id = FontId::default();
-        let dpp = env.dpp;
-        let mut dpem = env.pt_size * dpp;
-
-        if add_first {
-            seq.push(FormatSpec {
-                start,
-                font_id,
-                dpem,
-            });
-        }
-
-        for item in &self.seq {
-            start = item.start;
-            // TODO: font_sel
-            if item.pt_size.is_finite() {
-                dpem = item.pt_size * dpp;
-            }
-
-            seq.push(FormatSpec {
-                start,
-                font_id,
-                dpem,
-            });
-        }
-    }
 }
