@@ -5,7 +5,9 @@
 
 //! KAS Rich-Text library — text-display enviroment
 
-use crate::{fonts, prepared::Action, FontId, Vec2};
+use crate::fonts::{fonts, FontId};
+use crate::prepared::Action;
+use crate::Vec2;
 
 // doc imports
 #[allow(unused)]

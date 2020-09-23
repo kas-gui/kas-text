@@ -3,7 +3,22 @@
 // You may obtain a copy of the License in the LICENSE-APACHE file or at:
 //     https://www.apache.org/licenses/LICENSE-2.0
 
-//! KAS Rich-Text library — fonts
+//! Font selection and loading
+//!
+//! Fonts are managed by the [`FontLibrary`], of which a static singleton
+//! exists and can be accessed via [`fonts`].
+//!
+//! The first font loaded is known as the "default font" and used for all texts
+//! which do not explicitly select another font. As such, the user of this
+//! library *must* load the default font before all other fonts and before
+//! any operation requiring font metrics:
+//!
+//! ```
+//! if let Err(e) = kas_text::fonts().load_default() {
+//!     panic!("Error loading font: {}", e);
+//! }
+//! // from now on, kas_text::fonts::FontId::default() identifies the default font
+//! ```
 
 use ab_glyph::{FontRef, InvalidFont, PxScale, PxScaleFont};
 use std::collections::HashMap;

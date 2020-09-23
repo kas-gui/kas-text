@@ -17,7 +17,8 @@
 //!
 //! This module *does not* perform line-breaking, wrapping or text reversal.
 
-use crate::{fonts, prepared, FontId, Range, Vec2};
+use crate::fonts::{fonts, Font, FontId};
+use crate::{prepared, Range, Vec2};
 use ab_glyph::{GlyphId, ScaleFont};
 use smallvec::SmallVec;
 use unicode_bidi::Level;
@@ -342,7 +343,7 @@ fn shape_harfbuzz(
 // Simple implementation (kerning but no shaping)
 #[cfg(not(feature = "harfbuzz_rs"))]
 fn shape_simple(
-    font: crate::Font,
+    font: Font,
     font_scale: f32,
     text: &str,
     run: &prepared::Run,

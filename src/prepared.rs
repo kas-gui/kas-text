@@ -9,7 +9,8 @@ use ab_glyph::PxScale;
 use smallvec::SmallVec;
 use std::ops::{BitOr, BitOrAssign};
 
-use crate::{rich, shaper, FontId, Glyph, Vec2};
+use crate::fonts::FontId;
+use crate::{rich, shaper, Glyph, Vec2};
 use crate::{Environment, UpdateEnv};
 
 mod glyph_pos;

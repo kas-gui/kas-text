@@ -6,7 +6,7 @@
 //! Text navigation
 
 use super::Text;
-use crate::{fonts, Vec2};
+use crate::{fonts::fonts, Vec2};
 use ab_glyph::ScaleFont;
 
 /// Used to return the position of a glyph with associated metrics

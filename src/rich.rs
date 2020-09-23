@@ -5,7 +5,7 @@
 
 //! Models of rich text in abstract from an environment
 
-use crate::FontId;
+use crate::fonts::FontId;
 use std::convert::TryFrom;
 use thiserror::Error;
 

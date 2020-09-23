@@ -6,7 +6,8 @@
 //! Text preparation: line breaking and BIDI
 
 use super::Text;
-use crate::{Direction, FontId, Range};
+use crate::fonts::FontId;
+use crate::{Direction, Range};
 use smallvec::SmallVec;
 use unicode_bidi::{BidiInfo, Level, LTR_LEVEL, RTL_LEVEL};
 use xi_unicode::LineBreakIterator;
