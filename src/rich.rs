@@ -84,6 +84,18 @@ pub struct FormatList {
 }
 
 impl FormatList {
+    /// Append or replace last item
+    #[inline]
+    pub fn set_last(&mut self, item: FormatSpecifier) {
+        if let Some(last) = self.seq.last_mut() {
+            if last.start >= item.start {
+                *last = item;
+                return;
+            }
+        }
+        self.seq.push(item);
+    }
+
     /// True if the list empty
     #[inline]
     pub fn is_empty(&self) -> bool {
@@ -210,7 +222,7 @@ impl TryFrom<&[FormatSpecifier]> for FormatList {
 /// (at the start) from the environment.
 ///
 /// This type can be default-constructed, but the default instance does nothing.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct FormatSpecifier {
     pub(crate) start: u32,              // index in text
     pub(crate) font_id: Option<FontId>, // if None, use previous/default value
