@@ -5,6 +5,9 @@
 
 //! Models of rich text in abstract from an environment
 
+#[cfg(feature = "markdown")]
+mod markdown;
+
 use crate::fonts::FontId;
 use std::convert::TryFrom;
 use thiserror::Error;
@@ -27,6 +30,13 @@ pub struct Text {
 }
 
 impl Text {
+    /// Parse input as Markdown
+    #[cfg(feature = "markdown")]
+    #[inline]
+    pub fn from_md(text: &str) -> Self {
+        markdown::parse(text)
+    }
+
     /// The length of all concatenated runs
     pub fn len(&self) -> usize {
         self.text.len()
