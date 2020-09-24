@@ -6,8 +6,9 @@
 //! Text prepared for display
 
 use super::Text;
+use crate::fonts::{fonts, FontLibrary};
 use crate::shaper::GlyphRun;
-use crate::{fonts, Align, Environment, FontLibrary, Range, Vec2};
+use crate::{Align, Environment, Range, Vec2};
 use ab_glyph::ScaleFont;
 use smallvec::SmallVec;
 use unicode_bidi::Level;

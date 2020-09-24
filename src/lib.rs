@@ -13,9 +13,7 @@ pub use env::*;
 mod data;
 pub use data::*;
 
-mod fonts;
-pub use fonts::*;
-
+pub mod fonts;
 pub mod prepared;
 pub mod rich;
 

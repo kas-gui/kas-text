@@ -17,7 +17,8 @@
 //!
 //! This module *does not* perform line-breaking, wrapping or text reversal.
 
-use crate::{fonts, prepared, FontId, Range, Vec2};
+use crate::fonts::{fonts, Font, FontId};
+use crate::{prepared, Range, Vec2};
 use ab_glyph::{GlyphId, ScaleFont};
 use smallvec::SmallVec;
 use unicode_bidi::Level;
@@ -188,20 +189,18 @@ impl GlyphRun {
 /// A "run" is expected to be the maximal sequence of code points of the same
 /// embedding level (as defined by Unicode TR9 aka BIDI algorithm) *and*
 /// excluding all hard line breaks (e.g. `\n`).
-///
-/// Param `dpem` is the font size in pixels/em.
-pub(crate) fn shape(font_id: FontId, dpem: f32, text: &str, run: &prepared::Run) -> GlyphRun {
+pub(crate) fn shape(text: &str, run: &prepared::Run) -> GlyphRun {
     let mut glyphs = vec![];
     let mut breaks = Default::default();
     let mut no_space_end = 0.0;
     let mut caret = 0.0;
 
-    let font = fonts().get(font_id);
-    let font_scale = font.font_scale(dpem);
+    let font = fonts().get(run.font_id);
+    let font_scale = font.font_scale(run.dpem);
 
-    if dpem >= 0.0 {
+    if run.dpem >= 0.0 {
         #[cfg(feature = "harfbuzz_rs")]
-        let r = shape_harfbuzz(font_id, dpem, text, run);
+        let r = shape_harfbuzz(text, run);
 
         #[cfg(not(feature = "harfbuzz_rs"))]
         let r = shape_simple(font, font_scale, text, run);
@@ -243,7 +242,7 @@ pub(crate) fn shape(font_id: FontId, dpem: f32, text: &str, run: &prepared::Run)
     GlyphRun {
         glyphs,
         breaks,
-        font_id,
+        font_id: run.font_id,
         font_scale,
         no_space_end,
         caret,
@@ -256,12 +255,11 @@ pub(crate) fn shape(font_id: FontId, dpem: f32, text: &str, run: &prepared::Run)
 // Use HarfBuzz lib
 #[cfg(feature = "harfbuzz_rs")]
 fn shape_harfbuzz(
-    font_id: FontId,
-    dpem: f32,
     text: &str,
     run: &prepared::Run,
 ) -> (Vec<Glyph>, SmallVec<[GlyphBreak; 2]>, f32, f32) {
-    let mut font = fonts().get_harfbuzz(font_id);
+    let dpem = run.dpem;
+    let mut font = fonts().get_harfbuzz(run.font_id);
 
     // ppem affects hinting but does not scale layout, so this has little effect:
     font.set_ppem(dpem as u32, dpem as u32);
@@ -345,7 +343,7 @@ fn shape_harfbuzz(
 // Simple implementation (kerning but no shaping)
 #[cfg(not(feature = "harfbuzz_rs"))]
 fn shape_simple(
-    font: crate::Font,
+    font: Font,
     font_scale: f32,
     text: &str,
     run: &prepared::Run,

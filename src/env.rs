@@ -5,7 +5,9 @@
 
 //! KAS Rich-Text library — text-display enviroment
 
-use crate::{fonts, prepared::Action, FontId, Vec2};
+use crate::fonts::{fonts, FontId};
+use crate::prepared::Action;
+use crate::Vec2;
 
 // doc imports
 #[allow(unused)]
@@ -134,7 +136,7 @@ impl<'a> UpdateEnv<'a> {
     pub fn set_dpp(&mut self, dpp: f32) {
         if dpp != self.env.dpp {
             self.env.dpp = dpp;
-            self.action = Action::Shape;
+            self.action = Action::Dpem;
         }
     }
 
@@ -144,7 +146,7 @@ impl<'a> UpdateEnv<'a> {
     pub fn set_pt_size(&mut self, pt_size: f32) {
         if pt_size != self.env.pt_size {
             self.env.pt_size = pt_size;
-            self.action = Action::Shape;
+            self.action = Action::Dpem;
         }
     }
 
