@@ -17,7 +17,7 @@ pub(crate) fn parse(input: &str) -> Text {
 
     let fonts = fonts();
 
-    let mut line = Line::None;
+    let mut state = State::None;
     let mut stack = Vec::with_capacity(16);
     let mut item = StackItem::default();
 
@@ -30,7 +30,7 @@ pub(crate) fn parse(input: &str) -> Text {
         match ev {
             Event::Start(tag) => {
                 item.spec.start = text.len() as u32;
-                if let Some(clone) = item.start_tag(&mut text, &mut line, tag) {
+                if let Some(clone) = item.start_tag(&mut text, &mut state, tag) {
                     stack.push(item);
                     item = clone;
                     item.spec.font_id = Some(fonts.load_font(item.sel.clone()).unwrap());
@@ -38,15 +38,20 @@ pub(crate) fn parse(input: &str) -> Text {
                 }
             }
             Event::End(tag) => {
-                if item.end_tag(&mut line, tag) {
+                if item.end_tag(&mut state, tag) {
                     item = stack.pop().unwrap();
                     item.spec.start = text.len() as u32;
                     formatting.set_last(item.spec);
                 }
             }
-            Event::Text(part) => text.push_str(&part),
+            Event::Text(part) => {
+                state.part(&mut text);
+                text.push_str(&part);
+            }
             Event::Code(part) => {
+                state.part(&mut text);
                 item.spec.start = text.len() as u32;
+
                 let mut item2 = item.clone();
                 item2.sel.set_families(vec![FamilyName::Monospace]);
                 item2.spec.font_id = Some(fonts.load_font(item2.sel).unwrap());
@@ -69,33 +74,41 @@ pub(crate) fn parse(input: &str) -> Text {
     Text { text, formatting }
 }
 
-// Line state
-enum Line {
+#[derive(Copy, Clone, Debug, PartialEq)]
+enum State {
     None,
-    Para,
-    Item,
+    BlockStart,
+    BlockEnd,
+    ListItem,
+    Part,
 }
 
-impl Line {
-    fn paragraph(&mut self) -> &str {
-        let ret = match self {
-            Line::None => "",
-            _ => "\n\n",
-        };
-        *self = Line::Para;
-        ret
+impl State {
+    fn start_block(&mut self, text: &mut String) {
+        match *self {
+            State::None | State::BlockStart => (),
+            State::BlockEnd | State::ListItem | State::Part => text.push_str("\n\n"),
+        }
+        *self = State::BlockStart;
     }
-    fn heading(&mut self) -> &str {
-        self.paragraph()
+    fn end_block(&mut self) {
+        *self = State::BlockEnd;
     }
-    fn item(&mut self) -> &str {
-        let ret = match self {
-            Line::None => "",
-            Line::Para => "\n\n",
-            _ => "\n",
-        };
-        *self = Line::Item;
-        ret
+    fn part(&mut self, text: &mut String) {
+        match *self {
+            State::None | State::BlockStart | State::Part | State::ListItem => (),
+            State::BlockEnd => text.push_str("\n\n"),
+        }
+        *self = State::Part;
+    }
+    fn list_item(&mut self, text: &mut String) {
+        match *self {
+            State::None | State::BlockStart | State::BlockEnd => {
+                debug_assert_eq!(*self, State::BlockStart);
+            }
+            State::ListItem | State::Part => text.push_str("\n"),
+        }
+        *self = State::ListItem;
     }
 }
 
@@ -124,7 +137,7 @@ impl Default for StackItem {
 
 impl StackItem {
     // process a tag; may modify current item and may return new item
-    fn start_tag(&mut self, text: &mut String, line: &mut Line, tag: Tag) -> Option<Self> {
+    fn start_tag(&mut self, text: &mut String, state: &mut State, tag: Tag) -> Option<Self> {
         fn with_clone<F: Fn(&mut StackItem)>(s: &mut StackItem, c: F) -> Option<StackItem> {
             let mut item = s.clone();
             c(&mut item);
@@ -133,11 +146,11 @@ impl StackItem {
 
         match tag {
             Tag::Paragraph => {
-                text.push_str(line.paragraph());
+                state.start_block(text);
                 None
             }
             Tag::Heading(level) => {
-                text.push_str(line.heading());
+                state.start_block(text);
                 self.spec.start = text.len() as u32;
                 with_clone(self, |item| {
                     item.spec.pt_size = match level {
@@ -151,7 +164,7 @@ impl StackItem {
                 })
             }
             Tag::CodeBlock(_) => {
-                text.push_str(line.item());
+                state.start_block(text);
                 self.spec.start = text.len() as u32;
                 with_clone(self, |item| {
                     item.sel.set_families(vec![FamilyName::Monospace])
@@ -159,13 +172,12 @@ impl StackItem {
                 // TODO: within a code block, the last \n should be suppressed?
             }
             Tag::List(start) => {
-                // TODO: a list is not a "line item", but should have extra space?
-                text.push_str(line.item());
+                state.start_block(text);
                 self.list = start;
                 None
             }
             Tag::Item => {
-                text.push_str(line.item());
+                state.list_item(text);
                 match &mut self.list {
                     // TODO: indent properly
                     Some(x) => {
@@ -182,18 +194,18 @@ impl StackItem {
         }
     }
     // returns true if stack must be popped
-    fn end_tag(&self, line: &mut Line, tag: Tag) -> bool {
+    fn end_tag(&self, state: &mut State, tag: Tag) -> bool {
         match tag {
-            Tag::Paragraph => {
-                *line = Line::Para;
+            Tag::Paragraph | Tag::List(_) => {
+                state.end_block();
                 false
             }
-            Tag::Heading(_) => true,
-            Tag::CodeBlock(_) => true,
-            Tag::List(_) => false,
+            Tag::Heading(_) | Tag::CodeBlock(_) => {
+                state.end_block();
+                true
+            }
             Tag::Item => false,
-            Tag::Emphasis => true,
-            Tag::Strong => true,
+            Tag::Emphasis | Tag::Strong => true,
             tag @ _ => unimplemented!("{:?}", tag),
         }
     }
