@@ -172,6 +172,8 @@ impl FontLibrary {
 
     /// Load a default font
     ///
+    /// This *must* be called before any other font-loading method.
+    ///
     /// This should be at least once before attempting to query any font-derived
     /// properties (such as text dimensions).
     #[inline]

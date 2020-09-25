@@ -128,22 +128,9 @@ impl Text {
             let hard_break = is_break && next_break.1;
             let bidi_break = bidi && levels[pos] != level;
 
-            let fmt_break = if let Some(fmt) = next_fmt {
-                if fmt.start as usize == pos {
-                    if let Some(id) = fmt.font_id {
-                        font_id = id;
-                    }
-                    if fmt.pt_size.is_finite() {
-                        dpem = fmt.pt_size * dpp;
-                    }
-                    next_fmt = fmt_iter.next();
-                    true
-                } else {
-                    false
-                }
-            } else {
-                false
-            };
+            let fmt_break = next_fmt
+                .map(|fmt| fmt.start as usize == pos)
+                .unwrap_or(false);
 
             if hard_break || bidi_break || fmt_break {
                 let mut range = trim_control(&self.text[start..pos]);
@@ -159,6 +146,18 @@ impl Text {
                     no_break: !is_break,
                     level,
                 });
+
+                if let Some(fmt) = next_fmt {
+                    if fmt.start as usize == pos {
+                        if let Some(id) = fmt.font_id {
+                            font_id = id;
+                        }
+                        if fmt.pt_size.is_finite() {
+                            dpem = fmt.pt_size * dpp;
+                        }
+                        next_fmt = fmt_iter.next();
+                    }
+                }
 
                 if hard_break {
                     let range = Range::from(line_start..self.runs.len());
