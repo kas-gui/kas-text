@@ -5,6 +5,9 @@
 
 //! KAS Rich-Text library
 
+#![cfg_attr(feature = "gat", feature(generic_associated_types))]
+#![cfg_attr(doc_cfg, feature(doc_cfg))]
+
 pub use ab_glyph::PxScale;
 
 mod env;
@@ -16,6 +19,7 @@ pub use data::*;
 pub mod fonts;
 pub mod prepared;
 pub mod rich;
+pub mod text;
 
 pub(crate) mod shaper;
 pub use shaper::Glyph;
