@@ -34,6 +34,16 @@ impl FontSelector {
         FontSelector::default()
     }
 
+    /// Set self to `rhs`
+    ///
+    /// This may save a reallocation over direct assignment.
+    #[inline]
+    pub fn assign(&mut self, rhs: &Self) {
+        self.names.clear();
+        self.names.extend_from_slice(&rhs.names);
+        self.properties = rhs.properties;
+    }
+
     /// Set family name(s)
     ///
     /// If multiple names are passed, the first to successfully resolve a font

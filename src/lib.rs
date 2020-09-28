@@ -17,8 +17,8 @@ mod data;
 pub use data::*;
 
 pub mod fonts;
+pub mod parsers;
 pub mod prepared;
-pub mod rich;
 pub mod text;
 
 pub(crate) mod shaper;

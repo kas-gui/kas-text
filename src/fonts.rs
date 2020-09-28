@@ -250,7 +250,7 @@ impl FontLibrary {
     }
 }
 
-unsafe fn extend_lifetime<'b, T: ?Sized>(r: &'b T) -> &'static T {
+pub(crate) unsafe fn extend_lifetime<'b, T: ?Sized>(r: &'b T) -> &'static T {
     std::mem::transmute::<&'b T, &'static T>(r)
 }
 
