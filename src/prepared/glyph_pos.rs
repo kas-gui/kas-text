@@ -6,7 +6,7 @@
 //! Text navigation
 
 use super::Text;
-use crate::{fonts::fonts, Vec2};
+use crate::{fonts::fonts, text, Vec2};
 use ab_glyph::ScaleFont;
 
 /// Used to return the position of a glyph with associated metrics
@@ -96,7 +96,7 @@ impl DoubleEndedIterator for MarkerPosIter {
 
 impl ExactSizeIterator for MarkerPosIter {}
 
-impl Text {
+impl<T: text::Text> Text<T> {
     /// Find the starting position (top-left) of the glyph at the given index
     ///
     /// The index should be no greater than the text length. It is not required

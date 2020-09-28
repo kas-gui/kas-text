@@ -8,7 +8,7 @@
 use super::Text;
 use crate::fonts::{fonts, FontLibrary};
 use crate::shaper::GlyphRun;
-use crate::{Align, Environment, Range, Vec2};
+use crate::{text, Align, Environment, Range, Vec2};
 use ab_glyph::ScaleFont;
 use smallvec::SmallVec;
 use unicode_bidi::Level;
@@ -38,7 +38,7 @@ struct PartInfo {
     glyph_range: Range,
 }
 
-impl Text {
+impl<T: text::Text> Text<T> {
     pub(crate) fn wrap_lines(&mut self) {
         let fonts = fonts();
         // Use a crude estimate of the number of runs:

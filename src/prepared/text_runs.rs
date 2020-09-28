@@ -7,7 +7,7 @@
 
 use super::Text;
 use crate::fonts::FontId;
-use crate::{Direction, Range};
+use crate::{text, Direction, Range};
 use smallvec::SmallVec;
 use unicode_bidi::{BidiInfo, Level, LTR_LEVEL, RTL_LEVEL};
 use xi_unicode::LineBreakIterator;
@@ -42,22 +42,19 @@ pub(crate) struct LineRun {
     pub rtl: bool,
 }
 
-impl Text {
+impl<T: text::Text> Text<T> {
     pub(crate) fn update_run_dpem(&mut self) {
-        let dpp = self.env.dpp;
-        let mut dpem = self.env.pt_size * dpp;
+        let mut dpem = self.env.pt_size * self.env.dpp;
 
-        let mut fmt_iter = self.formatting.iter();
+        let mut fmt_iter = unsafe { self.text.fmt_iter(&self.env) };
         let mut next_fmt = fmt_iter.next();
 
         for run in &mut self.runs {
-            while let Some(fmt) = next_fmt {
+            while let Some(fmt) = next_fmt.as_ref() {
                 if fmt.start > run.range.start {
                     break;
                 }
-                if fmt.pt_size.is_finite() {
-                    dpem = fmt.pt_size * dpp;
-                }
+                dpem = fmt.dpem;
                 next_fmt = fmt_iter.next();
             }
 
@@ -81,19 +78,14 @@ impl Text {
         self.line_runs.clear();
 
         let mut font_id = FontId::default();
-        let dpp = self.env.dpp;
-        let mut dpem = self.env.pt_size * dpp;
+        let mut dpem = self.env.pt_size * self.env.dpp;
 
-        let mut fmt_iter = self.formatting.iter();
+        let mut fmt_iter = unsafe { self.text.fmt_iter(&self.env) };
         let mut next_fmt = fmt_iter.next();
-        if let Some(fmt) = next_fmt {
+        if let Some(fmt) = next_fmt.as_ref() {
             if fmt.start == 0 {
-                if let Some(id) = fmt.font_id {
-                    font_id = id;
-                }
-                if fmt.pt_size.is_finite() {
-                    dpem = fmt.pt_size * dpp;
-                }
+                font_id = fmt.font_id;
+                dpem = fmt.dpem;
                 next_fmt = fmt_iter.next();
             }
         }
@@ -107,7 +99,7 @@ impl Text {
         let mut levels = vec![];
         let mut level: Level;
         if bidi || default_para_level.is_none() {
-            levels = BidiInfo::new(&self.text, default_para_level).levels;
+            levels = BidiInfo::new(self.text.as_str(), default_para_level).levels;
             assert_eq!(self.text.len(), levels.len());
             level = levels.get(0).cloned().unwrap_or(LTR_LEVEL);
         } else {
@@ -118,7 +110,7 @@ impl Text {
         let mut breaks = Default::default();
 
         // Iterates over `(pos, hard)` tuples:
-        let mut breaks_iter = LineBreakIterator::new(&self.text);
+        let mut breaks_iter = LineBreakIterator::new(self.text.as_str());
         let mut next_break = breaks_iter.next().unwrap_or((0, false));
 
         let mut line_start = 0;
@@ -129,11 +121,12 @@ impl Text {
             let bidi_break = bidi && levels[pos] != level;
 
             let fmt_break = next_fmt
+                .as_ref()
                 .map(|fmt| fmt.start as usize == pos)
                 .unwrap_or(false);
 
             if hard_break || bidi_break || fmt_break {
-                let mut range = trim_control(&self.text[start..pos]);
+                let mut range = trim_control(&self.text.as_str()[start..pos]);
                 // trim_control gives us a range within the slice; we need to offset:
                 range.start += start as u32;
                 range.end += start as u32;
@@ -147,14 +140,10 @@ impl Text {
                     level,
                 });
 
-                if let Some(fmt) = next_fmt {
+                if let Some(fmt) = next_fmt.as_ref() {
                     if fmt.start as usize == pos {
-                        if let Some(id) = fmt.font_id {
-                            font_id = id;
-                        }
-                        if fmt.pt_size.is_finite() {
-                            dpem = fmt.pt_size * dpp;
-                        }
+                        font_id = fmt.font_id;
+                        dpem = fmt.dpem;
                         next_fmt = fmt_iter.next();
                     }
                 }
@@ -183,7 +172,7 @@ impl Text {
         // The loop above misses the last break at the end of the text.
         // LineBreakIterator always reports a hard break at the text's end
         // regardless of whether the text ends with a line-break char.
-        let mut range = trim_control(&self.text[start..]);
+        let mut range = trim_control(&self.text.as_str()[start..]);
         // trim_control gives us a range within the slice; we need to offset:
         range.start += start as u32;
         range.end += start as u32;
@@ -203,7 +192,7 @@ impl Text {
 
         // If the text *does* end with a line-break, we add an empty line.
         // TODO: do we want the empty line for labels or only for edit boxes?
-        if let Some(c) = self.text.chars().next_back() {
+        if let Some(c) = self.text.as_str().chars().next_back() {
             // Match according to https://www.unicode.org/reports/tr14/#Table1
             if let '\x0C' | '\x0B' | '\u{2028}' | '\u{2029}' | '\r' | '\n' | '\u{85}' = c {
                 let text_len = self.text.len();
