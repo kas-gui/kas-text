@@ -9,10 +9,6 @@ use crate::fonts::{fonts, FontId};
 use crate::prepared::Action;
 use crate::Vec2;
 
-// doc imports
-#[allow(unused)]
-use crate::FontScale;
-
 /// Environment in which text is prepared for display
 ///
 /// An `Environment` can be default-constructed (without line-wrapping).
@@ -92,7 +88,7 @@ impl Environment {
     /// Alternative default constructor
     ///
     /// Has left-to-right direction, default alignment, no line-wrapping,
-    /// default font [`FontScale`] and zero-sized bounds.
+    /// default font size and zero-sized bounds.
     pub fn new() -> Self {
         Self::default()
     }
