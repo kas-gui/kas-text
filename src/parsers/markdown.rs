@@ -52,7 +52,7 @@ impl<'a> Iterator for FormatIter<'a> {
         if self.index < self.fmt.len() {
             let fmt = &self.fmt[self.index];
             if self.font_sel != fmt.sel {
-                self.font_id = self.fonts.load_font(fmt.sel.clone()).unwrap();
+                self.font_id = self.fonts.load_font(&fmt.sel).unwrap();
                 self.font_sel.assign(&fmt.sel);
             }
             self.index += 1;
