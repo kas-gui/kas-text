@@ -15,7 +15,7 @@ use crate::fonts::FontId;
 ///
 /// This trait supports usage via generics aka compile-time polymorphism. For
 /// run-time polymorphism, use the [`DynText`] type and [`Text::as_dyn_text`].
-pub trait Text: std::fmt::Debug {
+pub trait Text: std::fmt::Debug + 'static {
     #[cfg(not(feature = "gat"))]
     type FmtIter: Iterator<Item = Format>;
     #[cfg(feature = "gat")]
@@ -57,14 +57,30 @@ pub trait Text: std::fmt::Debug {
     }
 }
 
+/// Extension over [`Text`] supporting text-edit operations
 pub trait EditableText: Text {
+    /// Set unformatted text
+    ///
+    /// Existing contents and formatting are replaced entirely.
+    fn set_string(&mut self, string: String);
+
+    /// Swap the contiguous unformatted text with another `string`
+    ///
+    /// Any formatting present is removed.
+    fn swap_string(&mut self, string: &mut String);
+
+    /// Insert a `char` at the given position
+    ///
+    /// Formatting is adjusted such that it still affects the same chars (i.e.
+    /// all formatting after `index` is postponed by the length of the char).
     fn insert_char(&mut self, index: usize, c: char);
 
+    /// Replace text at `range` with `replace_with`
+    ///
+    /// Formatting is adjusted such that it still affects the same chars.
     fn replace_range<R>(&mut self, range: R, replace_with: &str)
     where
         R: std::ops::RangeBounds<usize> + std::iter::ExactSizeIterator + Clone;
-
-    fn swap_string(&mut self, string: &mut String);
 }
 
 /// Formatting marker
@@ -125,29 +141,23 @@ impl Text for String {
 }
 
 impl EditableText for String {
-    /// Insert a `char` at the given position
-    ///
-    /// Formatting is adjusted such that it still affects the same chars (i.e.
-    /// all formatting after `index` is postponed by the length of the char).
+    fn set_string(&mut self, string: String) {
+        *self = string;
+    }
+
+    fn swap_string(&mut self, string: &mut String) {
+        std::mem::swap(self, string);
+    }
+
     fn insert_char(&mut self, index: usize, c: char) {
         self.insert(index, c);
     }
 
-    /// Replace text at `range` with `replace_with`
-    ///
-    /// Formatting is adjusted such that it still affects the same chars.
     fn replace_range<R>(&mut self, range: R, replace_with: &str)
     where
         R: std::ops::RangeBounds<usize> + std::iter::ExactSizeIterator + Clone,
     {
         self.replace_range(range, replace_with);
-    }
-
-    /// Swap the contiguous unformatted text with another `string`
-    ///
-    /// Any formatting present is removed.
-    fn swap_string(&mut self, string: &mut String) {
-        std::mem::swap(self, string);
     }
 }
 

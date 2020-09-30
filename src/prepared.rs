@@ -290,13 +290,26 @@ impl<T: text::Text> Text<T> {
         true.into()
     }
 
+    /// Set text to a raw `String`
+    ///
+    /// One must call [`Text::prepare`] afterwards.
+    ///
+    /// All existing text formatting is removed.
+    pub fn set_string(&mut self, string: String) -> Prepare
+    where
+        T: EditableText,
+    {
+        self.text.set_string(string);
+        self.action = Action::Runs;
+        true.into()
+    }
+
     /// Swap the raw text with a `String`
     ///
     /// This may be used to edit the raw text instead of replacing it.
     /// One must call [`Text::prepare`] afterwards.
     ///
-    /// Warning: formatting information is not adjusted, even if existing
-    /// formatting does not fit the new text.
+    /// All existing text formatting is removed.
     ///
     /// Currently this is not significantly more efficent than
     /// [`Text::set_text`]. This may change in the future (TODO).

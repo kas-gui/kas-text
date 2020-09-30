@@ -91,6 +91,15 @@ impl Text for Markdown {
 }
 
 impl EditableText for Markdown {
+    fn set_string(&mut self, string: String) {
+        self.text = string;
+    }
+
+    fn swap_string(&mut self, string: &mut String) {
+        std::mem::swap(&mut self.text, string);
+        self.fmt.clear();
+    }
+
     fn insert_char(&mut self, index: usize, c: char) {
         self.text.insert(index, c);
 
@@ -142,11 +151,6 @@ impl EditableText for Markdown {
             }
             i += 1;
         }
-    }
-
-    fn swap_string(&mut self, string: &mut String) {
-        std::mem::swap(&mut self.text, string);
-        self.fmt.clear();
     }
 }
 
