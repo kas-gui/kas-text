@@ -5,10 +5,10 @@
 
 //! Markdown parsing
 
+use super::{Format, FormatData, Parser};
 use crate::fonts::{self, FamilyName, FontId, FontSelector, Style, Weight};
-use crate::text::{EditableText, Format, Text};
 use crate::Environment;
-use pulldown_cmark::{Event, Parser, Tag};
+use pulldown_cmark::{Event, Tag};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Markdown {
@@ -20,6 +20,14 @@ impl Markdown {
     #[inline]
     pub fn new(input: &str) -> Self {
         parse(input)
+    }
+}
+
+impl Parser for Markdown {
+    type FormatData = Vec<Fmt>;
+
+    fn finish(self) -> (String, Self::FormatData) {
+        (self.text, self.fmt)
     }
 }
 
@@ -67,83 +75,22 @@ impl<'a> Iterator for FormatIter<'a> {
     }
 }
 
-impl Text for Markdown {
-    #[cfg(not(feature = "gat"))]
-    type FmtIter = FormatIter<'static>;
-    #[cfg(feature = "gat")]
-    type FmtIter<'a> = FormatIter<'a>;
-
-    /// Access whole text as contiguous `str`
-    #[inline]
-    fn as_str(&self) -> &str {
-        &self.text
-    }
-
-    #[cfg(not(feature = "gat"))]
-    unsafe fn fmt_iter<'a>(&'a self, env: &'a Environment) -> FormatIter<'static> {
-        let fmt = fonts::extend_lifetime(&self.fmt);
-        FormatIter::new(fmt, env)
-    }
-    #[cfg(feature = "gat")]
-    fn fmt_iter<'a>(&'a self, env: &'a Environment) -> FormatIter<'a> {
-        FormatIter::new(&self.fmt, env)
-    }
-}
-
-impl EditableText for Markdown {
-    fn set_string(&mut self, string: String) {
-        self.text = string;
-    }
-
-    fn swap_string(&mut self, string: &mut String) {
-        std::mem::swap(&mut self.text, string);
-        self.fmt.clear();
-    }
-
-    fn insert_char(&mut self, index: usize, c: char) {
-        self.text.insert(index, c);
-
-        let index = index as u32;
-        let len = c.len_utf8() as u32;
-        for fmt in &mut self.fmt {
-            if fmt.start >= index {
-                fmt.start += len;
-            }
-        }
-    }
-
-    fn replace_range<R>(&mut self, range: R, replace_with: &str)
-    where
-        R: std::ops::RangeBounds<usize> + std::iter::ExactSizeIterator + Clone,
-    {
-        self.text.replace_range(range.clone(), replace_with);
-
-        use std::ops::Bound;
-        let start = match range.start_bound() {
-            Bound::Included(b) => *b as u32,
-            Bound::Excluded(_) => unreachable!(),
-            Bound::Unbounded => 0,
-        };
-        let src_len = range.len() as u32;
-        let dst_len = replace_with.len() as u32;
-        let old_end = start + src_len;
-        let new_end = start + dst_len;
-
-        let diff = new_end.wrapping_sub(old_end);
+impl FormatData for Vec<Fmt> {
+    fn remove_range(&mut self, start: u32, end: u32) {
+        let len = end - start;
         let mut last = None;
         let mut i = 0;
-        while i < self.fmt.len() {
-            let fmt = &mut self.fmt[i];
+        while i < self.len() {
+            let fmt = &mut self[i];
             if fmt.start >= start {
-                if fmt.start < old_end {
-                    fmt.start = new_end;
+                if fmt.start < end {
+                    fmt.start = start;
                 } else {
-                    // wrapping_add effectively allows subtraction despite unsigned type
-                    fmt.start = fmt.start.wrapping_add(diff);
+                    fmt.start -= len;
                 }
                 if let Some((index, start)) = last {
                     if start == fmt.start {
-                        self.fmt.remove(index as usize);
+                        self.remove(index as usize);
                         continue;
                     }
                 }
@@ -151,6 +98,18 @@ impl EditableText for Markdown {
             }
             i += 1;
         }
+    }
+
+    fn insert_range(&mut self, start: u32, len: u32) {
+        for fmt in self {
+            if fmt.start >= start {
+                fmt.start += len;
+            }
+        }
+    }
+
+    fn fmt_iter<'a>(&'a self, env: &'a Environment) -> Box<dyn Iterator<Item = Format> + 'a> {
+        Box::new(FormatIter::new(self, env))
     }
 }
 
@@ -172,7 +131,7 @@ fn parse(input: &str) -> Markdown {
     let mut item = StackItem::default();
 
     // TODO: parser options — perhaps strikethrough?
-    let mut parser = Parser::new(input);
+    let mut parser = pulldown_cmark::Parser::new(input);
     while let Some(ev) = parser.next() {
         match ev {
             Event::Start(tag) => {
@@ -258,7 +217,7 @@ impl State {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-struct Fmt {
+pub struct Fmt {
     start: u32,
     sel: FontSelector,
     rel_size: f32,

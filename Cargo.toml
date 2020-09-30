@@ -13,9 +13,6 @@ repository = "https://github.com/kas-gui/kas-text"
 exclude = ["design"]
 
 [features]
-# Unstable: enable generic associated types (required for DynText)
-gat = []
-
 # Enable shaping. Prefer to depend on "shaping" since we may replace harfbuzz_rs.
 shaping = ["harfbuzz_rs"]
 

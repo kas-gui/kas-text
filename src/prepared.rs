@@ -7,12 +7,12 @@
 
 use ab_glyph::PxScale;
 use smallvec::SmallVec;
-use std::ops::{BitOr, BitOrAssign};
+use std::ops::{BitOr, BitOrAssign, Bound};
 
 use crate::fonts::FontId;
-use crate::text::{self, EditableText};
+use crate::parser::FormatData;
 use crate::{shaper, Glyph, Vec2};
-use crate::{Environment, UpdateEnv};
+use crate::{Environment, FormattedString, UpdateEnv};
 
 mod glyph_pos;
 mod text_runs;
@@ -135,11 +135,12 @@ impl Action {
 /// Navigating "up" and "down" is trickier; use [`Text::text_glyph_pos`]
 /// to get the position of the cursor, [`Text::find_line`] to get the line
 /// number, then [`Text::line_index_nearest`] to find the new index.
-#[derive(Clone, Debug)]
-pub struct Text<T: text::Text> {
+#[derive(Debug)]
+pub struct Text {
     env: Environment,
     /// Contiguous text in logical order
-    text: T,
+    text: String,
+    fmt: Box<dyn FormatData>,
     /// Level runs within the text, in logical order
     runs: SmallVec<[Run; 1]>,
     /// Subsets of runs forming a line, with line direction
@@ -157,32 +158,23 @@ pub struct Text<T: text::Text> {
     num_glyphs: u32,
 }
 
-impl<T: text::Text + Default> Default for Text<T> {
+// TODO: impl Clone: need CloneTo hack?
+
+impl Default for Text {
     fn default() -> Self {
-        Text {
-            env: Default::default(),
-            text: Default::default(),
-            runs: Default::default(),
-            line_runs: Default::default(),
-            action: Default::default(),
-            required: Default::default(),
-            glyph_runs: Default::default(),
-            wrapped_runs: Default::default(),
-            lines: Default::default(),
-            num_glyphs: Default::default(),
-        }
+        Text::new(Environment::default(), "".into())
     }
 }
 
-impl<T: text::Text> Text<T> {
+impl Text {
     /// Construct from an environment and a text model
     ///
-    /// This struct must be made ready for use before
-    /// To do so, call [`Text::prepare`].
-    pub fn new(env: Environment, text: T) -> Self {
+    /// This struct must be made ready for usage by calling [`Text::prepare`].
+    pub fn new(env: Environment, text: FormattedString) -> Self {
         Text {
             env,
-            text,
+            text: text.text,
+            fmt: text.fmt,
             runs: Default::default(),
             line_runs: Default::default(),
             action: Default::default(),
@@ -199,7 +191,7 @@ impl<T: text::Text> Text<T> {
     /// The environment is default-constructed, with [`Environment::wrap`]
     /// turned off.
     #[inline]
-    pub fn new_single(text: T) -> Self {
+    pub fn new_single(text: FormattedString) -> Self {
         let mut env = Environment::new();
         env.wrap = false;
         Self::new(env, text)
@@ -209,27 +201,21 @@ impl<T: text::Text> Text<T> {
     ///
     /// The environment is default-constructed (line-wrap on).
     #[inline]
-    pub fn new_multi(text: T) -> Self {
+    pub fn new_multi(text: FormattedString) -> Self {
         Self::new(Environment::new(), text)
     }
 
     /// Extract text object, discarding the rest
     #[inline]
-    pub fn take_text(self) -> T {
-        self.text
+    pub fn take_text(self) -> FormattedString {
+        let text = self.text;
+        let fmt = self.fmt;
+        FormattedString { text, fmt }
     }
 
-    /// Clone the text object
-    pub fn clone_text(&self) -> T
-    where
-        T: Clone,
-    {
-        self.text.clone()
-    }
-
-    /// Clone the raw text as a `String`
+    /// Clone the unformatted text as a `String`
     pub fn clone_string(&self) -> String {
-        self.text.as_str().to_string()
+        self.text.clone()
     }
 
     /// Length of text
@@ -259,11 +245,9 @@ impl<T: text::Text> Text<T> {
     ///
     /// Currently this is not significantly more efficent than
     /// [`Text::set_text`]. This may change in the future (TODO).
-    pub fn insert_char(&mut self, index: usize, c: char) -> Prepare
-    where
-        T: EditableText,
-    {
-        self.text.insert_char(index, c);
+    pub fn insert_char(&mut self, index: usize, c: char) -> Prepare {
+        self.text.insert(index, c);
+        self.fmt.insert_range(index as u32, c.len_utf8() as u32);
         self.action = Action::Runs;
         true.into()
     }
@@ -282,10 +266,22 @@ impl<T: text::Text> Text<T> {
     #[inline]
     pub fn replace_range<R>(&mut self, range: R, replace_with: &str) -> Prepare
     where
-        T: EditableText,
         R: std::ops::RangeBounds<usize> + std::iter::ExactSizeIterator + Clone,
     {
-        self.text.replace_range(range.clone(), replace_with);
+        let start = match range.start_bound() {
+            Bound::Included(x) => *x,
+            Bound::Excluded(x) => *x + 1,
+            Bound::Unbounded => 0,
+        };
+        let end = match range.end_bound() {
+            Bound::Included(x) => *x + 1,
+            Bound::Excluded(x) => *x,
+            Bound::Unbounded => usize::MAX,
+        };
+        self.text.replace_range(start..end, replace_with);
+        self.fmt.remove_range(start as u32, end as u32);
+        self.fmt
+            .insert_range(start as u32, replace_with.len() as u32);
         self.action = Action::Runs;
         true.into()
     }
@@ -295,11 +291,9 @@ impl<T: text::Text> Text<T> {
     /// One must call [`Text::prepare`] afterwards.
     ///
     /// All existing text formatting is removed.
-    pub fn set_string(&mut self, string: String) -> Prepare
-    where
-        T: EditableText,
-    {
-        self.text.set_string(string);
+    pub fn set_string(&mut self, string: String) -> Prepare {
+        self.text = string;
+        self.fmt.remove_range(0, u32::MAX);
         self.action = Action::Runs;
         true.into()
     }
@@ -313,25 +307,23 @@ impl<T: text::Text> Text<T> {
     ///
     /// Currently this is not significantly more efficent than
     /// [`Text::set_text`]. This may change in the future (TODO).
-    pub fn swap_string(&mut self, string: &mut String) -> Prepare
-    where
-        T: EditableText,
-    {
-        self.text.swap_string(string);
+    pub fn swap_string(&mut self, string: &mut String) -> Prepare {
+        std::mem::swap(&mut self.text, string);
+        self.fmt.remove_range(0, u32::MAX);
         self.action = Action::Runs;
         true.into()
     }
 
     /// Set the text
-    pub fn set_text(&mut self, text: T) -> Prepare {
-        /* TODO: enable if we have a way of testing equality
-         * This requires specialisation or forcing an impl on DynTextT
+    pub fn set_text(&mut self, text: FormattedString) -> Prepare {
+        /* TODO: enable if we have a way of testing equality (a hash?)
         if self.text == text {
             return self.action.into(); // no change
         }
          */
 
-        self.text = text;
+        self.text = text.text;
+        self.fmt = text.fmt;
         self.action = Action::Runs;
         true.into()
     }

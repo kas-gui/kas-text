@@ -7,7 +7,7 @@
 
 use super::Text;
 use crate::fonts::FontId;
-use crate::{text, Direction, Range};
+use crate::{Direction, Range};
 use smallvec::SmallVec;
 use unicode_bidi::{BidiInfo, Level, LTR_LEVEL, RTL_LEVEL};
 use xi_unicode::LineBreakIterator;
@@ -42,11 +42,11 @@ pub(crate) struct LineRun {
     pub rtl: bool,
 }
 
-impl<T: text::Text> Text<T> {
+impl Text {
     pub(crate) fn update_run_dpem(&mut self) {
         let mut dpem = self.env.pt_size * self.env.dpp;
 
-        let mut fmt_iter = unsafe { self.text.fmt_iter(&self.env) };
+        let mut fmt_iter = self.fmt.fmt_iter(&self.env);
         let mut next_fmt = fmt_iter.next();
 
         for run in &mut self.runs {
@@ -80,7 +80,7 @@ impl<T: text::Text> Text<T> {
         let mut font_id = FontId::default();
         let mut dpem = self.env.pt_size * self.env.dpp;
 
-        let mut fmt_iter = unsafe { self.text.fmt_iter(&self.env) };
+        let mut fmt_iter = self.fmt.fmt_iter(&self.env);
         let mut next_fmt = fmt_iter.next();
         if let Some(fmt) = next_fmt.as_ref() {
             if fmt.start == 0 {

@@ -5,7 +5,6 @@
 
 //! KAS Rich-Text library
 
-#![cfg_attr(feature = "gat", feature(generic_associated_types))]
 #![cfg_attr(doc_cfg, feature(doc_cfg))]
 
 pub use ab_glyph::PxScale;
@@ -17,9 +16,17 @@ mod data;
 pub use data::*;
 
 pub mod fonts;
-pub mod parsers;
+pub mod parser;
 pub mod prepared;
-pub mod text;
 
 pub(crate) mod shaper;
 pub use shaper::Glyph;
+
+/// Convenient type for storing formatted text
+///
+/// Any type supporting [`parser::Parser`] or [`ToString`] supports
+/// conversion to this type.
+pub struct FormattedString {
+    pub(crate) text: String,
+    pub(crate) fmt: Box<dyn parser::FormatData>,
+}
