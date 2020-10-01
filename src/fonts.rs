@@ -14,13 +14,14 @@
 //! any operation requiring font metrics:
 //!
 //! ```
-//! if let Err(e) = kas_text::fonts().load_default() {
+//! if let Err(e) = kas_text::fonts::fonts().load_default() {
 //!     panic!("Error loading font: {}", e);
 //! }
 //! // from now on, kas_text::fonts::FontId::default() identifies the default font
 //! ```
 
-use ab_glyph::{FontRef, InvalidFont, PxScale, PxScaleFont};
+pub use ab_glyph::PxScale;
+use ab_glyph::{FontRef, InvalidFont, PxScaleFont};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::RwLock;

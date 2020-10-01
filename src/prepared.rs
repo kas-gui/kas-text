@@ -24,7 +24,7 @@ use wrap_lines::{Line, RunPart};
 /// Type used to indicate whether the [`Text`] object is ready for use
 ///
 /// The user doesn't need to *do* anything with this value when returned from
-/// [`Text`] methods, but if [`Prepare::prepare`] returns true then the user
+/// [`Text`] methods, but if [`PrepareAction::prepare`] returns true then the user
 /// must call [`Text::prepare`] before calling most other methods.
 /// Exceptions are [`Text::update_env`] (which can be used instead of `prepare`)
 /// and methods operating on the environment or the source text.
@@ -32,16 +32,16 @@ use wrap_lines::{Line, RunPart};
 /// Multiple instances may be combined via the `|` (bit or) and `|=` operators.
 #[must_use]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Ord, PartialOrd, Hash)]
-pub struct Prepare(bool);
+pub struct PrepareAction(bool);
 
-impl Prepare {
+impl PrepareAction {
     /// Construct an instance not requiring prepare
     ///
     /// This may be useful when optionally calling multiple update methods:
     /// ```
-    /// # use kas_text::prepared::{Prepare, Text};
+    /// # use kas_text::{PrepareAction, Text};
     /// fn update_text(text: &mut Text, opt_new_text: Option<String>) {
-    ///     let mut prepare = Prepare::none();
+    ///     let mut prepare = PrepareAction::none();
     ///     if let Some(new_text) = opt_new_text {
     ///         prepare |= text.set_text(new_text.into());
     ///     }
@@ -52,7 +52,7 @@ impl Prepare {
     /// ```
     #[inline]
     pub fn none() -> Self {
-        Prepare(false)
+        PrepareAction(false)
     }
 
     /// When true, [`Text::prepare`] must be called
@@ -62,33 +62,33 @@ impl Prepare {
     }
 }
 
-impl BitOr for Prepare {
+impl BitOr for PrepareAction {
     type Output = Self;
 
     #[inline]
     fn bitor(self, rhs: Self) -> Self {
-        Prepare(self.0 || rhs.0)
+        PrepareAction(self.0 || rhs.0)
     }
 }
 
-impl BitOrAssign for Prepare {
+impl BitOrAssign for PrepareAction {
     #[inline]
     fn bitor_assign(&mut self, rhs: Self) {
         self.0 = self.0 || rhs.0;
     }
 }
 
-impl From<bool> for Prepare {
+impl From<bool> for PrepareAction {
     #[inline]
     fn from(prepare: bool) -> Self {
-        Prepare(prepare)
+        PrepareAction(prepare)
     }
 }
 
-impl From<Action> for Prepare {
+impl From<Action> for PrepareAction {
     #[inline]
     fn from(action: Action) -> Self {
-        Prepare(action != Action::None)
+        PrepareAction(action != Action::None)
     }
 }
 
@@ -99,12 +99,6 @@ pub(crate) enum Action {
     Shape, // do text shaping and above
     Dpem,  // update font size, redo shaping and above
     Runs,  // do splitting into runs, BIDI and above
-}
-
-impl Default for Action {
-    fn default() -> Self {
-        Action::None
-    }
 }
 
 impl Action {
@@ -177,7 +171,7 @@ impl Text {
             fmt: text.fmt,
             runs: Default::default(),
             line_runs: Default::default(),
-            action: Default::default(),
+            action: Action::Runs, // highest value
             required: Default::default(),
             glyph_runs: Default::default(),
             wrapped_runs: Default::default(),
@@ -245,7 +239,7 @@ impl Text {
     ///
     /// Currently this is not significantly more efficent than
     /// [`Text::set_text`]. This may change in the future (TODO).
-    pub fn insert_char(&mut self, index: usize, c: char) -> Prepare {
+    pub fn insert_char(&mut self, index: usize, c: char) -> PrepareAction {
         self.text.insert(index, c);
         self.fmt.insert_range(index as u32, c.len_utf8() as u32);
         self.action = Action::Runs;
@@ -264,7 +258,7 @@ impl Text {
     /// Currently this is not significantly more efficent than
     /// [`Text::set_text`]. This may change in the future (TODO).
     #[inline]
-    pub fn replace_range<R>(&mut self, range: R, replace_with: &str) -> Prepare
+    pub fn replace_range<R>(&mut self, range: R, replace_with: &str) -> PrepareAction
     where
         R: std::ops::RangeBounds<usize> + std::iter::ExactSizeIterator + Clone,
     {
@@ -291,7 +285,7 @@ impl Text {
     /// One must call [`Text::prepare`] afterwards.
     ///
     /// All existing text formatting is removed.
-    pub fn set_string(&mut self, string: String) -> Prepare {
+    pub fn set_string(&mut self, string: String) -> PrepareAction {
         self.text = string;
         self.fmt.remove_range(0, u32::MAX);
         self.action = Action::Runs;
@@ -307,7 +301,7 @@ impl Text {
     ///
     /// Currently this is not significantly more efficent than
     /// [`Text::set_text`]. This may change in the future (TODO).
-    pub fn swap_string(&mut self, string: &mut String) -> Prepare {
+    pub fn swap_string(&mut self, string: &mut String) -> PrepareAction {
         std::mem::swap(&mut self.text, string);
         self.fmt.remove_range(0, u32::MAX);
         self.action = Action::Runs;
@@ -315,7 +309,7 @@ impl Text {
     }
 
     /// Set the text
-    pub fn set_text(&mut self, text: FormattedString) -> Prepare {
+    pub fn set_text(&mut self, text: FormattedString) -> PrepareAction {
         /* TODO: enable if we have a way of testing equality (a hash?)
         if self.text == text {
             return self.action.into(); // no change

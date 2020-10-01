@@ -7,8 +7,6 @@
 
 #![cfg_attr(doc_cfg, feature(doc_cfg))]
 
-pub use ab_glyph::PxScale;
-
 mod env;
 pub use env::*;
 
@@ -17,16 +15,36 @@ pub use data::*;
 
 pub mod fonts;
 pub mod parser;
-pub mod prepared;
+
+mod prepared;
+pub use prepared::*;
 
 pub(crate) mod shaper;
 pub use shaper::Glyph;
 
-/// Convenient type for storing formatted text
+/// A string with formatting information
 ///
-/// Any type supporting [`parser::Parser`] or [`ToString`] supports
-/// conversion to this type.
+/// This type supports construction from `String` and `&str` (no formatting).
+/// It may also be constructed from any [`parser::Parser`].
+/// ```
+/// # use kas_text::FormattedString;
+/// let s1 = FormattedString::from("plain text");
+/// // if `markdown` feature is enabled:
+/// // let s2 = FormattedString::from(Markdown::new("*Markdown* text"));
+/// ```
 pub struct FormattedString {
     pub(crate) text: String,
     pub(crate) fmt: Box<dyn parser::FormatData>,
+}
+
+impl FormattedString {
+    /// Read contiguous unformatted text
+    pub fn as_str(&self) -> &str {
+        &self.text
+    }
+
+    /// Extract unformatting `String`
+    pub fn take_string(self) -> String {
+        self.text
+    }
 }
