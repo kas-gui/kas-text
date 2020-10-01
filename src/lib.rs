@@ -32,6 +32,7 @@ pub use shaper::Glyph;
 /// // if `markdown` feature is enabled:
 /// // let s2 = FormattedString::from(Markdown::new("*Markdown* text"));
 /// ```
+#[derive(Clone, Debug)]
 pub struct FormattedString {
     pub(crate) text: String,
     pub(crate) fmt: Box<dyn parser::FormatData>,

@@ -76,6 +76,10 @@ impl<'a> Iterator for FormatIter<'a> {
 }
 
 impl FormatData for Vec<Fmt> {
+    fn clone_boxed(&self) -> Box<dyn FormatData> {
+        Box::new(self.clone())
+    }
+
     fn remove_range(&mut self, start: u32, end: u32) {
         let len = end - start;
         let mut last = None;

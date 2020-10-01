@@ -129,7 +129,7 @@ impl Action {
 /// Navigating "up" and "down" is trickier; use [`Text::text_glyph_pos`]
 /// to get the position of the cursor, [`Text::find_line`] to get the line
 /// number, then [`Text::line_index_nearest`] to find the new index.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Text {
     env: Environment,
     /// Contiguous text in logical order
@@ -197,6 +197,13 @@ impl Text {
     #[inline]
     pub fn new_multi(text: FormattedString) -> Self {
         Self::new(Environment::new(), text)
+    }
+
+    /// Clone the formatted text
+    pub fn clone_text(&self) -> FormattedString {
+        let text = self.text.clone();
+        let fmt = self.fmt.clone();
+        FormattedString { text, fmt }
     }
 
     /// Extract text object, discarding the rest

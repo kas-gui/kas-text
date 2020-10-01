@@ -65,6 +65,9 @@ impl From<&str> for FormattedString {
 /// As a side-effect of the above design decision, the unformatted text is
 /// stored in a separate string to allow direct access.
 pub trait FormatData: std::fmt::Debug + 'static {
+    /// Produce a boxed clone of self
+    fn clone_boxed(&self) -> Box<dyn FormatData>;
+
     /// Delete sub-range
     ///
     /// If a sub-range of text is removed, this method is called to remove
@@ -96,10 +99,19 @@ pub trait FormatData: std::fmt::Debug + 'static {
 struct EmptyFmtData;
 
 impl FormatData for EmptyFmtData {
+    fn clone_boxed(&self) -> Box<dyn FormatData> {
+        Box::new(EmptyFmtData)
+    }
     fn remove_range(&mut self, _: u32, _: u32) {}
     fn insert_range(&mut self, _: u32, _: u32) {}
     fn fmt_iter<'a>(&'a self, _: &'a Environment) -> Box<dyn Iterator<Item = Format> + 'a> {
         Box::new(std::iter::empty())
+    }
+}
+
+impl Clone for Box<dyn FormatData> {
+    fn clone(&self) -> Self {
+        (**self).clone_boxed()
     }
 }
 
