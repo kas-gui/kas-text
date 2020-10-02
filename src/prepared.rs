@@ -7,11 +7,12 @@
 
 use ab_glyph::PxScale;
 use smallvec::SmallVec;
-use std::ops::{BitOr, BitOrAssign};
+use std::ops::{BitOr, BitOrAssign, Bound};
 
 use crate::fonts::FontId;
-use crate::{rich, shaper, Glyph, Vec2};
-use crate::{Environment, UpdateEnv};
+use crate::parser::FormatData;
+use crate::{shaper, Glyph, Vec2};
+use crate::{Environment, FormattedString, UpdateEnv};
 
 mod glyph_pos;
 mod text_runs;
@@ -23,7 +24,7 @@ use wrap_lines::{Line, RunPart};
 /// Type used to indicate whether the [`Text`] object is ready for use
 ///
 /// The user doesn't need to *do* anything with this value when returned from
-/// [`Text`] methods, but if [`Prepare::prepare`] returns true then the user
+/// [`Text`] methods, but if [`PrepareAction::prepare`] returns true then the user
 /// must call [`Text::prepare`] before calling most other methods.
 /// Exceptions are [`Text::update_env`] (which can be used instead of `prepare`)
 /// and methods operating on the environment or the source text.
@@ -31,16 +32,16 @@ use wrap_lines::{Line, RunPart};
 /// Multiple instances may be combined via the `|` (bit or) and `|=` operators.
 #[must_use]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Ord, PartialOrd, Hash)]
-pub struct Prepare(bool);
+pub struct PrepareAction(bool);
 
-impl Prepare {
+impl PrepareAction {
     /// Construct an instance not requiring prepare
     ///
     /// This may be useful when optionally calling multiple update methods:
     /// ```
-    /// # use kas_text::prepared::{Prepare, Text};
+    /// # use kas_text::{PrepareAction, Text};
     /// fn update_text(text: &mut Text, opt_new_text: Option<String>) {
-    ///     let mut prepare = Prepare::none();
+    ///     let mut prepare = PrepareAction::none();
     ///     if let Some(new_text) = opt_new_text {
     ///         prepare |= text.set_text(new_text.into());
     ///     }
@@ -51,7 +52,7 @@ impl Prepare {
     /// ```
     #[inline]
     pub fn none() -> Self {
-        Prepare(false)
+        PrepareAction(false)
     }
 
     /// When true, [`Text::prepare`] must be called
@@ -61,33 +62,33 @@ impl Prepare {
     }
 }
 
-impl BitOr for Prepare {
+impl BitOr for PrepareAction {
     type Output = Self;
 
     #[inline]
     fn bitor(self, rhs: Self) -> Self {
-        Prepare(self.0 || rhs.0)
+        PrepareAction(self.0 || rhs.0)
     }
 }
 
-impl BitOrAssign for Prepare {
+impl BitOrAssign for PrepareAction {
     #[inline]
     fn bitor_assign(&mut self, rhs: Self) {
         self.0 = self.0 || rhs.0;
     }
 }
 
-impl From<bool> for Prepare {
+impl From<bool> for PrepareAction {
     #[inline]
     fn from(prepare: bool) -> Self {
-        Prepare(prepare)
+        PrepareAction(prepare)
     }
 }
 
-impl From<Action> for Prepare {
+impl From<Action> for PrepareAction {
     #[inline]
     fn from(action: Action) -> Self {
-        Prepare(action != Action::None)
+        PrepareAction(action != Action::None)
     }
 }
 
@@ -98,12 +99,6 @@ pub(crate) enum Action {
     Shape, // do text shaping and above
     Dpem,  // update font size, redo shaping and above
     Runs,  // do splitting into runs, BIDI and above
-}
-
-impl Default for Action {
-    fn default() -> Self {
-        Action::None
-    }
 }
 
 impl Action {
@@ -134,12 +129,12 @@ impl Action {
 /// Navigating "up" and "down" is trickier; use [`Text::text_glyph_pos`]
 /// to get the position of the cursor, [`Text::find_line`] to get the line
 /// number, then [`Text::line_index_nearest`] to find the new index.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct Text {
     env: Environment,
     /// Contiguous text in logical order
     text: String,
-    formatting: Vec<rich::FormatSpecifier>,
+    fmt: Box<dyn FormatData>,
     /// Level runs within the text, in logical order
     runs: SmallVec<[Run; 1]>,
     /// Subsets of runs forming a line, with line direction
@@ -157,18 +152,32 @@ pub struct Text {
     num_glyphs: u32,
 }
 
+// TODO: impl Clone: need CloneTo hack?
+
+impl Default for Text {
+    fn default() -> Self {
+        Text::new(Environment::default(), "".into())
+    }
+}
+
 impl Text {
     /// Construct from an environment and a text model
     ///
-    /// This struct must be made ready for use before
-    /// To do so, call [`Text::prepare`].
-    pub fn new(env: Environment, text: rich::Text) -> Text {
-        let mut result = Text {
+    /// This struct must be made ready for usage by calling [`Text::prepare`].
+    pub fn new(env: Environment, text: FormattedString) -> Self {
+        Text {
             env,
-            ..Default::default()
-        };
-        let _ = result.set_text(text);
-        result
+            text: text.text,
+            fmt: text.fmt,
+            runs: Default::default(),
+            line_runs: Default::default(),
+            action: Action::Runs, // highest value
+            required: Default::default(),
+            glyph_runs: Default::default(),
+            wrapped_runs: Default::default(),
+            lines: Default::default(),
+            num_glyphs: Default::default(),
+        }
     }
 
     /// Construct from a default environment (single-line) and text
@@ -176,7 +185,7 @@ impl Text {
     /// The environment is default-constructed, with [`Environment::wrap`]
     /// turned off.
     #[inline]
-    pub fn new_single(text: rich::Text) -> Text {
+    pub fn new_single(text: FormattedString) -> Self {
         let mut env = Environment::new();
         env.wrap = false;
         Self::new(env, text)
@@ -186,21 +195,26 @@ impl Text {
     ///
     /// The environment is default-constructed (line-wrap on).
     #[inline]
-    pub fn new_multi(text: rich::Text) -> Text {
+    pub fn new_multi(text: FormattedString) -> Self {
         Self::new(Environment::new(), text)
     }
 
-    /// Reconstruct the [`rich::Text`] model defining this `Text`
-    pub fn clone_text(&self) -> rich::Text {
-        rich::Text {
-            text: self.text.clone(),
-            formatting: rich::FormatList {
-                seq: self.formatting.clone(),
-            },
-        }
+    /// Clone the formatted text
+    pub fn clone_text(&self) -> FormattedString {
+        let text = self.text.clone();
+        let fmt = self.fmt.clone();
+        FormattedString { text, fmt }
     }
 
-    /// Clone the raw string
+    /// Extract text object, discarding the rest
+    #[inline]
+    pub fn take_text(self) -> FormattedString {
+        let text = self.text;
+        let fmt = self.fmt;
+        FormattedString { text, fmt }
+    }
+
+    /// Clone the unformatted text as a `String`
     pub fn clone_string(&self) -> String {
         self.text.clone()
     }
@@ -219,7 +233,7 @@ impl Text {
     /// This is the contiguous raw text without formatting information.
     #[inline]
     pub fn text(&self) -> &str {
-        &self.text
+        self.text.as_str()
     }
 
     /// Insert a char at the given position
@@ -232,17 +246,9 @@ impl Text {
     ///
     /// Currently this is not significantly more efficent than
     /// [`Text::set_text`]. This may change in the future (TODO).
-    pub fn insert_char(&mut self, index: usize, c: char) -> Prepare {
+    pub fn insert_char(&mut self, index: usize, c: char) -> PrepareAction {
         self.text.insert(index, c);
-
-        let index = index as u32;
-        let len = c.len_utf8() as u32;
-        for spec in &mut self.formatting {
-            if spec.start >= index {
-                spec.start += len;
-            }
-        }
-
+        self.fmt.insert_range(index as u32, c.len_utf8() as u32);
         self.action = Action::Runs;
         true.into()
     }
@@ -259,52 +265,38 @@ impl Text {
     /// Currently this is not significantly more efficent than
     /// [`Text::set_text`]. This may change in the future (TODO).
     #[inline]
-    pub fn replace_range<R>(&mut self, range: R, replace_with: &str) -> Prepare
+    pub fn replace_range<R>(&mut self, range: R, replace_with: &str) -> PrepareAction
     where
         R: std::ops::RangeBounds<usize> + std::iter::ExactSizeIterator + Clone,
     {
-        self.text.replace_range(range.clone(), replace_with);
-
-        use std::ops::Bound;
         let start = match range.start_bound() {
-            Bound::Included(b) => *b as u32,
-            Bound::Excluded(_) => unreachable!(),
+            Bound::Included(x) => *x,
+            Bound::Excluded(x) => *x + 1,
             Bound::Unbounded => 0,
         };
-        let src_len = range.len() as u32;
-        let dst_len = replace_with.len() as u32;
-        let old_end = start + src_len;
-        let new_end = start + dst_len;
-
-        self.fix_formatting_replace(start, old_end, new_end);
+        let end = match range.end_bound() {
+            Bound::Included(x) => *x + 1,
+            Bound::Excluded(x) => *x,
+            Bound::Unbounded => usize::MAX,
+        };
+        self.text.replace_range(start..end, replace_with);
+        self.fmt.remove_range(start as u32, end as u32);
+        self.fmt
+            .insert_range(start as u32, replace_with.len() as u32);
+        self.action = Action::Runs;
         true.into()
     }
 
-    fn fix_formatting_replace(&mut self, start: u32, old_end: u32, new_end: u32) {
-        let diff = new_end.wrapping_sub(old_end);
-        let mut last = None;
-        let mut i = 0;
-        while i < self.formatting.len() {
-            let spec = &mut self.formatting[i];
-            if spec.start >= start {
-                if spec.start < old_end {
-                    spec.start = new_end;
-                } else {
-                    // wrapping_add effectively allows subtraction despite unsigned type
-                    spec.start = spec.start.wrapping_add(diff);
-                }
-                if let Some((index, start)) = last {
-                    if start == spec.start {
-                        self.formatting.remove(index as usize);
-                        continue;
-                    }
-                }
-                last = Some((i, spec.start));
-            }
-            i += 1;
-        }
-
+    /// Set text to a raw `String`
+    ///
+    /// One must call [`Text::prepare`] afterwards.
+    ///
+    /// All existing text formatting is removed.
+    pub fn set_string(&mut self, string: String) -> PrepareAction {
+        self.text = string;
+        self.fmt.remove_range(0, u32::MAX);
         self.action = Action::Runs;
+        true.into()
     }
 
     /// Swap the raw text with a `String`
@@ -312,27 +304,27 @@ impl Text {
     /// This may be used to edit the raw text instead of replacing it.
     /// One must call [`Text::prepare`] afterwards.
     ///
-    /// Warning: formatting information is not adjusted, even if existing
-    /// formatting does not fit the new text.
+    /// All existing text formatting is removed.
     ///
     /// Currently this is not significantly more efficent than
     /// [`Text::set_text`]. This may change in the future (TODO).
-    pub fn swap_string(&mut self, string: &mut String) -> Prepare {
+    pub fn swap_string(&mut self, string: &mut String) -> PrepareAction {
         std::mem::swap(&mut self.text, string);
+        self.fmt.remove_range(0, u32::MAX);
         self.action = Action::Runs;
         true.into()
     }
 
     /// Set the text
-    pub fn set_text(&mut self, text: rich::Text) -> Prepare {
-        /* TODO(opt): no change if both text and formatting is unchanged
-        if self.text == text.text {
+    pub fn set_text(&mut self, text: FormattedString) -> PrepareAction {
+        /* TODO: enable if we have a way of testing equality (a hash?)
+        if self.text == text {
             return self.action.into(); // no change
         }
-        */
+         */
 
         self.text = text.text;
-        self.formatting = text.formatting.seq;
+        self.fmt = text.fmt;
         self.action = Action::Runs;
         true.into()
     }
@@ -378,7 +370,7 @@ impl Text {
             self.glyph_runs = self
                 .runs
                 .iter()
-                .map(|run| shaper::shape(&self.text, &run))
+                .map(|run| shaper::shape(&self.text.as_str(), &run))
                 .collect();
         }
 
@@ -410,7 +402,7 @@ impl Text {
         mut f: F,
     ) -> Vec<G> {
         assert!(self.action.is_none(), "kas-text::prepared::Text: not ready");
-        let text = &self.text;
+        let text = self.text.as_str();
 
         let mut glyphs = Vec::with_capacity(self.num_glyphs as usize);
         // self.wrapped_runs is in logical order

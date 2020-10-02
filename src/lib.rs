@@ -5,7 +5,7 @@
 
 //! KAS Rich-Text library
 
-pub use ab_glyph::PxScale;
+#![cfg_attr(doc_cfg, feature(doc_cfg))]
 
 mod env;
 pub use env::*;
@@ -14,8 +14,38 @@ mod data;
 pub use data::*;
 
 pub mod fonts;
-pub mod prepared;
-pub mod rich;
+pub mod parser;
+
+mod prepared;
+pub use prepared::*;
 
 pub(crate) mod shaper;
 pub use shaper::Glyph;
+
+/// A string with formatting information
+///
+/// This type supports construction from `String` and `&str` (no formatting).
+/// It may also be constructed from any [`parser::Parser`].
+/// ```
+/// # use kas_text::FormattedString;
+/// let s1 = FormattedString::from("plain text");
+/// // if `markdown` feature is enabled:
+/// // let s2 = FormattedString::from(Markdown::new("*Markdown* text"));
+/// ```
+#[derive(Clone, Debug)]
+pub struct FormattedString {
+    pub(crate) text: String,
+    pub(crate) fmt: Box<dyn parser::FormatData>,
+}
+
+impl FormattedString {
+    /// Read contiguous unformatted text
+    pub fn as_str(&self) -> &str {
+        &self.text
+    }
+
+    /// Extract unformatting `String`
+    pub fn take_string(self) -> String {
+        self.text
+    }
+}

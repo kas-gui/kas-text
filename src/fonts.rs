@@ -14,13 +14,14 @@
 //! any operation requiring font metrics:
 //!
 //! ```
-//! if let Err(e) = kas_text::fonts().load_default() {
+//! if let Err(e) = kas_text::fonts::fonts().load_default() {
 //!     panic!("Error loading font: {}", e);
 //! }
 //! // from now on, kas_text::fonts::FontId::default() identifies the default font
 //! ```
 
-use ab_glyph::{FontRef, InvalidFont, PxScale, PxScaleFont};
+pub use ab_glyph::PxScale;
+use ab_glyph::{FontRef, InvalidFont, PxScaleFont};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::RwLock;
@@ -122,6 +123,24 @@ impl<'a> FontStore<'a> {
     }
 }
 
+#[derive(Default)]
+struct FontsData {
+    fonts: Vec<Box<FontStore<'static>>>,
+    // These are vec-maps. Why? Because length should be short.
+    sel_hash: Vec<(u64, FontId)>,
+    path_hash: Vec<(u64, FontId)>,
+}
+
+impl FontsData {
+    fn push(&mut self, font: Box<FontStore<'static>>, sel_hash: u64, path_hash: u64) -> FontId {
+        let id = FontId(self.fonts.len() as u32);
+        self.fonts.push(font);
+        self.sel_hash.push((sel_hash, id));
+        self.path_hash.push((path_hash, id));
+        id
+    }
+}
+
 /// Library of loaded fonts
 // Note: std::pin::Pin does not help us here: Unpin is implemented for both u8
 // and FontRef, and we never give the user a `&mut FontLibrary` anyway.
@@ -131,7 +150,7 @@ pub struct FontLibrary {
     data: RwLock<HashMap<PathBuf, Box<[u8]>>>,
     // Fonts defined over the above data (see safety note).
     // Additional safety: boxed so that instances do not move
-    fonts: RwLock<(Vec<Box<FontStore<'static>>>, Vec<(u64, FontId)>)>,
+    fonts: RwLock<FontsData>,
 }
 
 // public API
@@ -139,8 +158,12 @@ impl FontLibrary {
     /// Get a font from its identifier
     pub fn get(&self, id: FontId) -> Font {
         let fonts = self.fonts.read().unwrap();
-        assert!(id.get() < fonts.0.len(), "FontLibrary: invalid {:?}!", id);
-        let font: &FontRef<'static> = &fonts.0[id.get()].ab_glyph;
+        assert!(
+            id.get() < fonts.fonts.len(),
+            "FontLibrary: invalid {:?}!",
+            id
+        );
+        let font: &FontRef<'static> = &fonts.fonts[id.get()].ab_glyph;
         // Safety: elements of self.fonts are never dropped or modified
         let font = unsafe { extend_lifetime(font) };
         Font { font }
@@ -152,19 +175,39 @@ impl FontLibrary {
     #[cfg(feature = "harfbuzz_rs")]
     pub fn get_harfbuzz(&self, id: FontId) -> harfbuzz_rs::Owned<harfbuzz_rs::Font<'static>> {
         let fonts = self.fonts.read().unwrap();
-        assert!(id.get() < fonts.0.len(), "FontLibrary: invalid {:?}!", id);
-        harfbuzz_rs::Font::new(fonts.0[id.get()].harfbuzz.clone())
+        assert!(
+            id.get() < fonts.fonts.len(),
+            "FontLibrary: invalid {:?}!",
+            id
+        );
+        harfbuzz_rs::Font::new(fonts.fonts[id.get()].harfbuzz.clone())
     }
 
-    /// Get a list of all fonts
+    /// Get the number of loaded fonts
     ///
-    /// E.g. `glyph_brush` needs this
-    pub fn ab_glyph_fonts_vec(&self) -> Vec<&'static FontRef<'static>> {
+    /// [`FontId`] values are assigned consecutively and fonts are never
+    /// un-loaded, so to check all fonts are loaded one only needs to test
+    /// whether this value is larger than the number of fonts loaded by the
+    /// renderer.
+    pub fn num_fonts(&self) -> usize {
+        let fonts = self.fonts.read().unwrap();
+        fonts.fonts.len()
+    }
+
+    /// Get a list of all fonts from `start`
+    ///
+    /// Uses the half-open range `start..` (so start=0 returns all fonts).
+    ///
+    /// Note that fonts may be loaded any time a new [`FormattedText`] is set
+    /// and then [`Text::prepare`] is called since fonts are loaded on demand.
+    /// Fonts are never unloaded, hence if fonts `0..n1` have been loaded by a
+    /// renderer such as `glyph_brush` and now [`FontLibrary::num_fonts`] is
+    /// `n2 > n1`, then only `ab_glyph_fonts_from(n1)` need be loaded.
+    pub fn ab_glyph_fonts_from(&self, start: usize) -> Vec<&'static FontRef<'static>> {
         let fonts = self.fonts.read().unwrap();
         // Safety: each font is boxed so that its address never changes and
         // fonts are never modified or freed before program exit.
-        fonts
-            .0
+        fonts.fonts[start..]
             .iter()
             .map(|font| unsafe { extend_lifetime(&font.ab_glyph) })
             .collect()
@@ -178,7 +221,7 @@ impl FontLibrary {
     /// properties (such as text dimensions).
     #[inline]
     pub fn load_default(&self) -> Result<FontId, Box<dyn std::error::Error>> {
-        let id = self.load_font(FontSelector::default())?;
+        let id = self.load_font(&FontSelector::default())?;
         if id != FontId::default() {
             return Err(Box::new(FontError::NotDefault));
         }
@@ -186,10 +229,21 @@ impl FontLibrary {
     }
 
     /// Load a font
-    #[inline]
-    pub fn load_font(&self, selector: FontSelector) -> Result<FontId, Box<dyn std::error::Error>> {
+    ///
+    /// This method uses two levels of caching to resolve existing
+    /// fonts, thus is suitable for repeated usage.
+    pub fn load_font(&self, selector: &FontSelector) -> Result<FontId, Box<dyn std::error::Error>> {
+        let sel_hash = selector.hash();
+        let fonts = self.fonts.read().unwrap();
+        for (h, id) in &fonts.sel_hash {
+            if *h == sel_hash {
+                return Ok(*id);
+            }
+        }
+        drop(fonts);
+
         let (path, index) = selector.select()?;
-        self.load_pathbuf(path, index)
+        self.load_pathbuf(path, index, sel_hash)
     }
 
     /// Load a font by path
@@ -199,17 +253,21 @@ impl FontLibrary {
     ///
     /// The `index` is used to select fonts from a font-collection. If the font
     /// is not a collection, use `0`.
+    ///
+    /// `sel_hash` is the hash of the [`FontSelector`] used; if this is not
+    /// used, pass 0.
     pub fn load_pathbuf(
         &self,
         path: PathBuf,
         index: u32,
+        sel_hash: u64,
     ) -> Result<FontId, Box<dyn std::error::Error>> {
-        let hash = self.hash_path(&path, index);
+        let path_hash = self.hash_path(&path, index);
 
         // 1st lock: early exit if we already have this font
         let fonts = self.fonts.read().unwrap();
-        for (h, id) in &fonts.1 {
-            if *h == hash {
+        for (h, id) in &fonts.path_hash {
+            if *h == path_hash {
                 return Ok(*id);
             }
         }
@@ -232,9 +290,7 @@ impl FontLibrary {
         // 3rd lock: insert into font list
         let store = FontStore::new(slice, index)?;
         let mut fonts = self.fonts.write().unwrap();
-        let id = FontId(fonts.0.len() as u32);
-        fonts.0.push(Box::new(store));
-        fonts.1.push((hash, id));
+        let id = fonts.push(Box::new(store), sel_hash, path_hash);
 
         Ok(id)
     }
@@ -250,7 +306,7 @@ impl FontLibrary {
     }
 }
 
-unsafe fn extend_lifetime<'b, T: ?Sized>(r: &'b T) -> &'static T {
+pub(crate) unsafe fn extend_lifetime<'b, T: ?Sized>(r: &'b T) -> &'static T {
     std::mem::transmute::<&'b T, &'static T>(r)
 }
 

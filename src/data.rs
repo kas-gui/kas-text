@@ -74,47 +74,6 @@ impl From<ab_glyph::Point> for Vec2 {
     }
 }
 
-/// Font scale
-///
-/// This is approximately the pixel-height of a line of text or double the
-/// "pt" size. Usually you want to use the same scale for both components,
-/// e.g. `FontScale::from(18.0)`.
-#[derive(Copy, Clone, Debug, PartialEq)]
-pub struct FontScale {
-    pub x: f32,
-    pub y: f32,
-}
-
-impl Default for FontScale {
-    fn default() -> Self {
-        FontScale::from(1.0)
-    }
-}
-
-impl From<f32> for FontScale {
-    fn from(scale: f32) -> Self {
-        FontScale { x: scale, y: scale }
-    }
-}
-
-impl From<FontScale> for ab_glyph::PxScale {
-    fn from(FontScale { x, y }: FontScale) -> ab_glyph::PxScale {
-        ab_glyph::PxScale { x, y }
-    }
-}
-
-impl std::ops::Mul<f32> for FontScale {
-    type Output = Self;
-
-    #[inline]
-    fn mul(self, f: f32) -> Self::Output {
-        FontScale {
-            x: self.x * f,
-            y: self.y * f,
-        }
-    }
-}
-
 /// Range type
 ///
 /// Essentially this is just a `std::ops::Range<u32>`, but with convenient

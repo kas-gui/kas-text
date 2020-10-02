@@ -34,6 +34,16 @@ impl FontSelector {
         FontSelector::default()
     }
 
+    /// Set self to `rhs`
+    ///
+    /// This may save a reallocation over direct assignment.
+    #[inline]
+    pub fn assign(&mut self, rhs: &Self) {
+        self.names.clear();
+        self.names.extend_from_slice(&rhs.names);
+        self.properties = rhs.properties;
+    }
+
     /// Set family name(s)
     ///
     /// If multiple names are passed, the first to successfully resolve a font
@@ -62,12 +72,31 @@ impl FontSelector {
         self.properties.stretch = properties::Stretch(stretch.0);
     }
 
+    /// Hash self
+    ///
+    /// This struct does not implement `Hash` since it doesn't precisely match
+    /// the expected semantics: values may compare equal despite having
+    /// different hashes. For our purposes this is acceptable.
+    pub fn hash(&self) -> u64 {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        let mut hasher = DefaultHasher::new();
+        self.names.hash(&mut hasher);
+        (self.properties.style as u32).hash(&mut hasher);
+        // Using to_bits() implies that NaN payloads affect results
+        // (perhaps surprising but not really of consequence to us).
+        self.properties.weight.0.to_bits().hash(&mut hasher);
+        self.properties.stretch.0.to_bits().hash(&mut hasher);
+        hasher.finish()
+    }
+
     /// Resolve a path and collection index from the given criteria
-    pub(crate) fn select(self) -> Result<(PathBuf, u32), SelectionError> {
+    pub(crate) fn select(&self) -> Result<(PathBuf, u32), SelectionError> {
         let mut families = &[fkFamilyName::SansSerif][..];
         let names: Vec<fkFamilyName>;
         if self.names.len() > 0 {
-            names = self.names.into_iter().map(|n| n.into()).collect();
+            names = self.names.iter().map(|n| n.clone().into()).collect();
             families = &names[..];
         }
         let properties = self.properties;
@@ -86,7 +115,7 @@ impl FontSelector {
 ///
 /// These descriptions are taken from
 /// [CSS Fonts Level 3 § 3.1](https://drafts.csswg.org/css-fonts-3/#font-family-prop).
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Hash, PartialEq)]
 pub enum FamilyName {
     /// A specific font family, specified by name: e.g. "Arial", "times".
     Title(String),
