@@ -183,15 +183,31 @@ impl FontLibrary {
         harfbuzz_rs::Font::new(fonts.fonts[id.get()].harfbuzz.clone())
     }
 
-    /// Get a list of all fonts
+    /// Get the number of loaded fonts
     ///
-    /// E.g. `glyph_brush` needs this
-    pub fn ab_glyph_fonts_vec(&self) -> Vec<&'static FontRef<'static>> {
+    /// [`FontId`] values are assigned consecutively and fonts are never
+    /// un-loaded, so to check all fonts are loaded one only needs to test
+    /// whether this value is larger than the number of fonts loaded by the
+    /// renderer.
+    pub fn num_fonts(&self) -> usize {
+        let fonts = self.fonts.read().unwrap();
+        fonts.fonts.len()
+    }
+
+    /// Get a list of all fonts from `start`
+    ///
+    /// Uses the half-open range `start..` (so start=0 returns all fonts).
+    ///
+    /// Note that fonts may be loaded any time a new [`FormattedText`] is set
+    /// and then [`Text::prepare`] is called since fonts are loaded on demand.
+    /// Fonts are never unloaded, hence if fonts `0..n1` have been loaded by a
+    /// renderer such as `glyph_brush` and now [`FontLibrary::num_fonts`] is
+    /// `n2 > n1`, then only `ab_glyph_fonts_from(n1)` need be loaded.
+    pub fn ab_glyph_fonts_from(&self, start: usize) -> Vec<&'static FontRef<'static>> {
         let fonts = self.fonts.read().unwrap();
         // Safety: each font is boxed so that its address never changes and
         // fonts are never modified or freed before program exit.
-        fonts
-            .fonts
+        fonts.fonts[start..]
             .iter()
             .map(|font| unsafe { extend_lifetime(&font.ab_glyph) })
             .collect()
