@@ -5,7 +5,6 @@
 
 //! Text prepared for display
 
-use ab_glyph::PxScale;
 use smallvec::SmallVec;
 use std::ops::{BitOr, BitOrAssign, Bound};
 
@@ -397,7 +396,7 @@ impl Text {
     /// method, it is still computationally-intensive enough that it may be
     /// worth caching the result for reuse. Since the type is defined by the
     /// function `f`, caching is left to the caller.
-    pub fn positioned_glyphs<G, F: FnMut(&str, FontId, PxScale, Glyph) -> G>(
+    pub fn positioned_glyphs<G, F: FnMut(&str, FontId, f32, f32, Glyph) -> G>(
         &self,
         mut f: F,
     ) -> Vec<G> {
@@ -409,13 +408,14 @@ impl Text {
         for run_part in self.wrapped_runs.iter().cloned() {
             let run = &self.glyph_runs[run_part.glyph_run as usize];
             let font_id = run.font_id;
-            let font_scale = run.font_scale;
+            let dpu = run.dpu.0;
+            let height = run.height;
 
             // Pass glyphs in logical order: this allows more optimal evaluation of effects.
             if run.level.is_ltr() {
                 for mut glyph in run.glyphs[run_part.glyph_range.to_std()].iter().cloned() {
                     glyph.position = glyph.position + run_part.offset;
-                    glyphs.push(f(text, font_id, font_scale.into(), glyph));
+                    glyphs.push(f(text, font_id, dpu, height, glyph));
                 }
             } else {
                 for mut glyph in run.glyphs[run_part.glyph_range.to_std()]
@@ -424,7 +424,7 @@ impl Text {
                     .cloned()
                 {
                     glyph.position = glyph.position + run_part.offset;
-                    glyphs.push(f(text, font_id, font_scale.into(), glyph));
+                    glyphs.push(f(text, font_id, dpu, height, glyph));
                 }
             }
         }

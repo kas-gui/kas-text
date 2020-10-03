@@ -5,6 +5,19 @@
 
 //! KAS Rich-Text library — simple data types
 
+/// Scale factor: pixels per font unit
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct DPU(pub(crate) f32);
+
+impl DPU {
+    pub(crate) fn i16_to_px(self, x: i16) -> f32 {
+        f32::from(x) * self.0
+    }
+    pub(crate) fn u16_to_px(self, x: u16) -> f32 {
+        f32::from(x) * self.0
+    }
+}
+
 /// 2D size over `f32`
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Vec2(pub f32, pub f32);
@@ -56,21 +69,6 @@ impl std::ops::Sub for Vec2 {
 impl From<Vec2> for (f32, f32) {
     fn from(size: Vec2) -> Self {
         (size.0, size.1)
-    }
-}
-
-impl From<Vec2> for ab_glyph::Point {
-    fn from(size: Vec2) -> ab_glyph::Point {
-        ab_glyph::Point {
-            x: size.0,
-            y: size.1,
-        }
-    }
-}
-
-impl From<ab_glyph::Point> for Vec2 {
-    fn from(p: ab_glyph::Point) -> Vec2 {
-        Vec2(p.x, p.y)
     }
 }
 

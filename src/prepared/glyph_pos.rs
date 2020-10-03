@@ -7,7 +7,6 @@
 
 use super::Text;
 use crate::{fonts::fonts, Vec2};
-use ab_glyph::ScaleFont;
 
 /// Used to return the position of a glyph with associated metrics
 #[derive(Copy, Clone, Debug, Default, PartialEq)]
@@ -137,7 +136,7 @@ impl Text {
             }
 
             let glyph_run = &self.glyph_runs[run_part.glyph_run as usize];
-            let sf = fonts().get(glyph_run.font_id).scaled(glyph_run.font_scale);
+            let sf = fonts().get(glyph_run.font_id).scale_by_dpu(glyph_run.dpu);
 
             // If index is at the end of a run, we potentially get two matches.
             if index == run_part.text_end as usize {
@@ -337,7 +336,7 @@ impl Text {
             }
 
             let glyph_run = &self.glyph_runs[run_part.glyph_run as usize];
-            let sf = fonts().get(glyph_run.font_id).scaled(glyph_run.font_scale);
+            let sf = fonts().get(glyph_run.font_id).scale_by_dpu(glyph_run.dpu);
 
             // else: range.start < run_part.text_end as usize
             if glyph_run.level.is_ltr() {
@@ -365,7 +364,7 @@ impl Text {
         'a: while i < run_range.end {
             let run_part = &self.wrapped_runs[i];
             let glyph_run = &self.glyph_runs[run_part.glyph_run as usize];
-            let sf = fonts().get(glyph_run.font_id).scaled(glyph_run.font_scale);
+            let sf = fonts().get(glyph_run.font_id).scale_by_dpu(glyph_run.dpu);
 
             if !first {
                 a = if glyph_run.level.is_ltr() {

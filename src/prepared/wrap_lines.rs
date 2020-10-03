@@ -9,7 +9,6 @@ use super::Text;
 use crate::fonts::{fonts, FontLibrary};
 use crate::shaper::GlyphRun;
 use crate::{Align, Environment, Range, Vec2};
-use ab_glyph::ScaleFont;
 use smallvec::SmallVec;
 use unicode_bidi::Level;
 
@@ -194,7 +193,7 @@ impl LineAdder {
             last_run = part.run;
             let run = &runs[last_run as usize];
 
-            let scale_font = fonts.get(run.font_id).scaled(run.font_scale);
+            let scale_font = fonts.get(run.font_id).scale_by_dpu(run.dpu);
             ascent = ascent.max(scale_font.ascent());
             descent = descent.min(scale_font.descent());
             line_gap = line_gap.max(scale_font.line_gap());

@@ -17,11 +17,15 @@
 //!
 //! This module *does not* perform line-breaking, wrapping or text reversal.
 
-use crate::fonts::{fonts, FontId};
-use crate::{prepared, Range, Vec2};
-use ab_glyph::{GlyphId, ScaleFont};
+use crate::fonts::{fonts, FontId, ScaledFaceRef};
+use crate::{prepared, Range, Vec2, DPU};
 use smallvec::SmallVec;
 use unicode_bidi::Level;
+
+/// A type-safe wrapper for glyph ID.
+#[repr(transparent)]
+#[derive(Clone, Copy, Ord, PartialOrd, Eq, PartialEq, Default, Debug)]
+pub struct GlyphId(pub u16);
 
 /// A positioned glyph
 #[derive(Clone, Copy, Debug)]
@@ -35,7 +39,7 @@ pub struct Glyph {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct GlyphBreak {
+pub(crate) struct GlyphBreak {
     /// Position in sequence of glyphs
     pub pos: u32,
     /// End position of previous "word" excluding space
@@ -54,14 +58,16 @@ pub struct GlyphBreak {
 /// of the *logical* end of the run, excluding white-space (for right-to-left
 /// text, this is the end nearer the origin than `caret`).
 #[derive(Clone, Debug)]
-pub struct GlyphRun {
+pub(crate) struct GlyphRun {
     /// Sequence of all glyphs, in left-to-right order
     pub glyphs: Vec<Glyph>,
     /// Sequence of all break points, in left-to-right order
     pub breaks: SmallVec<[GlyphBreak; 2]>,
 
     pub font_id: FontId,
-    pub font_scale: f32,
+    pub dpu: DPU,
+    /// Text height in pixels (stored for compat with glyph_brush downstream)
+    pub height: f32,
 
     /// End position, excluding whitespace
     ///
@@ -195,15 +201,16 @@ pub(crate) fn shape(text: &str, run: &prepared::Run) -> GlyphRun {
     let mut no_space_end = 0.0;
     let mut caret = 0.0;
 
-    let font = fonts().get(run.font_id);
-    let font_scale = font.font_scale(run.dpem);
+    let face = fonts().get(run.font_id);
+    let dpu = face.dpu(run.dpem);
+    let sf = face.scale_by_dpu(dpu);
 
     if run.dpem >= 0.0 {
         #[cfg(feature = "harfbuzz_rs")]
         let r = shape_harfbuzz(text, run);
 
         #[cfg(not(feature = "harfbuzz_rs"))]
-        let r = shape_simple(font, font_scale, text, run);
+        let r = shape_simple(sf, text, run);
 
         glyphs = r.0;
         breaks = r.1;
@@ -216,9 +223,7 @@ pub(crate) fn shape(text: &str, run: &prepared::Run) -> GlyphRun {
         let mut break_i = breaks.len().wrapping_sub(1);
         let mut start_no_space = caret;
         let mut last_id = None;
-        let scale_font = font.scaled(font_scale);
-        let side_bearing =
-            |id: Option<GlyphId>| id.map(|id| scale_font.h_side_bearing(id)).unwrap_or(0.0);
+        let side_bearing = |id: Option<GlyphId>| id.map(|id| sf.h_side_bearing(id)).unwrap_or(0.0);
         for (pos, glyph) in glyphs.iter().enumerate().rev() {
             if break_i < breaks.len() && breaks[break_i].pos as usize == pos {
                 assert!(pos < glyphs.len());
@@ -243,7 +248,8 @@ pub(crate) fn shape(text: &str, run: &prepared::Run) -> GlyphRun {
         glyphs,
         breaks,
         font_id: run.font_id,
-        font_scale,
+        dpu,
+        height: sf.height(),
         no_space_end,
         caret,
         range: run.range,
@@ -343,15 +349,11 @@ fn shape_harfbuzz(
 // Simple implementation (kerning but no shaping)
 #[cfg(not(feature = "harfbuzz_rs"))]
 fn shape_simple(
-    font: crate::fonts::Font,
-    font_scale: f32,
+    sf: ScaledFaceRef,
     text: &str,
     run: &prepared::Run,
 ) -> (Vec<Glyph>, SmallVec<[GlyphBreak; 2]>, f32, f32) {
-    use ab_glyph::Font;
     use unicode_bidi_mirroring::get_mirrored;
-
-    let scale_font = font.scaled(font_scale);
 
     let slice = &text[run.range];
     let idx_offset = run.range.start;
@@ -359,7 +361,7 @@ fn shape_simple(
 
     let mut caret = 0.0;
     let mut no_space_end = caret;
-    let mut prev_glyph_id = None;
+    let mut prev_glyph_id: Option<GlyphId> = None;
 
     let mut breaks_iter = run.breaks.iter();
     let mut get_next_break = || match rtl {
@@ -384,7 +386,7 @@ fn shape_simple(
                 c = m;
             }
         }
-        let id = scale_font.font().glyph_id(c);
+        let id = sf.glyph_id(c);
 
         if index == next_break {
             let pos = glyphs.len() as u32;
@@ -394,7 +396,14 @@ fn shape_simple(
         }
 
         if let Some(prev) = prev_glyph_id {
-            caret += scale_font.kern(prev, id);
+            if let Some(adv) = sf
+                .face()
+                .kerning_subtables()
+                .filter(|st| st.is_horizontal() && !st.is_variable())
+                .find_map(|st| st.glyphs_kerning(prev.into(), id.into()))
+            {
+                caret += sf.dpu().i16_to_px(adv);
+            }
         }
         prev_glyph_id = Some(id);
 
@@ -406,7 +415,7 @@ fn shape_simple(
         };
         glyphs.push(glyph);
 
-        caret += scale_font.h_advance(id);
+        caret += sf.h_advance(id);
         if !c.is_whitespace() {
             no_space_end = caret;
         }

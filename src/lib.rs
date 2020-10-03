@@ -20,7 +20,7 @@ mod prepared;
 pub use prepared::*;
 
 pub(crate) mod shaper;
-pub use shaper::Glyph;
+pub use shaper::{Glyph, GlyphId};
 
 /// A string with formatting information
 ///

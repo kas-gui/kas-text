@@ -20,55 +20,53 @@
 //! // from now on, kas_text::fonts::FontId::default() identifies the default font
 //! ```
 
-pub use ab_glyph::PxScale;
-use ab_glyph::{FontRef, InvalidFont, PxScaleFont};
+use crate::{GlyphId, DPU};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::RwLock;
+use std::sync::{RwLock, RwLockReadGuard};
 use thiserror::Error;
+pub(crate) use ttf_parser::Face;
 
 mod selector;
 pub use selector::*;
 
+impl From<GlyphId> for ttf_parser::GlyphId {
+    fn from(id: GlyphId) -> Self {
+        ttf_parser::GlyphId(id.0)
+    }
+}
+
 /// Font loading errors
 #[derive(Error, Debug)]
 enum FontError {
-    #[error("invalid font data")]
-    Invalid,
+    #[error("font load error")]
+    TtfParser(#[from] ttf_parser::FaceParsingError),
     #[error("FontLibrary::load_default is not first font load")]
     NotDefault,
 }
 
-impl From<InvalidFont> for FontError {
-    fn from(_: InvalidFont) -> Self {
-        FontError::Invalid
-    }
-}
-
-/// Font identifier
+/// Font face identifier
+///
+/// Identifies a loaded font face within the [`FontLibrary`] by index.
 ///
 /// This type may be default-constructed to use the default font (whichever is
 /// loaded to the [`FontLibrary`] first). If no font is loaded, attempting to
 /// access a font with a (default-constructed) `FontId` will cause a panic in
 /// the [`FontLibrary`] method used.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
-pub struct FontId(u32);
-
+pub struct FontId(pub u32);
 impl FontId {
     pub fn get(self) -> usize {
         self.0 as usize
     }
 }
 
-/// Handle to a loaded font
+/// Handle to a loaded font face
 #[derive(Copy, Clone, Debug)]
-pub struct Font {
-    // Note: FontRef itself is too large to clone cheaply, so use a reference to it
-    font: &'static FontRef<'static>,
-}
+pub struct FaceRef(&'static Face<'static>);
 
-impl Font {
-    /// Get a scale
+impl FaceRef {
+    /// Convert `dpem` to `dpu`
     ///
     /// Output: a font-specific scale.
     ///
@@ -81,42 +79,107 @@ impl Font {
     ///   = pt_size × scale_factor × (96 / 72)
     /// ```
     #[inline]
-    pub(crate) fn font_scale(self, dpem: f32) -> f32 {
-        use ab_glyph::Font;
-        let upem = self.font.units_per_em().unwrap();
-        dpem / upem * self.font.height_unscaled()
+    pub(crate) fn dpu(self, dpem: f32) -> DPU {
+        DPU(dpem / f32::from(self.0.units_per_em().unwrap()))
     }
 
-    /// Get a scaled font
+    /// Get a scaled reference
     ///
-    /// Units: the same as [`PxScale] — pixels per line height.
+    /// Units: `dpem` is dots (pixels) per Em.
     #[inline]
-    pub(crate) fn scaled(self, scale: f32) -> PxScaleFont<&'static FontRef<'static>> {
-        use ab_glyph::Font;
-        self.font.into_scaled(PxScale::from(scale))
+    pub(crate) fn scale_by_dpem(self, dpem: f32) -> ScaledFaceRef {
+        ScaledFaceRef(self.0, self.dpu(dpem))
     }
 
-    /// Get the height of a line of text in pixels
+    /// Get a scaled reference
     ///
-    /// Input: `dpem` is pixels/em (see [`Font::font_scale`]).
+    /// Units: `dpu` is dots (pixels) per font-unit.
     #[inline]
-    pub fn line_height(self, dpem: f32) -> f32 {
-        // Due to the way ab-glyph works, this is font_scale
-        // (We reserve the right to change this later, hence a separate method.)
-        self.font_scale(dpem)
+    pub(crate) fn scale_by_dpu(self, dpu: DPU) -> ScaledFaceRef {
+        ScaledFaceRef(self.0, dpu)
+    }
+
+    /// Get the height of horizontal text in pixels
+    ///
+    /// Units: `dpu` is dots (pixels) per font-unit.
+    #[inline]
+    pub fn height(&self, dpem: f32) -> f32 {
+        self.scale_by_dpem(dpem).height()
     }
 }
 
-struct FontStore<'a> {
-    ab_glyph: FontRef<'a>,
+/// Handle to a loaded font face
+#[derive(Copy, Clone, Debug)]
+pub(crate) struct ScaledFaceRef(&'static Face<'static>, DPU);
+impl ScaledFaceRef {
+    /// Unscaled face
+    #[inline]
+    pub fn face(&self) -> &Face<'static> {
+        self.0
+    }
+
+    #[inline]
+    pub fn dpu(&self) -> DPU {
+        self.1
+    }
+
+    #[inline]
+    pub(crate) fn glyph_id(&self, c: char) -> GlyphId {
+        // GlyphId 0 is required to be a special glyph representing a missing
+        // character (see cmap table / TrueType specification).
+        GlyphId(self.0.glyph_index(c).map(|id| id.0).unwrap_or(0))
+    }
+
+    #[inline]
+    pub fn h_advance(&self, id: GlyphId) -> f32 {
+        let x = self.0.glyph_hor_advance(id.into()).unwrap();
+        self.1.u16_to_px(x)
+    }
+
+    #[inline]
+    pub fn h_side_bearing(&self, id: GlyphId) -> f32 {
+        let x = self.0.glyph_hor_side_bearing(id.into()).unwrap();
+        self.1.i16_to_px(x)
+    }
+
+    #[inline]
+    pub fn ascent(&self) -> f32 {
+        self.1.i16_to_px(self.0.ascender())
+    }
+
+    #[inline]
+    pub fn descent(&self) -> f32 {
+        self.1.i16_to_px(self.0.descender())
+    }
+
+    #[inline]
+    pub fn line_gap(&self) -> f32 {
+        self.1.i16_to_px(self.0.line_gap())
+    }
+
+    #[inline]
+    pub fn height(&self) -> f32 {
+        self.1.i16_to_px(self.0.height())
+    }
+}
+
+struct FaceStore<'a> {
+    path: PathBuf,
+    index: u32,
+    face: Face<'a>,
     #[cfg(feature = "harfbuzz_rs")]
     harfbuzz: harfbuzz_rs::Shared<harfbuzz_rs::Face<'a>>,
 }
 
-impl<'a> FontStore<'a> {
-    fn new(data: &'a [u8], index: u32) -> Result<Self, FontError> {
-        Ok(FontStore {
-            ab_glyph: FontRef::try_from_slice_and_index(data, index)?,
+impl<'a> FaceStore<'a> {
+    /// Construct, given a file path, a reference to the loaded data and the face index
+    ///
+    /// The `path` is to be stored; its contents are already loaded in `data`.
+    fn new(path: PathBuf, data: &'a [u8], index: u32) -> Result<Self, FontError> {
+        Ok(FaceStore {
+            path,
+            index,
+            face: Face::from_slice(data, index)?,
             #[cfg(feature = "harfbuzz_rs")]
             harfbuzz: harfbuzz_rs::Face::from_bytes(data, index).into(),
         })
@@ -125,14 +188,14 @@ impl<'a> FontStore<'a> {
 
 #[derive(Default)]
 struct FontsData {
-    fonts: Vec<Box<FontStore<'static>>>,
+    fonts: Vec<Box<FaceStore<'static>>>,
     // These are vec-maps. Why? Because length should be short.
     sel_hash: Vec<(u64, FontId)>,
     path_hash: Vec<(u64, FontId)>,
 }
 
 impl FontsData {
-    fn push(&mut self, font: Box<FontStore<'static>>, sel_hash: u64, path_hash: u64) -> FontId {
+    fn push(&mut self, font: Box<FaceStore<'static>>, sel_hash: u64, path_hash: u64) -> FontId {
         let id = FontId(self.fonts.len() as u32);
         self.fonts.push(font);
         self.sel_hash.push((sel_hash, id));
@@ -142,11 +205,10 @@ impl FontsData {
 }
 
 /// Library of loaded fonts
-// Note: std::pin::Pin does not help us here: Unpin is implemented for both u8
-// and FontRef, and we never give the user a `&mut FontLibrary` anyway.
 pub struct FontLibrary {
-    // Font files loaded into memory. Safety: we assume this is never freed
-    // and that the `u8` slices are never moved or modified.
+    // Font files loaded into memory. Safety: we assume that existing entries
+    // are never modified (though the Vec is allowed to reallocate).
+    // Note: using std::pin::Pin does not help since u8 impls Unpin.
     data: RwLock<HashMap<PathBuf, Box<[u8]>>>,
     // Fonts defined over the above data (see safety note).
     // Additional safety: boxed so that instances do not move
@@ -156,24 +218,27 @@ pub struct FontLibrary {
 // public API
 impl FontLibrary {
     /// Get a font from its identifier
-    pub fn get(&self, id: FontId) -> Font {
+    ///
+    /// Panics if `id` is not valid (required: `id.get() < self.num_fonts()`).
+    pub fn get(&self, id: FontId) -> FaceRef {
         let fonts = self.fonts.read().unwrap();
         assert!(
             id.get() < fonts.fonts.len(),
             "FontLibrary: invalid {:?}!",
             id
         );
-        let font: &FontRef<'static> = &fonts.fonts[id.get()].ab_glyph;
+        let face: &Face<'static> = &fonts.fonts[id.get()].face;
         // Safety: elements of self.fonts are never dropped or modified
-        let font = unsafe { extend_lifetime(font) };
-        Font { font }
+        let face = unsafe { extend_lifetime(face) };
+        FaceRef(face)
     }
 
     /// Get a HarfBuzz font face
-    ///
-    /// `font_scale` should be "point size × screen DPI / 72" (units: px/em).
     #[cfg(feature = "harfbuzz_rs")]
-    pub fn get_harfbuzz(&self, id: FontId) -> harfbuzz_rs::Owned<harfbuzz_rs::Font<'static>> {
+    pub(crate) fn get_harfbuzz(
+        &self,
+        id: FontId,
+    ) -> harfbuzz_rs::Owned<harfbuzz_rs::Font<'static>> {
         let fonts = self.fonts.read().unwrap();
         assert!(
             id.get() < fonts.fonts.len(),
@@ -183,34 +248,33 @@ impl FontLibrary {
         harfbuzz_rs::Font::new(fonts.fonts[id.get()].harfbuzz.clone())
     }
 
-    /// Get the number of loaded fonts
+    /// Get the number of loaded font faces
     ///
-    /// [`FontId`] values are assigned consecutively and fonts are never
-    /// un-loaded, so to check all fonts are loaded one only needs to test
-    /// whether this value is larger than the number of fonts loaded by the
-    /// renderer.
+    /// [`FontId`] values are indices assigned consecutively and are permanent.
+    /// For any `x < self.num_fonts()`, `FontId(x)` is a valid font identifier.
+    ///
+    /// Font faces may be loaded on demand but are never unloaded or adjusted,
+    /// hence this value may increase but not decrease.
     pub fn num_fonts(&self) -> usize {
         let fonts = self.fonts.read().unwrap();
         fonts.fonts.len()
     }
 
-    /// Get a list of all fonts from `start`
+    /// Iterate over loaded fonts
     ///
-    /// Uses the half-open range `start..` (so start=0 returns all fonts).
+    /// Each valid [`FontId`] is an index to a loaded font face. This iterator
+    /// provides the path and font-index for each loaded font face.
     ///
     /// Note that fonts may be loaded any time a new [`FormattedText`] is set
     /// and then [`Text::prepare`] is called since fonts are loaded on demand.
-    /// Fonts are never unloaded, hence if fonts `0..n1` have been loaded by a
-    /// renderer such as `glyph_brush` and now [`FontLibrary::num_fonts`] is
-    /// `n2 > n1`, then only `ab_glyph_fonts_from(n1)` need be loaded.
-    pub fn ab_glyph_fonts_from(&self, start: usize) -> Vec<&'static FontRef<'static>> {
-        let fonts = self.fonts.read().unwrap();
-        // Safety: each font is boxed so that its address never changes and
-        // fonts are never modified or freed before program exit.
-        fonts.fonts[start..]
-            .iter()
-            .map(|font| unsafe { extend_lifetime(&font.ab_glyph) })
-            .collect()
+    /// Fonts are never unloaded or replaced, hence if the renderer has already
+    /// loaded fonts `0..n1` for `n1 < (n2 = self.num_fonts())`, then only fonts
+    /// `n1..n2` need be loaded.
+    pub fn iter_font_paths<'a>(&'a self) -> FontPathIterator<'a> {
+        FontPathIterator {
+            fonts: self.fonts.read().unwrap(),
+            index: 0,
+        }
     }
 
     /// Load a default font
@@ -281,14 +345,14 @@ impl FontLibrary {
             unsafe { extend_lifetime(slice) }
         } else {
             let v = std::fs::read(&path)?.into_boxed_slice();
-            let slice = &data.entry(path).or_insert(v)[..];
+            let slice = &data.entry(path.clone()).or_insert(v)[..];
             // Safety: as above
             unsafe { extend_lifetime(slice) }
         };
         drop(data);
 
         // 3rd lock: insert into font list
-        let store = FontStore::new(slice, index)?;
+        let store = FaceStore::new(path, slice, index)?;
         let mut fonts = self.fonts.write().unwrap();
         let id = fonts.push(Box::new(store), sel_hash, path_hash);
 
@@ -305,6 +369,31 @@ impl FontLibrary {
         hasher.finish()
     }
 }
+
+pub struct FontPathIterator<'a> {
+    fonts: RwLockReadGuard<'a, FontsData>,
+    index: usize,
+}
+impl<'a> Iterator for FontPathIterator<'a> {
+    type Item = (PathBuf, u32);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index < self.fonts.fonts.len() {
+            let f = &self.fonts.fonts[self.index];
+            self.index += 1;
+            Some((f.path.clone(), f.index))
+        } else {
+            None
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let rem = self.fonts.fonts.len() - self.index;
+        (rem, Some(rem))
+    }
+}
+impl<'a> ExactSizeIterator for FontPathIterator<'a> {}
+impl<'a> std::iter::FusedIterator for FontPathIterator<'a> {}
 
 pub(crate) unsafe fn extend_lifetime<'b, T: ?Sized>(r: &'b T) -> &'static T {
     std::mem::transmute::<&'b T, &'static T>(r)

@@ -93,14 +93,14 @@ impl Environment {
         Self::default()
     }
 
-    /// Returns the height of a standard line
+    /// Returns the height of standard horizontal text
     ///
     /// This depends on the `pt_size` and `dpp` fields.
     ///
     /// To use "the standard font", use `Default::default()`.
-    pub fn line_height(&self, font_id: FontId) -> f32 {
+    pub fn height(&self, font_id: FontId) -> f32 {
         let dpem = self.pt_size * self.dpp;
-        fonts().get(font_id).line_height(dpem)
+        fonts().get(font_id).height(dpem)
     }
 }
 
