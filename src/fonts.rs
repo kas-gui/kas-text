@@ -207,11 +207,11 @@ impl FontsData {
 /// Library of loaded fonts
 pub struct FontLibrary {
     // Font files loaded into memory. Safety: we assume that existing entries
-    // are never modified (though the Vec is allowed to reallocate).
+    // are never modified or removed (though the Vec is allowed to reallocate).
     // Note: using std::pin::Pin does not help since u8 impls Unpin.
     data: RwLock<HashMap<PathBuf, Box<[u8]>>>,
     // Fonts defined over the above data (see safety note).
-    // Additional safety: boxed so that instances do not move
+    // Additional safety: fonts are boxed so that instances do not move
     fonts: RwLock<FontsData>,
 }
 
@@ -253,27 +253,18 @@ impl FontLibrary {
     /// [`FontId`] values are indices assigned consecutively and are permanent.
     /// For any `x < self.num_fonts()`, `FontId(x)` is a valid font identifier.
     ///
-    /// Font faces may be loaded on demand but are never unloaded or adjusted,
-    /// hence this value may increase but not decrease.
+    /// Font faces may be loaded on demand (by [`Text::prepare`] but are never
+    /// unloaded or adjusted, hence this value may increase but not decrease.
     pub fn num_fonts(&self) -> usize {
         let fonts = self.fonts.read().unwrap();
         fonts.fonts.len()
     }
 
-    /// Iterate over loaded fonts
-    ///
-    /// Each valid [`FontId`] is an index to a loaded font face. This iterator
-    /// provides the path and font-index for each loaded font face.
-    ///
-    /// Note that fonts may be loaded any time a new [`FormattedText`] is set
-    /// and then [`Text::prepare`] is called since fonts are loaded on demand.
-    /// Fonts are never unloaded or replaced, hence if the renderer has already
-    /// loaded fonts `0..n1` for `n1 < (n2 = self.num_fonts())`, then only fonts
-    /// `n1..n2` need be loaded.
-    pub fn iter_font_paths<'a>(&'a self) -> FontPathIterator<'a> {
-        FontPathIterator {
+    /// Access loaded font data
+    pub fn font_data<'a>(&'a self) -> FontData<'a> {
+        FontData {
             fonts: self.fonts.read().unwrap(),
-            index: 0,
+            data: self.data.read().unwrap(),
         }
     }
 
@@ -370,30 +361,39 @@ impl FontLibrary {
     }
 }
 
-pub struct FontPathIterator<'a> {
+/// Provides access to font data
+///
+/// Each valid [`FontId`] is an index to a loaded font face. Since fonts are
+/// never unloaded or replaced, [`FontId::get`] is a valid index into these
+/// arrays for any valid [`FontId`].
+pub struct FontData<'a> {
     fonts: RwLockReadGuard<'a, FontsData>,
-    index: usize,
+    data: RwLockReadGuard<'a, HashMap<PathBuf, Box<[u8]>>>,
 }
-impl<'a> Iterator for FontPathIterator<'a> {
-    type Item = (PathBuf, u32);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.index < self.fonts.fonts.len() {
-            let f = &self.fonts.fonts[self.index];
-            self.index += 1;
-            Some((f.path.clone(), f.index))
-        } else {
-            None
-        }
+impl<'a> FontData<'a> {
+    /// Number of available fonts
+    pub fn len(&self) -> usize {
+        self.fonts.fonts.len()
     }
 
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let rem = self.fonts.fonts.len() - self.index;
-        (rem, Some(rem))
+    /// Access font path and face index
+    ///
+    /// Note: use [`FontData::get_data`] to access the font file data, already
+    /// loaded into memory.
+    pub fn get_path(&self, index: usize) -> (&Path, u32) {
+        let f = &self.fonts.fonts[index];
+        (&f.path, f.index)
+    }
+
+    /// Access font data and face index
+    pub fn get_data(&self, index: usize) -> (&'static [u8], u32) {
+        let f = &self.fonts.fonts[index];
+        let data = self.data.get(&f.path).unwrap();
+        // Safety: data is in FontLibrary::data and will not be dropped or modified
+        let data = unsafe { extend_lifetime(data) };
+        (data, f.index)
     }
 }
-impl<'a> ExactSizeIterator for FontPathIterator<'a> {}
-impl<'a> std::iter::FusedIterator for FontPathIterator<'a> {}
 
 pub(crate) unsafe fn extend_lifetime<'b, T: ?Sized>(r: &'b T) -> &'static T {
     std::mem::transmute::<&'b T, &'static T>(r)
