@@ -6,7 +6,8 @@
 //! Text navigation
 
 use super::Text;
-use crate::{fonts::fonts, Vec2};
+use crate::fonts::{fonts, FontId};
+use crate::{Glyph, Vec2};
 
 /// Used to return the position of a glyph with associated metrics
 #[derive(Copy, Clone, Debug, Default, PartialEq)]
@@ -183,6 +184,67 @@ impl Text {
         }
 
         MarkerPosIter { v, a, b }
+    }
+
+    /// Get the number of glyphs
+    ///
+    /// This method is a simple memory-read.
+    #[inline]
+    pub fn num_glyphs(&self) -> usize {
+        self.num_glyphs as usize
+    }
+
+    /// Yield a sequence of positioned glyphs
+    ///
+    /// Glyphs are yielded in logical order by a call to `f`. The number of
+    /// glyphs yielded will equal [`Text::num_glyphs`]. This may be used as
+    /// follows:
+    /// ```no_run
+    /// # use kas_text::{Glyph, Text};
+    /// # fn draw(_: Vec<(f32, Glyph)>) {}
+    /// let mut text = Text::new_multi("Some example text".into());
+    /// text.prepare();
+    ///
+    /// let mut glyphs = Vec::with_capacity(text.num_glyphs());
+    /// text.glyphs(|_, _, height, glyph| glyphs.push((height, glyph)));
+    /// draw(glyphs);
+    /// ```
+    ///
+    /// For each `glyph` yielded, `glyph.index` is strictly increasing, while
+    /// `glyph.position` may change in any direction.
+    ///
+    /// One must call [`Text::prepare`] before this method.
+    ///
+    /// Although glyph positions are already calculated prior to calling this
+    /// method, it is still computationally-intensive enough that it may be
+    /// worth caching the result for reuse. This is left to the caller.
+    pub fn glyphs<F: FnMut(FontId, f32, f32, Glyph)>(&self, mut f: F) {
+        assert!(self.action.is_none(), "kas-text::prepared::Text: not ready");
+
+        // self.wrapped_runs is in logical order
+        for run_part in self.wrapped_runs.iter().cloned() {
+            let run = &self.glyph_runs[run_part.glyph_run as usize];
+            let font_id = run.font_id;
+            let dpu = run.dpu.0;
+            let height = run.height;
+
+            // Pass glyphs in logical order: this allows more optimal evaluation of effects.
+            if run.level.is_ltr() {
+                for mut glyph in run.glyphs[run_part.glyph_range.to_std()].iter().cloned() {
+                    glyph.position = glyph.position + run_part.offset;
+                    f(font_id, dpu, height, glyph);
+                }
+            } else {
+                for mut glyph in run.glyphs[run_part.glyph_range.to_std()]
+                    .iter()
+                    .rev()
+                    .cloned()
+                {
+                    glyph.position = glyph.position + run_part.offset;
+                    f(font_id, dpu, height, glyph);
+                }
+            }
+        }
     }
 
     /// Yield a sequence of rectangles to highlight a given range, by lines

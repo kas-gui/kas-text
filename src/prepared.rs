@@ -8,9 +8,8 @@
 use smallvec::SmallVec;
 use std::ops::{BitOr, BitOrAssign, Bound};
 
-use crate::fonts::FontId;
 use crate::parser::FormatData;
-use crate::{shaper, Glyph, Vec2};
+use crate::{shaper, Vec2};
 use crate::{Environment, FormattedString, UpdateEnv};
 
 mod glyph_pos;
@@ -378,57 +377,6 @@ impl Text {
         }
 
         self.action = Action::None;
-    }
-
-    /// Produce a list of positioned glyphs
-    ///
-    /// One must call [`Text::prepare`] before this method.
-    ///
-    /// The function `f` may be used to apply required type transformations.
-    /// Note that since internally this `Text` type assumes text is between the
-    /// origin and the bound given by the environment, the function may also
-    /// wish to translate glyphs.
-    ///
-    /// Glyphs are passed in logical order: that is, `glyph.index` monotonically
-    /// increases. `glyph.position` may change in any direction.
-    ///
-    /// Although glyph positions are already calculated prior to calling this
-    /// method, it is still computationally-intensive enough that it may be
-    /// worth caching the result for reuse. Since the type is defined by the
-    /// function `f`, caching is left to the caller.
-    pub fn positioned_glyphs<G, F: FnMut(&str, FontId, f32, f32, Glyph) -> G>(
-        &self,
-        mut f: F,
-    ) -> Vec<G> {
-        assert!(self.action.is_none(), "kas-text::prepared::Text: not ready");
-        let text = self.text.as_str();
-
-        let mut glyphs = Vec::with_capacity(self.num_glyphs as usize);
-        // self.wrapped_runs is in logical order
-        for run_part in self.wrapped_runs.iter().cloned() {
-            let run = &self.glyph_runs[run_part.glyph_run as usize];
-            let font_id = run.font_id;
-            let dpu = run.dpu.0;
-            let height = run.height;
-
-            // Pass glyphs in logical order: this allows more optimal evaluation of effects.
-            if run.level.is_ltr() {
-                for mut glyph in run.glyphs[run_part.glyph_range.to_std()].iter().cloned() {
-                    glyph.position = glyph.position + run_part.offset;
-                    glyphs.push(f(text, font_id, dpu, height, glyph));
-                }
-            } else {
-                for mut glyph in run.glyphs[run_part.glyph_range.to_std()]
-                    .iter()
-                    .rev()
-                    .cloned()
-                {
-                    glyph.position = glyph.position + run_part.offset;
-                    glyphs.push(f(text, font_id, dpu, height, glyph));
-                }
-            }
-        }
-        glyphs
     }
 
     /// Calculate size requirements
