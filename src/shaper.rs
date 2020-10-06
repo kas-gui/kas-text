@@ -17,7 +17,7 @@
 //!
 //! This module *does not* perform line-breaking, wrapping or text reversal.
 
-use crate::fonts::{fonts, FontId, ScaledFaceRef};
+use crate::fonts::{fonts, FontId};
 use crate::{prepared, Range, Vec2, DPU};
 use smallvec::SmallVec;
 use unicode_bidi::Level;
@@ -349,7 +349,7 @@ fn shape_harfbuzz(
 // Simple implementation (kerning but no shaping)
 #[cfg(not(feature = "harfbuzz_rs"))]
 fn shape_simple(
-    sf: ScaledFaceRef,
+    sf: crate::fonts::ScaledFaceRef,
     text: &str,
     run: &prepared::Run,
 ) -> (Vec<Glyph>, SmallVec<[GlyphBreak; 2]>, f32, f32) {

@@ -6,8 +6,33 @@
 //! Text navigation
 
 use super::Text;
-use crate::fonts::{fonts, FontId};
+use crate::fonts::{fonts, FontId, ScaledFaceRef};
 use crate::{Glyph, Vec2};
+
+/// Effect formatting marker
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Effect<X> {
+    /// Index in text at which formatting becomes active
+    ///
+    /// (Note that we use `u32` not `usize` since it can be assumed text length
+    /// will never exeed `u32::MAX`.)
+    pub start: u32,
+    /// Effect flags
+    pub flags: EffectFlags,
+    /// User payload
+    pub aux: X,
+}
+
+bitflags::bitflags! {
+    /// Text effects
+    #[derive(Default)]
+    pub struct EffectFlags: u32 {
+        /// Glyph is underlined
+        const UNDERLINE = 1 << 0;
+        /// Glyph is crossed through by a centre-line
+        const STRIKETHROUGH = 1 << 1;
+    }
+}
 
 /// Used to return the position of a glyph with associated metrics
 #[derive(Copy, Clone, Debug, Default, PartialEq)]
@@ -116,7 +141,7 @@ impl Text {
     /// The result is also not guaranteed to be within the expected window
     /// between 0 and `self.env().bounds`. The user should clamp the result.
     pub fn text_glyph_pos(&self, index: usize) -> MarkerPosIter {
-        assert!(self.action.is_none(), "kas-text::prepared::Text: not ready");
+        assert!(self.action.is_none(), "kas-text::Text: not ready");
 
         let mut v: [MarkerPos; 2] = Default::default();
         let (a, mut b) = (0, 0);
@@ -196,7 +221,7 @@ impl Text {
 
     /// Yield a sequence of positioned glyphs
     ///
-    /// Glyphs are yielded in logical order by a call to `f`. The number of
+    /// Glyphs are yielded in undefined order by a call to `f`. The number of
     /// glyphs yielded will equal [`Text::num_glyphs`]. This may be used as
     /// follows:
     /// ```no_run
@@ -210,16 +235,12 @@ impl Text {
     /// draw(glyphs);
     /// ```
     ///
-    /// For each `glyph` yielded, `glyph.index` is strictly increasing, while
-    /// `glyph.position` may change in any direction.
+    /// This method has fairly low cost: `O(n)` in the number of glyphs with
+    /// low overhead.
     ///
     /// One must call [`Text::prepare`] before this method.
-    ///
-    /// Although glyph positions are already calculated prior to calling this
-    /// method, it is still computationally-intensive enough that it may be
-    /// worth caching the result for reuse. This is left to the caller.
     pub fn glyphs<F: FnMut(FontId, f32, f32, Glyph)>(&self, mut f: F) {
-        assert!(self.action.is_none(), "kas-text::prepared::Text: not ready");
+        assert!(self.action.is_none(), "kas-text::Text: not ready");
 
         // self.wrapped_runs is in logical order
         for run_part in self.wrapped_runs.iter().cloned() {
@@ -228,21 +249,191 @@ impl Text {
             let dpu = run.dpu.0;
             let height = run.height;
 
-            // Pass glyphs in logical order: this allows more optimal evaluation of effects.
-            if run.level.is_ltr() {
-                for mut glyph in run.glyphs[run_part.glyph_range.to_std()].iter().cloned() {
-                    glyph.position = glyph.position + run_part.offset;
-                    f(font_id, dpu, height, glyph);
-                }
-            } else {
-                for mut glyph in run.glyphs[run_part.glyph_range.to_std()]
-                    .iter()
-                    .rev()
-                    .cloned()
+            for mut glyph in run.glyphs[run_part.glyph_range.to_std()].iter().cloned() {
+                glyph.position = glyph.position + run_part.offset;
+                f(font_id, dpu, height, glyph);
+            }
+        }
+    }
+
+    /// Like [`Text::glyphs`] but with added effects
+    ///
+    /// It is required that the list of `effects` is not empty and that the
+    /// first entry has `start == 0`.
+    /// The user payload `X` may be useful for attaching colour information.
+    ///
+    /// The callback `f` receives an extra parameter: the user payload for this
+    /// glyph.
+    ///
+    /// The callback `g` receives positioning for each underline/strikethrough
+    /// segment: `x1, x2, y_top, h` where `h` is the thickness (height). Note
+    /// that it is possible to have `h < 1.0` and `y_top, y_top + h` to round to
+    /// the same number; the renderer is responsible for ensuring such lines
+    /// are actually visible.
+    ///
+    /// Note: this is significantly more computationally expensive than
+    /// [`Text::glyphs`].
+    /// Although glyph positions are already calculated prior to calling this
+    /// method, it is still computationally-intensive enough that it may be
+    /// worth caching the result for reuse. This is left to the caller.
+    pub fn glyphs_with_effects<X, F, G>(&self, effects: &[Effect<X>], mut f: F, mut g: G)
+    where
+        X: Copy + Default,
+        F: FnMut(FontId, f32, f32, Glyph, X),
+        G: FnMut(f32, f32, f32, f32, X),
+    {
+        assert!(self.action.is_none(), "kas-text::Text: not ready");
+        assert!(
+            !effects.is_empty(),
+            "kas-text::Text::glyphs_with_effects: effects list is empty"
+        );
+        assert_eq!(
+            effects[0].start, 0,
+            "kas-text::Text::glyphs_with_effects: first effect has non-zero start"
+        );
+        let fonts = fonts();
+
+        let mut effect_cur = 0;
+        let mut effect_next = 1;
+        let mut next_start = effects
+            .get(effect_next)
+            .map(|e| e.start)
+            .unwrap_or(u32::MAX);
+
+        // self.wrapped_runs is in logical order
+        for run_part in self.wrapped_runs.iter().cloned() {
+            if run_part.glyph_range.len() == 0 {
+                continue;
+            }
+
+            let run = &self.glyph_runs[run_part.glyph_run as usize];
+            let font_id = run.font_id;
+            let dpu = run.dpu.0;
+            let height = run.height;
+
+            let mut underline = None;
+            let mut strikethrough = None;
+
+            let ltr = run.level.is_ltr();
+            if !ltr {
+                let last_index = run.glyphs[run_part.glyph_range.start()].index;
+                while effects
+                    .get(effect_next)
+                    .map(|e| e.start <= last_index)
+                    .unwrap_or(false)
                 {
-                    glyph.position = glyph.position + run_part.offset;
-                    f(font_id, dpu, height, glyph);
+                    effect_cur = effect_next;
+                    effect_next += 1;
                 }
+                next_start = effects
+                    .get(effect_next)
+                    .map(|e| e.start)
+                    .unwrap_or(u32::MAX);
+            }
+            let mut fmt = effects[effect_cur].clone();
+
+            if !fmt.flags.is_empty() {
+                let sf = fonts.get(run.font_id).scale_by_dpu(run.dpu);
+                let glyph = &run.glyphs[run_part.glyph_range.start()];
+                let position = glyph.position + run_part.offset;
+                if fmt.flags.contains(EffectFlags::UNDERLINE) {
+                    if let Some(metrics) = sf.underline_metrics() {
+                        let y_top = position.1 - metrics.position;
+                        let h = metrics.thickness;
+                        let x1 = position.0;
+                        underline = Some((x1, y_top, h, fmt.aux));
+                    }
+                }
+                if fmt.flags.contains(EffectFlags::STRIKETHROUGH) {
+                    if let Some(metrics) = sf.strikethrough_metrics() {
+                        let y_top = position.1 - metrics.position;
+                        let h = metrics.thickness;
+                        let x1 = position.0;
+                        strikethrough = Some((x1, y_top, h, fmt.aux));
+                    }
+                }
+            }
+
+            for mut glyph in run.glyphs[run_part.glyph_range.to_std()].iter().cloned() {
+                glyph.position = glyph.position + run_part.offset;
+
+                // If run is RTL, glyph index is decreasing
+                if (ltr && next_start <= glyph.index) || (!ltr && fmt.start > glyph.index) {
+                    if ltr {
+                        loop {
+                            effect_cur = effect_next;
+                            effect_next += 1;
+                            if effects
+                                .get(effect_next)
+                                .map(|e| e.start > glyph.index)
+                                .unwrap_or(true)
+                            {
+                                break;
+                            }
+                        }
+                        next_start = effects
+                            .get(effect_next)
+                            .map(|e| e.start)
+                            .unwrap_or(u32::MAX);
+                    } else {
+                        loop {
+                            effect_cur -= 1;
+                            if effects[effect_cur].start <= glyph.index {
+                                break;
+                            }
+                        }
+                    }
+                    fmt = effects[effect_cur].clone();
+
+                    if underline.is_some() != fmt.flags.contains(EffectFlags::UNDERLINE) {
+                        let sf = fonts.get(run.font_id).scale_by_dpu(run.dpu);
+                        if let Some((x1, y_top, h, aux)) = underline {
+                            let x2 = glyph.position.0;
+                            g(x1, x2, y_top, h, aux);
+                            underline = None;
+                        } else if let Some(metrics) = sf.underline_metrics() {
+                            let y_top = glyph.position.1 - metrics.position;
+                            let h = metrics.thickness;
+                            let x1 = glyph.position.0;
+                            underline = Some((x1, y_top, h, fmt.aux));
+                        }
+                    }
+                    if strikethrough.is_some() != fmt.flags.contains(EffectFlags::STRIKETHROUGH) {
+                        let sf = fonts.get(run.font_id).scale_by_dpu(run.dpu);
+                        if let Some((x1, y_top, h, aux)) = strikethrough {
+                            let x2 = glyph.position.0;
+                            g(x1, x2, y_top, h, aux);
+                            strikethrough = None;
+                        } else if let Some(metrics) = sf.strikethrough_metrics() {
+                            let y_top = glyph.position.1 - metrics.position;
+                            let h = metrics.thickness;
+                            let x1 = glyph.position.0;
+                            strikethrough = Some((x1, y_top, h, fmt.aux));
+                        }
+                    }
+                }
+
+                f(font_id, dpu, height, glyph, fmt.aux);
+            }
+
+            // In case of RTL, we need to correct the value for the next run
+            effect_cur = effect_next - 1;
+
+            if let Some((x1, y_top, h, aux)) = underline {
+                let x2 = if run_part.glyph_range.end() < run.glyphs.len() {
+                    run.glyphs[run_part.glyph_range.end()].position.0
+                } else {
+                    run.caret
+                } + run_part.offset.0;
+                g(x1, x2, y_top, h, aux);
+            }
+            if let Some((x1, y_top, h, aux)) = strikethrough {
+                let x2 = if run_part.glyph_range.end() < run.glyphs.len() {
+                    run.glyphs[run_part.glyph_range.end()].position.0
+                } else {
+                    run.caret
+                } + run_part.offset.0;
+                g(x1, x2, y_top, h, aux);
             }
         }
     }
@@ -264,7 +455,7 @@ impl Text {
     /// The result is also not guaranteed to be within the expected window
     /// between 0 and `self.env().bounds`. The user should clamp the result.
     pub fn highlight_lines(&self, range: std::ops::Range<usize>) -> Vec<(Vec2, Vec2)> {
-        assert!(self.action.is_none(), "kas-text::prepared::Text: not ready");
+        assert!(self.action.is_none(), "kas-text::Text: not ready");
         if range.len() == 0 {
             return vec![];
         }
@@ -355,13 +546,13 @@ impl Text {
     /// between 0 and `self.env().bounds`. The user should clamp the result.
     #[inline]
     pub fn highlight_runs(&self, range: std::ops::Range<usize>) -> Vec<(Vec2, Vec2)> {
-        assert!(self.action.is_none(), "kas-text::prepared::Text: not ready");
+        assert!(self.action.is_none(), "kas-text::Text: not ready");
         if range.len() == 0 {
             return vec![];
         }
 
         let mut rects = Vec::with_capacity(self.wrapped_runs.len());
-        self.highlight_run_range(range, 0..self.wrapped_runs.len(), &mut rects);
+        self.highlight_run_range(range, 0..usize::MAX, &mut rects);
         rects
     }
 
@@ -375,13 +566,9 @@ impl Text {
         run_range: std::ops::Range<usize>,
         rects: &mut Vec<(Vec2, Vec2)>,
     ) {
-        assert!(run_range.end <= self.wrapped_runs.len());
-
-        let mut push_rect = |mut a: Vec2, mut b: Vec2, offset, ascent, descent| {
-            a = a + offset;
-            b = b + offset;
-            a.1 -= ascent;
-            b.1 -= descent;
+        let mut push_rect = |mut a: Vec2, mut b: Vec2, sf: ScaledFaceRef| {
+            a.1 -= sf.ascent();
+            b.1 -= sf.descent();
             rects.push((a, b));
         };
         let mut a;
@@ -425,6 +612,7 @@ impl Text {
         let mut first = true;
         'a: while i < run_range.end {
             let run_part = &self.wrapped_runs[i];
+            let offset = run_part.offset;
             let glyph_run = &self.glyph_runs[run_part.glyph_run as usize];
             let sf = fonts().get(glyph_run.font_id).scale_by_dpu(glyph_run.dpu);
 
@@ -464,7 +652,7 @@ impl Text {
                     a.0 = p.0;
                 };
 
-                push_rect(a, b, run_part.offset, sf.ascent(), sf.descent());
+                push_rect(a + offset, b + offset, sf);
                 i += 1;
                 continue;
             }
@@ -493,7 +681,7 @@ impl Text {
                 break 'a;
             }
 
-            push_rect(a, b, run_part.offset, sf.ascent(), sf.descent());
+            push_rect(a + offset, b + offset, sf);
             break;
         }
     }

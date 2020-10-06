@@ -15,7 +15,7 @@ use crate::{Environment, FormattedString, UpdateEnv};
 mod glyph_pos;
 mod text_runs;
 mod wrap_lines;
-pub use glyph_pos::{MarkerPos, MarkerPosIter};
+pub use glyph_pos::{Effect, EffectFlags, MarkerPos, MarkerPosIter};
 pub(crate) use text_runs::{LineRun, Run};
 use wrap_lines::{Line, RunPart};
 
@@ -385,13 +385,13 @@ impl Text {
     /// before this method. Note that initial size bounds may cause wrapping
     /// and may cause parts of the text outside the bounds to be cut off.
     pub fn required_size(&self) -> Vec2 {
-        assert!(self.action.is_none(), "kas-text::prepared::Text: not ready");
+        assert!(self.action.is_none(), "kas-text::Text: not ready");
         self.required
     }
 
     /// Get the number of lines
     pub fn num_lines(&self) -> usize {
-        assert!(self.action.is_none(), "kas-text::prepared::Text: not ready");
+        assert!(self.action.is_none(), "kas-text::Text: not ready");
         self.lines.len()
     }
 
@@ -403,7 +403,7 @@ impl Text {
     /// (which means either that `index` is beyond the end of the text or that
     /// `index` is within a mult-byte line break).
     pub fn find_line(&self, index: usize) -> Option<(usize, std::ops::Range<usize>)> {
-        assert!(self.action.is_none(), "kas-text::prepared::Text: not ready");
+        assert!(self.action.is_none(), "kas-text::Text: not ready");
         let mut first = None;
         for (n, line) in self.lines.iter().enumerate() {
             if line.text_range.end() == index {
@@ -420,7 +420,7 @@ impl Text {
 
     /// Get the range of a line, by line number
     pub fn line_range(&self, line: usize) -> Option<std::ops::Range<usize>> {
-        assert!(self.action.is_none(), "kas-text::prepared::Text: not ready");
+        assert!(self.action.is_none(), "kas-text::Text: not ready");
         self.lines.get(line).map(|line| line.text_range.to_std())
     }
 
@@ -430,7 +430,7 @@ impl Text {
     ///
     /// Panics if `line >= self.num_lines()`.
     pub fn line_is_ltr(&self, line: usize) -> bool {
-        assert!(self.action.is_none(), "kas-text::prepared::Text: not ready");
+        assert!(self.action.is_none(), "kas-text::Text: not ready");
         let first_run = self.lines[line].run_range.start();
         let glyph_run = self.wrapped_runs[first_run].glyph_run as usize;
         self.glyph_runs[glyph_run].level.is_ltr()
@@ -443,7 +443,7 @@ impl Text {
     /// Panics if `line >= self.num_lines()`.
     #[inline]
     pub fn line_is_rtl(&self, line: usize) -> bool {
-        assert!(self.action.is_none(), "kas-text::prepared::Text: not ready");
+        assert!(self.action.is_none(), "kas-text::Text: not ready");
         !self.line_is_ltr(line)
     }
 
@@ -455,7 +455,7 @@ impl Text {
     /// Note: if the font's rect does not start at the origin, then its top-left
     /// coordinate should first be subtracted from `pos`.
     pub fn text_index_nearest(&self, pos: Vec2) -> usize {
-        assert!(self.action.is_none(), "kas-text::prepared::Text: not ready");
+        assert!(self.action.is_none(), "kas-text::Text: not ready");
         let mut n = 0;
         for (i, line) in self.lines.iter().enumerate() {
             if line.top > pos.1 {
@@ -472,7 +472,7 @@ impl Text {
     /// This is similar to [`Text::text_index_nearest`], but allows the line to
     /// be specified explicitly. Returns `None` only on invalid `line`.
     pub fn line_index_nearest(&self, line: usize, x: f32) -> Option<usize> {
-        assert!(self.action.is_none(), "kas-text::prepared::Text: not ready");
+        assert!(self.action.is_none(), "kas-text::Text: not ready");
         if line >= self.lines.len() {
             return None;
         }

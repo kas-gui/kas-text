@@ -16,6 +16,18 @@ impl DPU {
     pub(crate) fn u16_to_px(self, x: u16) -> f32 {
         f32::from(x) * self.0
     }
+    pub(crate) fn to_line_metrics(self, metrics: ttf_parser::LineMetrics) -> LineMetrics {
+        LineMetrics {
+            position: self.i16_to_px(metrics.position),
+            thickness: self.i16_to_px(metrics.thickness),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct LineMetrics {
+    pub position: f32,
+    pub thickness: f32,
 }
 
 /// 2D size over `f32`

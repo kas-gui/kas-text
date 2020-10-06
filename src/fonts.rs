@@ -20,7 +20,7 @@
 //! // from now on, kas_text::fonts::FontId::default() identifies the default font
 //! ```
 
-use crate::{GlyphId, DPU};
+use crate::{GlyphId, LineMetrics, DPU};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{RwLock, RwLockReadGuard};
@@ -114,16 +114,19 @@ pub(crate) struct ScaledFaceRef(&'static Face<'static>, DPU);
 impl ScaledFaceRef {
     /// Unscaled face
     #[inline]
+    #[allow(unused)] // built-in shaper only
     pub fn face(&self) -> &Face<'static> {
         self.0
     }
 
     #[inline]
+    #[allow(unused)] // built-in shaper only
     pub fn dpu(&self) -> DPU {
         self.1
     }
 
     #[inline]
+    #[allow(unused)] // built-in shaper only
     pub(crate) fn glyph_id(&self, c: char) -> GlyphId {
         // GlyphId 0 is required to be a special glyph representing a missing
         // character (see cmap table / TrueType specification).
@@ -160,6 +163,20 @@ impl ScaledFaceRef {
     #[inline]
     pub fn height(&self) -> f32 {
         self.1.i16_to_px(self.0.height())
+    }
+
+    #[inline]
+    pub fn underline_metrics(&self) -> Option<LineMetrics> {
+        self.0
+            .underline_metrics()
+            .map(|m| self.1.to_line_metrics(m))
+    }
+
+    #[inline]
+    pub fn strikethrough_metrics(&self) -> Option<LineMetrics> {
+        self.0
+            .strikeout_metrics()
+            .map(|m| self.1.to_line_metrics(m))
     }
 }
 
@@ -253,8 +270,8 @@ impl FontLibrary {
     /// [`FontId`] values are indices assigned consecutively and are permanent.
     /// For any `x < self.num_fonts()`, `FontId(x)` is a valid font identifier.
     ///
-    /// Font faces may be loaded on demand (by [`Text::prepare`] but are never
-    /// unloaded or adjusted, hence this value may increase but not decrease.
+    /// Font faces may be loaded on demand (by [`crate::Text::prepare`] but are
+    /// never unloaded or adjusted, hence this value may increase but not decrease.
     pub fn num_fonts(&self) -> usize {
         let fonts = self.fonts.read().unwrap();
         fonts.fonts.len()
