@@ -20,7 +20,8 @@ shaping = ["harfbuzz_rs"]
 markdown = ["pulldown-cmark"]
 
 [dependencies]
-ab_glyph = "0.2.5"
+bitflags = "1.2.1"
+ttf-parser = "0.8.2"
 font-kit = "0.8.0"
 lazy_static = "1.4.0"
 smallvec = "1.4.1"

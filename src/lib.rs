@@ -10,8 +10,10 @@
 mod env;
 pub use env::*;
 
+pub mod conv;
+
 mod data;
-pub use data::*;
+pub use data::{Range, Vec2};
 
 pub mod fonts;
 pub mod parser;
@@ -20,7 +22,7 @@ mod prepared;
 pub use prepared::*;
 
 pub(crate) mod shaper;
-pub use shaper::Glyph;
+pub use shaper::{Glyph, GlyphId};
 
 /// A string with formatting information
 ///

@@ -5,19 +5,18 @@
 
 //! Text prepared for display
 
-use ab_glyph::PxScale;
 use smallvec::SmallVec;
 use std::ops::{BitOr, BitOrAssign, Bound};
 
-use crate::fonts::FontId;
+use crate::conv::{to_u32, to_usize};
 use crate::parser::FormatData;
-use crate::{shaper, Glyph, Vec2};
+use crate::{shaper, Vec2};
 use crate::{Environment, FormattedString, UpdateEnv};
 
 mod glyph_pos;
 mod text_runs;
 mod wrap_lines;
-pub use glyph_pos::{MarkerPos, MarkerPosIter};
+pub use glyph_pos::{Effect, EffectFlags, MarkerPos, MarkerPosIter};
 pub(crate) use text_runs::{LineRun, Run};
 use wrap_lines::{Line, RunPart};
 
@@ -248,7 +247,7 @@ impl Text {
     /// [`Text::set_text`]. This may change in the future (TODO).
     pub fn insert_char(&mut self, index: usize, c: char) -> PrepareAction {
         self.text.insert(index, c);
-        self.fmt.insert_range(index as u32, c.len_utf8() as u32);
+        self.fmt.insert_range(to_u32(index), to_u32(c.len_utf8()));
         self.action = Action::Runs;
         true.into()
     }
@@ -280,9 +279,9 @@ impl Text {
             Bound::Unbounded => usize::MAX,
         };
         self.text.replace_range(start..end, replace_with);
-        self.fmt.remove_range(start as u32, end as u32);
+        self.fmt.remove_range(to_u32(start), to_u32(end));
         self.fmt
-            .insert_range(start as u32, replace_with.len() as u32);
+            .insert_range(to_u32(start), to_u32(replace_with.len()));
         self.action = Action::Runs;
         true.into()
     }
@@ -381,69 +380,19 @@ impl Text {
         self.action = Action::None;
     }
 
-    /// Produce a list of positioned glyphs
-    ///
-    /// One must call [`Text::prepare`] before this method.
-    ///
-    /// The function `f` may be used to apply required type transformations.
-    /// Note that since internally this `Text` type assumes text is between the
-    /// origin and the bound given by the environment, the function may also
-    /// wish to translate glyphs.
-    ///
-    /// Glyphs are passed in logical order: that is, `glyph.index` monotonically
-    /// increases. `glyph.position` may change in any direction.
-    ///
-    /// Although glyph positions are already calculated prior to calling this
-    /// method, it is still computationally-intensive enough that it may be
-    /// worth caching the result for reuse. Since the type is defined by the
-    /// function `f`, caching is left to the caller.
-    pub fn positioned_glyphs<G, F: FnMut(&str, FontId, PxScale, Glyph) -> G>(
-        &self,
-        mut f: F,
-    ) -> Vec<G> {
-        assert!(self.action.is_none(), "kas-text::prepared::Text: not ready");
-        let text = self.text.as_str();
-
-        let mut glyphs = Vec::with_capacity(self.num_glyphs as usize);
-        // self.wrapped_runs is in logical order
-        for run_part in self.wrapped_runs.iter().cloned() {
-            let run = &self.glyph_runs[run_part.glyph_run as usize];
-            let font_id = run.font_id;
-            let font_scale = run.font_scale;
-
-            // Pass glyphs in logical order: this allows more optimal evaluation of effects.
-            if run.level.is_ltr() {
-                for mut glyph in run.glyphs[run_part.glyph_range.to_std()].iter().cloned() {
-                    glyph.position = glyph.position + run_part.offset;
-                    glyphs.push(f(text, font_id, font_scale.into(), glyph));
-                }
-            } else {
-                for mut glyph in run.glyphs[run_part.glyph_range.to_std()]
-                    .iter()
-                    .rev()
-                    .cloned()
-                {
-                    glyph.position = glyph.position + run_part.offset;
-                    glyphs.push(f(text, font_id, font_scale.into(), glyph));
-                }
-            }
-        }
-        glyphs
-    }
-
     /// Calculate size requirements
     ///
     /// One must set initial size bounds and call [`Text::prepare`]
     /// before this method. Note that initial size bounds may cause wrapping
     /// and may cause parts of the text outside the bounds to be cut off.
     pub fn required_size(&self) -> Vec2 {
-        assert!(self.action.is_none(), "kas-text::prepared::Text: not ready");
+        assert!(self.action.is_none(), "kas-text::Text: not ready");
         self.required
     }
 
     /// Get the number of lines
     pub fn num_lines(&self) -> usize {
-        assert!(self.action.is_none(), "kas-text::prepared::Text: not ready");
+        assert!(self.action.is_none(), "kas-text::Text: not ready");
         self.lines.len()
     }
 
@@ -455,7 +404,7 @@ impl Text {
     /// (which means either that `index` is beyond the end of the text or that
     /// `index` is within a mult-byte line break).
     pub fn find_line(&self, index: usize) -> Option<(usize, std::ops::Range<usize>)> {
-        assert!(self.action.is_none(), "kas-text::prepared::Text: not ready");
+        assert!(self.action.is_none(), "kas-text::Text: not ready");
         let mut first = None;
         for (n, line) in self.lines.iter().enumerate() {
             if line.text_range.end() == index {
@@ -472,7 +421,7 @@ impl Text {
 
     /// Get the range of a line, by line number
     pub fn line_range(&self, line: usize) -> Option<std::ops::Range<usize>> {
-        assert!(self.action.is_none(), "kas-text::prepared::Text: not ready");
+        assert!(self.action.is_none(), "kas-text::Text: not ready");
         self.lines.get(line).map(|line| line.text_range.to_std())
     }
 
@@ -482,9 +431,9 @@ impl Text {
     ///
     /// Panics if `line >= self.num_lines()`.
     pub fn line_is_ltr(&self, line: usize) -> bool {
-        assert!(self.action.is_none(), "kas-text::prepared::Text: not ready");
+        assert!(self.action.is_none(), "kas-text::Text: not ready");
         let first_run = self.lines[line].run_range.start();
-        let glyph_run = self.wrapped_runs[first_run].glyph_run as usize;
+        let glyph_run = to_usize(self.wrapped_runs[first_run].glyph_run);
         self.glyph_runs[glyph_run].level.is_ltr()
     }
 
@@ -495,7 +444,7 @@ impl Text {
     /// Panics if `line >= self.num_lines()`.
     #[inline]
     pub fn line_is_rtl(&self, line: usize) -> bool {
-        assert!(self.action.is_none(), "kas-text::prepared::Text: not ready");
+        assert!(self.action.is_none(), "kas-text::Text: not ready");
         !self.line_is_ltr(line)
     }
 
@@ -507,7 +456,7 @@ impl Text {
     /// Note: if the font's rect does not start at the origin, then its top-left
     /// coordinate should first be subtracted from `pos`.
     pub fn text_index_nearest(&self, pos: Vec2) -> usize {
-        assert!(self.action.is_none(), "kas-text::prepared::Text: not ready");
+        assert!(self.action.is_none(), "kas-text::Text: not ready");
         let mut n = 0;
         for (i, line) in self.lines.iter().enumerate() {
             if line.top > pos.1 {
@@ -524,7 +473,7 @@ impl Text {
     /// This is similar to [`Text::text_index_nearest`], but allows the line to
     /// be specified explicitly. Returns `None` only on invalid `line`.
     pub fn line_index_nearest(&self, line: usize, x: f32) -> Option<usize> {
-        assert!(self.action.is_none(), "kas-text::prepared::Text: not ready");
+        assert!(self.action.is_none(), "kas-text::Text: not ready");
         if line >= self.lines.len() {
             return None;
         }
@@ -541,7 +490,7 @@ impl Text {
         };
 
         for run_part in &self.wrapped_runs[run_range] {
-            let glyph_run = &self.glyph_runs[run_part.glyph_run as usize];
+            let glyph_run = &self.glyph_runs[to_usize(run_part.glyph_run)];
             let rel_pos = x - run_part.offset.0;
 
             let end_index;
@@ -569,6 +518,6 @@ impl Text {
             try_best((end_pos - rel_pos).abs(), end_index);
         }
 
-        Some(best as usize)
+        Some(to_usize(best))
     }
 }
