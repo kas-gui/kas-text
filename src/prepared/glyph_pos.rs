@@ -6,6 +6,7 @@
 //! Text navigation
 
 use super::Text;
+use crate::conv::to_usize;
 use crate::fonts::{fonts, FontId, ScaledFaceRef};
 use crate::{Glyph, Vec2};
 
@@ -146,7 +147,7 @@ impl Text {
         let mut v: [MarkerPos; 2] = Default::default();
         let (a, mut b) = (0, 0);
         let mut push_result = |pos, ascent, descent, level| {
-            v[b as usize] = MarkerPos {
+            v[b] = MarkerPos {
                 pos,
                 ascent,
                 descent,
@@ -157,15 +158,15 @@ impl Text {
 
         // We don't care too much about performance: use a naive search strategy
         'a: for run_part in &self.wrapped_runs {
-            if index > run_part.text_end as usize {
+            if index > to_usize(run_part.text_end) {
                 continue;
             }
 
-            let glyph_run = &self.glyph_runs[run_part.glyph_run as usize];
+            let glyph_run = &self.glyph_runs[to_usize(run_part.glyph_run)];
             let sf = fonts().get(glyph_run.font_id).scale_by_dpu(glyph_run.dpu);
 
             // If index is at the end of a run, we potentially get two matches.
-            if index == run_part.text_end as usize {
+            if index == to_usize(run_part.text_end) {
                 let i = if glyph_run.level.is_ltr() {
                     run_part.glyph_range.end()
                 } else {
@@ -183,17 +184,17 @@ impl Text {
                 continue;
             }
 
-            // else: index < run_part.text_end as usize
+            // else: index < to_usize(run_part.text_end)
             let pos = 'b: loop {
                 if glyph_run.level.is_ltr() {
                     for glyph in glyph_run.glyphs[run_part.glyph_range.to_std()].iter().rev() {
-                        if glyph.index as usize <= index {
+                        if to_usize(glyph.index) <= index {
                             break 'b glyph.position;
                         }
                     }
                 } else {
                     for glyph in glyph_run.glyphs[run_part.glyph_range.to_std()].iter() {
-                        if glyph.index as usize <= index {
+                        if to_usize(glyph.index) <= index {
                             let mut pos = glyph.position;
                             pos.0 += sf.h_advance(glyph.id);
                             break 'b pos;
@@ -216,7 +217,7 @@ impl Text {
     /// This method is a simple memory-read.
     #[inline]
     pub fn num_glyphs(&self) -> usize {
-        self.num_glyphs as usize
+        to_usize(self.num_glyphs)
     }
 
     /// Yield a sequence of positioned glyphs
@@ -244,7 +245,7 @@ impl Text {
 
         // self.wrapped_runs is in logical order
         for run_part in self.wrapped_runs.iter().cloned() {
-            let run = &self.glyph_runs[run_part.glyph_run as usize];
+            let run = &self.glyph_runs[to_usize(run_part.glyph_run)];
             let font_id = run.font_id;
             let dpu = run.dpu.0;
             let height = run.height;
@@ -306,7 +307,7 @@ impl Text {
                 continue;
             }
 
-            let run = &self.glyph_runs[run_part.glyph_run as usize];
+            let run = &self.glyph_runs[to_usize(run_part.glyph_run)];
             let font_id = run.font_id;
             let dpu = run.dpu.0;
             let height = run.height;
@@ -480,7 +481,7 @@ impl Text {
                 // find the rect nearest the line's end and extend
                 let mut nearest = 0;
                 let first_run = cur_line.run_range.start();
-                let glyph_run = self.wrapped_runs[first_run].glyph_run as usize;
+                let glyph_run = to_usize(self.wrapped_runs[first_run].glyph_run);
                 if self.glyph_runs[glyph_run].level.is_ltr() {
                     let mut dist = rbound - (rects[0].1).0;
                     for i in 1..rects.len() {
@@ -579,18 +580,18 @@ impl Text {
                 return;
             }
             let run_part = &self.wrapped_runs[i];
-            if range.start >= run_part.text_end as usize {
+            if range.start >= to_usize(run_part.text_end) {
                 i += 1;
                 continue;
             }
 
-            let glyph_run = &self.glyph_runs[run_part.glyph_run as usize];
+            let glyph_run = &self.glyph_runs[to_usize(run_part.glyph_run)];
             let sf = fonts().get(glyph_run.font_id).scale_by_dpu(glyph_run.dpu);
 
-            // else: range.start < run_part.text_end as usize
+            // else: range.start < to_usize(run_part.text_end)
             if glyph_run.level.is_ltr() {
                 for glyph in glyph_run.glyphs[run_part.glyph_range.to_std()].iter().rev() {
-                    if glyph.index as usize <= range.start {
+                    if to_usize(glyph.index) <= range.start {
                         a = glyph.position;
                         break 'b;
                     }
@@ -598,7 +599,7 @@ impl Text {
                 a = Vec2::ZERO;
             } else {
                 for glyph in glyph_run.glyphs[run_part.glyph_range.to_std()].iter() {
-                    if glyph.index as usize <= range.start {
+                    if to_usize(glyph.index) <= range.start {
                         a = glyph.position;
                         a.0 += sf.h_advance(glyph.id);
                         break 'b;
@@ -613,7 +614,7 @@ impl Text {
         'a: while i < run_range.end {
             let run_part = &self.wrapped_runs[i];
             let offset = run_part.offset;
-            let glyph_run = &self.glyph_runs[run_part.glyph_run as usize];
+            let glyph_run = &self.glyph_runs[to_usize(run_part.glyph_run)];
             let sf = fonts().get(glyph_run.font_id).scale_by_dpu(glyph_run.dpu);
 
             if !first {
@@ -633,7 +634,7 @@ impl Text {
             }
             first = false;
 
-            if range.end >= run_part.text_end as usize {
+            if range.end >= to_usize(run_part.text_end) {
                 let b;
                 if glyph_run.level.is_ltr() {
                     if run_part.glyph_range.end() < glyph_run.glyphs.len() {
@@ -657,19 +658,19 @@ impl Text {
                 continue;
             }
 
-            // else: range.end < run_part.text_end as usize
+            // else: range.end < to_usize(run_part.text_end)
             let b;
             'c: loop {
                 if glyph_run.level.is_ltr() {
                     for glyph in glyph_run.glyphs[run_part.glyph_range.to_std()].iter().rev() {
-                        if glyph.index as usize <= range.end {
+                        if to_usize(glyph.index) <= range.end {
                             b = glyph.position;
                             break 'c;
                         }
                     }
                 } else {
                     for glyph in glyph_run.glyphs[run_part.glyph_range.to_std()].iter() {
-                        if glyph.index as usize <= range.end {
+                        if to_usize(glyph.index) <= range.end {
                             let mut p = glyph.position;
                             p.0 += sf.h_advance(glyph.id);
                             b = Vec2(a.0, p.1);

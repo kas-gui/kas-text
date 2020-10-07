@@ -8,6 +8,7 @@
 use smallvec::SmallVec;
 use std::ops::{BitOr, BitOrAssign, Bound};
 
+use crate::conv::{to_u32, to_usize};
 use crate::parser::FormatData;
 use crate::{shaper, Vec2};
 use crate::{Environment, FormattedString, UpdateEnv};
@@ -246,7 +247,7 @@ impl Text {
     /// [`Text::set_text`]. This may change in the future (TODO).
     pub fn insert_char(&mut self, index: usize, c: char) -> PrepareAction {
         self.text.insert(index, c);
-        self.fmt.insert_range(index as u32, c.len_utf8() as u32);
+        self.fmt.insert_range(to_u32(index), to_u32(c.len_utf8()));
         self.action = Action::Runs;
         true.into()
     }
@@ -278,9 +279,9 @@ impl Text {
             Bound::Unbounded => usize::MAX,
         };
         self.text.replace_range(start..end, replace_with);
-        self.fmt.remove_range(start as u32, end as u32);
+        self.fmt.remove_range(to_u32(start), to_u32(end));
         self.fmt
-            .insert_range(start as u32, replace_with.len() as u32);
+            .insert_range(to_u32(start), to_u32(replace_with.len()));
         self.action = Action::Runs;
         true.into()
     }
@@ -432,7 +433,7 @@ impl Text {
     pub fn line_is_ltr(&self, line: usize) -> bool {
         assert!(self.action.is_none(), "kas-text::Text: not ready");
         let first_run = self.lines[line].run_range.start();
-        let glyph_run = self.wrapped_runs[first_run].glyph_run as usize;
+        let glyph_run = to_usize(self.wrapped_runs[first_run].glyph_run);
         self.glyph_runs[glyph_run].level.is_ltr()
     }
 
@@ -489,7 +490,7 @@ impl Text {
         };
 
         for run_part in &self.wrapped_runs[run_range] {
-            let glyph_run = &self.glyph_runs[run_part.glyph_run as usize];
+            let glyph_run = &self.glyph_runs[to_usize(run_part.glyph_run)];
             let rel_pos = x - run_part.offset.0;
 
             let end_index;
@@ -517,6 +518,6 @@ impl Text {
             try_best((end_pos - rel_pos).abs(), end_index);
         }
 
-        Some(best as usize)
+        Some(to_usize(best))
     }
 }

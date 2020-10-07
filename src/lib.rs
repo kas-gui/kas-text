@@ -10,8 +10,10 @@
 mod env;
 pub use env::*;
 
+pub mod conv;
+
 mod data;
-pub use data::*;
+pub use data::{Range, Vec2};
 
 pub mod fonts;
 pub mod parser;

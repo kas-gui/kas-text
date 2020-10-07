@@ -6,6 +6,7 @@
 //! Markdown parsing
 
 use super::{Format, FormatData, Parser};
+use crate::conv::to_u32;
 use crate::fonts::{self, FamilyName, FontId, FontSelector, Style, Weight};
 use crate::Environment;
 use pulldown_cmark::{Event, Tag};
@@ -94,7 +95,7 @@ impl FormatData for Vec<Fmt> {
                 }
                 if let Some((index, start)) = last {
                     if start == fmt.start {
-                        self.remove(index as usize);
+                        self.remove(index);
                         continue;
                     }
                 }
@@ -139,7 +140,7 @@ fn parse(input: &str) -> Markdown {
     while let Some(ev) = parser.next() {
         match ev {
             Event::Start(tag) => {
-                item.fmt.start = text.len() as u32;
+                item.fmt.start = to_u32(text.len());
                 if let Some(clone) = item.start_tag(&mut text, &mut state, tag) {
                     stack.push(item);
                     item = clone;
@@ -149,7 +150,7 @@ fn parse(input: &str) -> Markdown {
             Event::End(tag) => {
                 if item.end_tag(&mut state, tag) {
                     item = stack.pop().unwrap();
-                    item.fmt.start = text.len() as u32;
+                    item.fmt.start = to_u32(text.len());
                     set_last(&item.fmt);
                 }
             }
@@ -159,7 +160,7 @@ fn parse(input: &str) -> Markdown {
             }
             Event::Code(part) => {
                 state.part(&mut text);
-                item.fmt.start = text.len() as u32;
+                item.fmt.start = to_u32(text.len());
 
                 let mut item2 = item.clone();
                 item2.fmt.sel.set_families(vec![FamilyName::Monospace]);
@@ -167,7 +168,7 @@ fn parse(input: &str) -> Markdown {
 
                 text.push_str(&part);
 
-                item.fmt.start = text.len() as u32;
+                item.fmt.start = to_u32(text.len());
                 set_last(&item.fmt);
             }
             Event::Html(part) => unimplemented!("{:?}", part),
@@ -259,7 +260,7 @@ impl StackItem {
             }
             Tag::Heading(level) => {
                 state.start_block(text);
-                self.fmt.start = text.len() as u32;
+                self.fmt.start = to_u32(text.len());
                 with_clone(self, |item| {
                     item.fmt.rel_size = match level {
                         1 => 2.0,
@@ -273,7 +274,7 @@ impl StackItem {
             }
             Tag::CodeBlock(_) => {
                 state.start_block(text);
-                self.fmt.start = text.len() as u32;
+                self.fmt.start = to_u32(text.len());
                 with_clone(self, |item| {
                     item.fmt.sel.set_families(vec![FamilyName::Monospace])
                 })

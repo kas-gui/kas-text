@@ -5,30 +5,7 @@
 
 //! KAS Rich-Text library — simple data types
 
-/// Scale factor: pixels per font unit
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub(crate) struct DPU(pub(crate) f32);
-
-impl DPU {
-    pub(crate) fn i16_to_px(self, x: i16) -> f32 {
-        f32::from(x) * self.0
-    }
-    pub(crate) fn u16_to_px(self, x: u16) -> f32 {
-        f32::from(x) * self.0
-    }
-    pub(crate) fn to_line_metrics(self, metrics: ttf_parser::LineMetrics) -> LineMetrics {
-        LineMetrics {
-            position: self.i16_to_px(metrics.position),
-            thickness: self.i16_to_px(metrics.thickness),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub(crate) struct LineMetrics {
-    pub position: f32,
-    pub thickness: f32,
-}
+use crate::conv::{to_u32, to_usize};
 
 /// 2D size over `f32`
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -101,22 +78,22 @@ pub struct Range {
 impl Range {
     /// The start, as `usize`
     pub fn start(self) -> usize {
-        self.start as usize
+        to_usize(self.start)
     }
 
     /// The end, as `usize`
     pub fn end(self) -> usize {
-        self.end as usize
+        to_usize(self.end)
     }
 
     /// True if the given value is contained, inclusive of end points
     pub fn includes(self, value: usize) -> bool {
-        self.start as usize <= value && value <= self.end as usize
+        to_usize(self.start) <= value && value <= to_usize(self.end)
     }
 
     /// Convert to a standard range
     pub fn to_std(self) -> std::ops::Range<usize> {
-        (self.start as usize)..(self.end as usize)
+        to_usize(self.start)..to_usize(self.end)
     }
 }
 
@@ -134,7 +111,7 @@ impl std::iter::Iterator for Range {
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        let len = (self.end - self.start) as usize;
+        let len = to_usize(self.end - self.start);
         (len, Some(len))
     }
 }
@@ -203,7 +180,7 @@ impl<T> std::ops::IndexMut<Range> for [T] {
 
 impl From<Range> for std::ops::Range<usize> {
     fn from(range: Range) -> std::ops::Range<usize> {
-        (range.start as usize)..(range.end as usize)
+        to_usize(range.start)..to_usize(range.end)
     }
 }
 
@@ -218,10 +195,10 @@ impl From<std::ops::Range<u32>> for Range {
 
 impl From<std::ops::Range<usize>> for Range {
     fn from(range: std::ops::Range<usize>) -> Range {
-        assert!(range.end <= u32::MAX as usize);
+        assert!(range.end <= to_usize(u32::MAX));
         Range {
-            start: range.start as u32,
-            end: range.end as u32,
+            start: to_u32(range.start),
+            end: to_u32(range.end),
         }
     }
 }

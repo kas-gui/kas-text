@@ -6,6 +6,7 @@
 //! Text preparation: line breaking and BIDI
 
 use super::Text;
+use crate::conv::{to_u32, to_usize};
 use crate::fonts::FontId;
 use crate::{Direction, Range};
 use smallvec::SmallVec;
@@ -122,14 +123,14 @@ impl Text {
 
             let fmt_break = next_fmt
                 .as_ref()
-                .map(|fmt| fmt.start as usize == pos)
+                .map(|fmt| to_usize(fmt.start) == pos)
                 .unwrap_or(false);
 
             if hard_break || bidi_break || fmt_break {
                 let mut range = trim_control(&self.text.as_str()[start..pos]);
                 // trim_control gives us a range within the slice; we need to offset:
-                range.start += start as u32;
-                range.end += start as u32;
+                range.start += to_u32(start);
+                range.end += to_u32(start);
 
                 self.runs.push(Run {
                     range,
@@ -141,7 +142,7 @@ impl Text {
                 });
 
                 if let Some(fmt) = next_fmt.as_ref() {
-                    if fmt.start as usize == pos {
+                    if to_usize(fmt.start) == pos {
                         font_id = fmt.font_id;
                         dpem = fmt.dpem;
                         next_fmt = fmt_iter.next();
@@ -164,7 +165,7 @@ impl Text {
                     next_break = breaks_iter.next().unwrap_or((0, false));
                 }
             } else if is_break {
-                breaks.push(pos as u32);
+                breaks.push(to_u32(pos));
                 next_break = breaks_iter.next().unwrap_or((0, false));
             }
         }
@@ -174,8 +175,8 @@ impl Text {
         // regardless of whether the text ends with a line-break char.
         let mut range = trim_control(&self.text.as_str()[start..]);
         // trim_control gives us a range within the slice; we need to offset:
-        range.start += start as u32;
-        range.end += start as u32;
+        range.start += to_u32(start);
+        range.end += to_u32(start);
         self.runs.push(Run {
             range,
             dpem,

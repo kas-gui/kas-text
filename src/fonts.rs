@@ -20,7 +20,8 @@
 //! // from now on, kas_text::fonts::FontId::default() identifies the default font
 //! ```
 
-use crate::{GlyphId, LineMetrics, DPU};
+use crate::conv::{to_u32, to_usize, LineMetrics, DPU};
+use crate::GlyphId;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{RwLock, RwLockReadGuard};
@@ -57,7 +58,7 @@ enum FontError {
 pub struct FontId(pub u32);
 impl FontId {
     pub fn get(self) -> usize {
-        self.0 as usize
+        to_usize(self.0)
     }
 }
 
@@ -213,7 +214,7 @@ struct FontsData {
 
 impl FontsData {
     fn push(&mut self, font: Box<FaceStore<'static>>, sel_hash: u64, path_hash: u64) -> FontId {
-        let id = FontId(self.fonts.len() as u32);
+        let id = FontId(to_u32(self.fonts.len()));
         self.fonts.push(font);
         self.sel_hash.push((sel_hash, id));
         self.path_hash.push((path_hash, id));
