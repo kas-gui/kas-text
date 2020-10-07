@@ -86,6 +86,11 @@ impl Range {
         to_usize(self.end)
     }
 
+    /// The number of iterable items, as `usize`
+    pub fn len(self) -> usize {
+        to_usize(self.end) - to_usize(self.start)
+    }
+
     /// True if the given value is contained, inclusive of end points
     pub fn includes(self, value: usize) -> bool {
         to_usize(self.start) <= value && value <= to_usize(self.end)
@@ -95,40 +100,12 @@ impl Range {
     pub fn to_std(self) -> std::ops::Range<usize> {
         to_usize(self.start)..to_usize(self.end)
     }
-}
 
-impl std::iter::Iterator for Range {
-    type Item = u32;
-
-    fn next(&mut self) -> Option<u32> {
-        if self.start < self.end {
-            let result = self.start;
-            self.start += 1;
-            Some(result)
-        } else {
-            None
-        }
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let len = to_usize(self.end - self.start);
-        (len, Some(len))
+    /// Convert to `usize` and iterate
+    pub fn iter(self) -> impl Iterator<Item = usize> {
+        self.to_std()
     }
 }
-
-impl std::iter::DoubleEndedIterator for Range {
-    fn next_back(&mut self) -> Option<u32> {
-        if self.start < self.end {
-            self.end -= 1;
-            Some(self.end)
-        } else {
-            None
-        }
-    }
-}
-
-impl std::iter::ExactSizeIterator for Range {}
-impl std::iter::FusedIterator for Range {}
 
 impl std::ops::Index<Range> for String {
     type Output = str;
