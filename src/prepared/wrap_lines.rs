@@ -80,7 +80,7 @@ impl Text {
                     if line_len > width_bound && end.2 > 0 {
                         // Add up to last valid break point then wrap and reset
                         let slice = &mut parts[0..end.2];
-                        adder.add_line(fonts, level, end_len, &self.glyph_runs, slice);
+                        adder.add_line(fonts, level, end_len, &self.glyph_runs, slice, true);
 
                         end.2 = 0;
                         start = end;
@@ -137,7 +137,7 @@ impl Text {
             if parts.len() > 0 {
                 // It should not be possible for a line to end with a no-break, so:
                 debug_assert_eq!(parts.len(), end.2);
-                adder.add_line(fonts, level, end_len, &self.glyph_runs, &mut parts);
+                adder.add_line(fonts, level, end_len, &self.glyph_runs, &mut parts, false);
             }
         }
 
@@ -177,6 +177,7 @@ impl LineAdder {
         line_len: f32,
         runs: &[GlyphRun],
         parts: &mut [PartInfo],
+        is_wrap: bool,
     ) {
         assert!(parts.len() > 0);
         let line_start = self.runs.len();
@@ -231,7 +232,7 @@ impl LineAdder {
             let part = &mut parts[parts.len() - 1];
             let run = &runs[part.run as usize];
 
-            if part.len > part.len_no_space {
+            if is_wrap && part.len > part.len_no_space {
                 // When wrapping on whitespace: exclude the last glyph
                 // This excludes only one glyph; the main aim is to make the
                 // 'End' key exclude the wrapping position (which is also the
