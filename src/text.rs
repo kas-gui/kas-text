@@ -337,6 +337,47 @@ impl Text {
     }
 }
 
+/// Trait over a sub-set of [`Text`] functionality
+///
+/// This allows dynamic dispatch over [`Text`]'s type parameters.
+pub trait TextApi {
+    /// Read the [`TextDisplay`]
+    fn display(&self) -> &TextDisplay;
+
+    /// Set the environment and prepare (as necessary)
+    fn set_env(&mut self, env: Environment);
+
+    /// Prepare text for display
+    ///
+    /// Calls [`TextDisplay::prepare`], passing text representation as parameters.
+    fn prepare(&mut self);
+}
+
+impl TextApi for Text {
+    fn display(&self) -> &TextDisplay {
+        &self.display
+    }
+
+    fn set_env(&mut self, env: Environment) {
+        let action = if env.dir != self.display.env.dir || env.bidi != self.display.env.bidi {
+            Action::Runs
+        } else if env.dpp != self.display.env.dpp || env.pt_size != self.display.env.pt_size {
+            Action::Dpem
+        } else if env != self.display.env {
+            Action::Wrap
+        } else {
+            Action::None
+        };
+        self.display.env = env;
+        self.display.action = self.display.action.max(action);
+        self.display.prepare(&self.text, &*self.fmt);
+    }
+
+    fn prepare(&mut self) {
+        self.display.prepare(&self.text, &*self.fmt);
+    }
+}
+
 impl AsRef<TextDisplay> for Text {
     fn as_ref(&self) -> &TextDisplay {
         &self.display

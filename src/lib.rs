@@ -22,7 +22,7 @@ pub mod fonts;
 pub mod parser;
 
 mod text;
-pub use text::Text;
+pub use text::{Text, TextApi};
 
 pub(crate) mod shaper;
 pub use shaper::{Glyph, GlyphId};

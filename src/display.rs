@@ -147,7 +147,7 @@ impl Action {
 /// number, then [`TextDisplay::line_index_nearest`] to find the new index.
 #[derive(Clone, Debug)]
 pub struct TextDisplay {
-    env: Environment,
+    pub(crate) env: Environment,
     /// Level runs within the text, in logical order
     runs: SmallVec<[Run; 1]>,
     /// Subsets of runs forming a line, with line direction
