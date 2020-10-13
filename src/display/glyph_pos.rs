@@ -3,9 +3,9 @@
 // You may obtain a copy of the License in the LICENSE-APACHE file or at:
 //     https://www.apache.org/licenses/LICENSE-2.0
 
-//! Text navigation
+//! Methods using positioned glyphs
 
-use super::Text;
+use super::TextDisplay;
 use crate::conv::to_usize;
 use crate::fonts::{fonts, FontId, ScaledFaceRef};
 use crate::{Glyph, Vec2};
@@ -122,7 +122,7 @@ impl DoubleEndedIterator for MarkerPosIter {
 
 impl ExactSizeIterator for MarkerPosIter {}
 
-impl Text {
+impl TextDisplay {
     /// Find the starting position (top-left) of the glyph at the given index
     ///
     /// The index should be no greater than the text length. It is not required
@@ -142,7 +142,7 @@ impl Text {
     /// The result is also not guaranteed to be within the expected window
     /// between 0 and `self.env().bounds`. The user should clamp the result.
     pub fn text_glyph_pos(&self, index: usize) -> MarkerPosIter {
-        assert!(self.action.is_none(), "kas-text::Text: not ready");
+        assert!(self.action.is_none(), "kas-text::TextDisplay: not ready");
 
         let mut v: [MarkerPos; 2] = Default::default();
         let (a, mut b) = (0, 0);
@@ -223,7 +223,7 @@ impl Text {
     /// Yield a sequence of positioned glyphs
     ///
     /// Glyphs are yielded in undefined order by a call to `f`. The number of
-    /// glyphs yielded will equal [`Text::num_glyphs`]. This may be used as
+    /// glyphs yielded will equal [`TextDisplay::num_glyphs`]. This may be used as
     /// follows:
     /// ```no_run
     /// # use kas_text::{Glyph, Text};
@@ -239,9 +239,9 @@ impl Text {
     /// This method has fairly low cost: `O(n)` in the number of glyphs with
     /// low overhead.
     ///
-    /// One must call [`Text::prepare`] before this method.
+    /// One must call [`TextDisplay::prepare`] before this method.
     pub fn glyphs<F: FnMut(FontId, f32, f32, Glyph)>(&self, mut f: F) {
-        assert!(self.action.is_none(), "kas-text::Text: not ready");
+        assert!(self.action.is_none(), "kas-text::TextDisplay: not ready");
 
         // self.wrapped_runs is in logical order
         for run_part in self.wrapped_runs.iter().cloned() {
@@ -257,7 +257,7 @@ impl Text {
         }
     }
 
-    /// Like [`Text::glyphs`] but with added effects
+    /// Like [`TextDisplay::glyphs`] but with added effects
     ///
     /// It is required that the list of `effects` is not empty and that the
     /// first entry has `start == 0`.
@@ -273,7 +273,7 @@ impl Text {
     /// are actually visible.
     ///
     /// Note: this is significantly more computationally expensive than
-    /// [`Text::glyphs`].
+    /// [`TextDisplay::glyphs`].
     /// Although glyph positions are already calculated prior to calling this
     /// method, it is still computationally-intensive enough that it may be
     /// worth caching the result for reuse. This is left to the caller.
@@ -283,14 +283,14 @@ impl Text {
         F: FnMut(FontId, f32, f32, Glyph, X),
         G: FnMut(f32, f32, f32, f32, X),
     {
-        assert!(self.action.is_none(), "kas-text::Text: not ready");
+        assert!(self.action.is_none(), "kas-text::TextDisplay: not ready");
         assert!(
             !effects.is_empty(),
-            "kas-text::Text::glyphs_with_effects: effects list is empty"
+            "kas-text::TextDisplay::glyphs_with_effects: effects list is empty"
         );
         assert_eq!(
             effects[0].start, 0,
-            "kas-text::Text::glyphs_with_effects: first effect has non-zero start"
+            "kas-text::TextDisplay::glyphs_with_effects: first effect has non-zero start"
         );
         let fonts = fonts();
 
@@ -446,7 +446,7 @@ impl Text {
     /// is a defect which should be fixed but low priority and trickier than it
     /// might seem due to bi-directional text allowing re-ordering of runs.)
     ///
-    /// This locates the ends of a range as with [`Text::text_glyph_pos`], but
+    /// This locates the ends of a range as with [`TextDisplay::text_glyph_pos`], but
     /// yields a separate rect for each "run" within this range (where "run" is
     /// a line or part of a line). Rects are represented by the top-left
     /// vertex and the bottom-right vertex.
@@ -456,7 +456,7 @@ impl Text {
     /// The result is also not guaranteed to be within the expected window
     /// between 0 and `self.env().bounds`. The user should clamp the result.
     pub fn highlight_lines(&self, range: std::ops::Range<usize>) -> Vec<(Vec2, Vec2)> {
-        assert!(self.action.is_none(), "kas-text::Text: not ready");
+        assert!(self.action.is_none(), "kas-text::TextDisplay: not ready");
         if range.len() == 0 {
             return vec![];
         }
@@ -536,7 +536,7 @@ impl Text {
     /// artifact, the highlighting may leave gaps between runs. This may or may
     /// not change in the future.)
     ///
-    /// This locates the ends of a range as with [`Text::text_glyph_pos`], but
+    /// This locates the ends of a range as with [`TextDisplay::text_glyph_pos`], but
     /// yields a separate rect for each "run" within this range (where "run" is
     /// is a line or part of a line). Rects are represented by the top-left
     /// vertex and the bottom-right vertex.
@@ -547,7 +547,7 @@ impl Text {
     /// between 0 and `self.env().bounds`. The user should clamp the result.
     #[inline]
     pub fn highlight_runs(&self, range: std::ops::Range<usize>) -> Vec<(Vec2, Vec2)> {
-        assert!(self.action.is_none(), "kas-text::Text: not ready");
+        assert!(self.action.is_none(), "kas-text::TextDisplay: not ready");
         if range.len() == 0 {
             return vec![];
         }

@@ -3,9 +3,9 @@
 // You may obtain a copy of the License in the LICENSE-APACHE file or at:
 //     https://www.apache.org/licenses/LICENSE-2.0
 
-//! Text prepared for display
+//! Text preparation: wrapping
 
-use super::Text;
+use super::TextDisplay;
 use crate::conv::{to_u32, to_usize};
 use crate::fonts::{fonts, FontLibrary};
 use crate::shaper::GlyphRun;
@@ -38,11 +38,11 @@ struct PartInfo {
     glyph_range: Range,
 }
 
-impl Text {
+impl TextDisplay {
     pub(crate) fn wrap_lines(&mut self) {
         let fonts = fonts();
-        // Use a crude estimate of the number of runs:
-        let mut adder = LineAdder::new(self.text_len() / 16, &self.env);
+        let capacity = 0; // TODO(opt): estimate like self.text_len() / 16 ?
+        let mut adder = LineAdder::new(capacity, &self.env);
         let width_bound = adder.width_bound;
         let justify = self.env.halign == Align::Stretch;
         let mut parts = Vec::with_capacity(16);

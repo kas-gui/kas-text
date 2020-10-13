@@ -15,11 +15,14 @@ pub mod conv;
 mod data;
 pub use data::{Range, Vec2};
 
+mod display;
+pub use display::{Effect, EffectFlags, PrepareAction, TextDisplay};
+
 pub mod fonts;
 pub mod parser;
 
-mod prepared;
-pub use prepared::*;
+mod text;
+pub use text::Text;
 
 pub(crate) mod shaper;
 pub use shaper::{Glyph, GlyphId};

@@ -5,9 +5,10 @@
 
 //! Text preparation: line breaking and BIDI
 
-use super::Text;
+use super::TextDisplay;
 use crate::conv::{to_u32, to_usize};
 use crate::fonts::FontId;
+use crate::parser::FormatData;
 use crate::{Direction, Range};
 use smallvec::SmallVec;
 use unicode_bidi::{BidiInfo, Level, LTR_LEVEL, RTL_LEVEL};
@@ -43,11 +44,11 @@ pub(crate) struct LineRun {
     pub rtl: bool,
 }
 
-impl Text {
-    pub(crate) fn update_run_dpem(&mut self) {
+impl TextDisplay {
+    pub(crate) fn update_run_dpem(&mut self, fmt: &dyn FormatData) {
         let mut dpem = self.env.pt_size * self.env.dpp;
 
-        let mut fmt_iter = self.fmt.fmt_iter(&self.env);
+        let mut fmt_iter = fmt.fmt_iter(&self.env);
         let mut next_fmt = fmt_iter.next();
 
         for run in &mut self.runs {
@@ -65,8 +66,6 @@ impl Text {
 
     /// Bi-directional text and line-break processing
     ///
-    /// Prerequisite: self.text is assigned, formatting is assigned
-    ///
     /// Result: self.runs and self.breaks are assigned
     ///
     /// This method constructs a list of "hard lines" (the initial line and any
@@ -74,14 +73,14 @@ impl Text {
     /// result of splitting and reversing according to Unicode TR9 aka
     /// Bidirectional algorithm), plus a list of "soft break" positions
     /// (where wrapping may introduce new lines depending on available space).
-    pub(crate) fn prepare_runs(&mut self) {
+    pub(crate) fn prepare_runs(&mut self, text: &str, fmt: &dyn FormatData) {
         self.runs.clear();
         self.line_runs.clear();
 
         let mut font_id = FontId::default();
         let mut dpem = self.env.pt_size * self.env.dpp;
 
-        let mut fmt_iter = self.fmt.fmt_iter(&self.env);
+        let mut fmt_iter = fmt.fmt_iter(&self.env);
         let mut next_fmt = fmt_iter.next();
         if let Some(fmt) = next_fmt.as_ref() {
             if fmt.start == 0 {
@@ -100,8 +99,8 @@ impl Text {
         let mut levels = vec![];
         let mut level: Level;
         if bidi || default_para_level.is_none() {
-            levels = BidiInfo::new(self.text.as_str(), default_para_level).levels;
-            assert_eq!(self.text.len(), levels.len());
+            levels = BidiInfo::new(text, default_para_level).levels;
+            assert_eq!(text.len(), levels.len());
             level = levels.get(0).cloned().unwrap_or(LTR_LEVEL);
         } else {
             level = default_para_level.unwrap();
@@ -111,12 +110,12 @@ impl Text {
         let mut breaks = Default::default();
 
         // Iterates over `(pos, hard)` tuples:
-        let mut breaks_iter = LineBreakIterator::new(self.text.as_str());
+        let mut breaks_iter = LineBreakIterator::new(text);
         let mut next_break = breaks_iter.next().unwrap_or((0, false));
 
         let mut line_start = 0;
 
-        for pos in 1..self.text.len() {
+        for pos in 1..text.len() {
             let is_break = next_break.0 == pos;
             let hard_break = is_break && next_break.1;
             let bidi_break = bidi && levels[pos] != level;
@@ -127,7 +126,7 @@ impl Text {
                 .unwrap_or(false);
 
             if hard_break || bidi_break || fmt_break {
-                let mut range = trim_control(&self.text.as_str()[start..pos]);
+                let mut range = trim_control(&text[start..pos]);
                 // trim_control gives us a range within the slice; we need to offset:
                 range.start += to_u32(start);
                 range.end += to_u32(start);
@@ -173,7 +172,7 @@ impl Text {
         // The loop above misses the last break at the end of the text.
         // LineBreakIterator always reports a hard break at the text's end
         // regardless of whether the text ends with a line-break char.
-        let mut range = trim_control(&self.text.as_str()[start..]);
+        let mut range = trim_control(&text[start..]);
         // trim_control gives us a range within the slice; we need to offset:
         range.start += to_u32(start);
         range.end += to_u32(start);
@@ -193,10 +192,10 @@ impl Text {
 
         // If the text *does* end with a line-break, we add an empty line.
         // TODO: do we want the empty line for labels or only for edit boxes?
-        if let Some(c) = self.text.as_str().chars().next_back() {
+        if let Some(c) = text.chars().next_back() {
             // Match according to https://www.unicode.org/reports/tr14/#Table1
             if let '\x0C' | '\x0B' | '\u{2028}' | '\u{2029}' | '\r' | '\n' | '\u{85}' = c {
-                let text_len = self.text.len();
+                let text_len = text.len();
                 let range = Range::from(text_len..text_len);
                 level = default_para_level.unwrap_or(LTR_LEVEL);
                 breaks = Default::default();
@@ -217,11 +216,11 @@ impl Text {
         }
 
         /*
-        println!("text: {}", &self.text);
+        println!("text: {}", text);
         for line in self.line_runs.iter() {
             println!("line (rtl={}) runs:", line.rtl);
             for run in &self.runs[line.range.to_std()] {
-                let slice = &self.text[run.range];
+                let slice = &text[run.range];
                 println!(
                     "{:?}, text[{}..{}]: '{}', breaks={:?}, no_break={}",
                     run.level, run.range.start, run.range.end, slice, run.breaks, run.no_break,
