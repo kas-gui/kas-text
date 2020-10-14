@@ -35,6 +35,15 @@ For more, see the initial [design document](design/requirements.md) and
 [issue #1](https://github.com/kas-gui/kas-text/issues/1).
 
 
+Examples
+--------
+
+Since `kas-text` only concerns text-layout, all examples here are courtesy of KAS GUI. See [the examples directory](https://github.com/kas-gui/kas/tree/master/kas-wgpu/examples).
+
+![Bidi layout and editing](https://github.com/kas-gui/kas/blob/master/screenshots/layout.png)
+![Markdown](https://user-images.githubusercontent.com/134893/94251536-90b16980-ff1a-11ea-852f-fbd16cfaa7fe.png)
+
+
 Contributing
 --------
 
