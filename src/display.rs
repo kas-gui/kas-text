@@ -9,7 +9,7 @@ use smallvec::SmallVec;
 use std::ops::{BitOr, BitOrAssign};
 
 use crate::conv::to_usize;
-use crate::parser::FormatData;
+use crate::format::FormattableText;
 use crate::{shaper, Vec2};
 use crate::{Environment, UpdateEnv};
 
@@ -37,7 +37,7 @@ impl PrepareAction {
     /// This may be useful when optionally calling multiple update methods:
     /// ```
     /// # use kas_text::{PrepareAction, Text};
-    /// fn update_text(text: &mut Text, opt_new_text: Option<String>) {
+    /// fn update_text(text: &mut Text<String>, opt_new_text: Option<String>) {
     ///     let mut prepare = PrepareAction::none();
     ///     if let Some(new_text) = opt_new_text {
     ///         prepare |= text.set_text(new_text.into());
@@ -221,26 +221,26 @@ impl TextDisplay {
     /// method only performs the required steps. Updating line-wrapping due to
     /// changes in available width is significantly faster than updating the
     /// source text.
-    pub fn prepare(&mut self, text: &str, fmt: &dyn FormatData) {
+    pub fn prepare(&mut self, text: &dyn FormattableText) {
         let action = self.action;
         if action == Action::None {
             return;
         }
 
         if action >= Action::Runs {
-            self.prepare_runs(text, fmt);
+            self.prepare_runs(text);
         }
 
         if action == Action::Dpem {
             // Note: this is only needed if we didn't just call prepare_runs()
-            self.update_run_dpem(fmt);
+            self.update_run_dpem(text);
         }
 
         if action >= Action::Shape {
             self.glyph_runs = self
                 .runs
                 .iter()
-                .map(|run| shaper::shape(text, &run))
+                .map(|run| shaper::shape(text.as_str(), &run))
                 .collect();
         }
 

@@ -8,11 +8,10 @@
 use std::convert::{AsMut, AsRef};
 use std::ops::Bound;
 
-use crate::conv::to_u32;
 use crate::display::{Action, Effect, MarkerPosIter, PrepareAction, TextDisplay};
 use crate::fonts::FontId;
-use crate::parser::FormatData;
-use crate::{Environment, FormattedString, UpdateEnv};
+use crate::format::{EditableText, FormattableText};
+use crate::{Environment, UpdateEnv};
 use crate::{Glyph, Vec2};
 
 /// Text, prepared for display in a given enviroment
@@ -21,27 +20,24 @@ use crate::{Glyph, Vec2};
 /// displayed, and a [`TextDisplay`] object.
 /// See also documentation of [`TextDisplay`].
 #[derive(Clone, Debug)]
-pub struct Text {
-    /// Contiguous text in logical order
-    text: String,
-    fmt: Box<dyn FormatData>,
+pub struct Text<T: FormattableText> {
+    text: T,
     display: TextDisplay,
 }
 
-impl Default for Text {
+impl<T: FormattableText + Default> Default for Text<T> {
     fn default() -> Self {
-        Text::new(Environment::default(), "".into())
+        Text::new(Environment::default(), T::default())
     }
 }
 
-impl Text {
+impl<T: FormattableText> Text<T> {
     /// Construct from an environment and a text model
     ///
     /// This struct must be made ready for usage by calling [`Text::prepare`].
-    pub fn new(env: Environment, text: FormattedString) -> Self {
+    pub fn new(env: Environment, text: T) -> Self {
         Text {
-            text: text.text,
-            fmt: text.fmt,
+            text: text,
             display: TextDisplay::new(env),
         }
     }
@@ -51,7 +47,7 @@ impl Text {
     /// The environment is default-constructed, with [`Environment::wrap`]
     /// turned off.
     #[inline]
-    pub fn new_single(text: FormattedString) -> Self {
+    pub fn new_single(text: T) -> Self {
         let mut env = Environment::new();
         env.wrap = false;
         Self::new(env, text)
@@ -61,47 +57,69 @@ impl Text {
     ///
     /// The environment is default-constructed (line-wrap on).
     #[inline]
-    pub fn new_multi(text: FormattedString) -> Self {
+    pub fn new_multi(text: T) -> Self {
         Self::new(Environment::new(), text)
     }
 
     /// Clone the formatted text
-    pub fn clone_text(&self) -> FormattedString {
-        let text = self.text.clone();
-        let fmt = self.fmt.clone();
-        FormattedString { text, fmt }
+    pub fn clone_text(&self) -> T
+    where
+        T: Clone,
+    {
+        self.text.clone()
     }
 
     /// Extract text object, discarding the rest
     #[inline]
-    pub fn take_text(self) -> FormattedString {
-        let text = self.text;
-        let fmt = self.fmt;
-        FormattedString { text, fmt }
+    pub fn take_text(self) -> T {
+        self.text
     }
 
     /// Clone the unformatted text as a `String`
     pub fn clone_string(&self) -> String {
-        self.text.clone()
+        self.text.as_str().to_string()
     }
 
-    /// Length of text
+    /// Access to the contiguous text
+    ///
+    /// This is the contiguous text without formatting information.
+    #[inline]
+    pub fn as_str(&self) -> &str {
+        self.text.as_str()
+    }
+
+    /// Length of contiguous text
+    ///
+    /// This is a shortcut to `self.as_str().len()`.
     ///
     /// It is valid to reference text within the range `0..text_len()`,
     /// even if not all text within this range will be displayed (due to runs).
     #[inline]
-    pub fn text_len(&self) -> usize {
-        self.text.len()
+    pub fn str_len(&self) -> usize {
+        self.as_str().len()
     }
 
-    /// Access to the raw text
-    ///
-    /// This is the contiguous raw text without formatting information.
+    /// Access the formattable text object
     #[inline]
-    pub fn text(&self) -> &str {
-        self.text.as_str()
+    pub fn text(&self) -> &T {
+        &self.text
     }
 
+    /// Set the text
+    pub fn set_text(&mut self, text: T) -> PrepareAction {
+        /* TODO: enable if we have a way of testing equality (a hash?)
+        if self.text == text {
+            return self.action.into(); // no change
+        }
+         */
+
+        self.text = text;
+        self.display.action = Action::Runs;
+        true.into()
+    }
+}
+
+impl<T: EditableText> Text<T> {
     /// Insert a char at the given position
     ///
     /// This may be used to edit the raw text instead of replacing it.
@@ -113,8 +131,7 @@ impl Text {
     /// Currently this is not significantly more efficent than
     /// [`Text::set_text`]. This may change in the future (TODO).
     pub fn insert_char(&mut self, index: usize, c: char) -> PrepareAction {
-        self.text.insert(index, c);
-        self.fmt.insert_range(to_u32(index), to_u32(c.len_utf8()));
+        self.text.insert_char(index, c);
         self.display.action = Action::Runs;
         true.into()
     }
@@ -145,10 +162,7 @@ impl Text {
             Bound::Excluded(x) => *x,
             Bound::Unbounded => usize::MAX,
         };
-        self.text.replace_range(start..end, replace_with);
-        self.fmt.remove_range(to_u32(start), to_u32(end));
-        self.fmt
-            .insert_range(to_u32(start), to_u32(replace_with.len()));
+        self.text.replace_range(start, end, replace_with);
         self.display.action = Action::Runs;
         true.into()
     }
@@ -159,8 +173,7 @@ impl Text {
     ///
     /// All existing text formatting is removed.
     pub fn set_string(&mut self, string: String) -> PrepareAction {
-        self.text = string;
-        self.fmt.remove_range(0, u32::MAX);
+        self.text.set_string(string);
         self.display.action = Action::Runs;
         true.into()
     }
@@ -175,29 +188,14 @@ impl Text {
     /// Currently this is not significantly more efficent than
     /// [`Text::set_text`]. This may change in the future (TODO).
     pub fn swap_string(&mut self, string: &mut String) -> PrepareAction {
-        std::mem::swap(&mut self.text, string);
-        self.fmt.remove_range(0, u32::MAX);
-        self.display.action = Action::Runs;
-        true.into()
-    }
-
-    /// Set the text
-    pub fn set_text(&mut self, text: FormattedString) -> PrepareAction {
-        /* TODO: enable if we have a way of testing equality (a hash?)
-        if self.text == text {
-            return self.action.into(); // no change
-        }
-         */
-
-        self.text = text.text;
-        self.fmt = text.fmt;
+        self.text.swap_string(string);
         self.display.action = Action::Runs;
         true.into()
     }
 }
 
 /// Wrappers around [`TextDisplay`] methods
-impl Text {
+impl<T: FormattableText> Text<T> {
     /// Read the environment
     #[inline]
     pub fn env(&self) -> &Environment {
@@ -211,7 +209,7 @@ impl Text {
     #[inline]
     pub fn update_env<F: FnOnce(&mut UpdateEnv)>(&mut self, f: F) {
         if self.display.update_env(f).prepare() {
-            self.display.prepare(&self.text, &*self.fmt);
+            self.display.prepare(&self.text);
         }
     }
 
@@ -220,7 +218,7 @@ impl Text {
     /// Wraps [`TextDisplay::prepare`], passing text representation as parameters.
     #[inline]
     pub fn prepare(&mut self) {
-        self.display.prepare(&self.text, &*self.fmt);
+        self.display.prepare(&self.text);
     }
 
     /// Get size requirements
@@ -353,7 +351,7 @@ pub trait TextApi {
     fn prepare(&mut self);
 }
 
-impl TextApi for Text {
+impl<T: FormattableText> TextApi for Text<T> {
     fn display(&self) -> &TextDisplay {
         &self.display
     }
@@ -370,21 +368,21 @@ impl TextApi for Text {
         };
         self.display.env = env;
         self.display.action = self.display.action.max(action);
-        self.display.prepare(&self.text, &*self.fmt);
+        self.display.prepare(&self.text);
     }
 
     fn prepare(&mut self) {
-        self.display.prepare(&self.text, &*self.fmt);
+        self.display.prepare(&self.text);
     }
 }
 
-impl AsRef<TextDisplay> for Text {
+impl<T: FormattableText> AsRef<TextDisplay> for Text<T> {
     fn as_ref(&self) -> &TextDisplay {
         &self.display
     }
 }
 
-impl AsMut<TextDisplay> for Text {
+impl<T: FormattableText> AsMut<TextDisplay> for Text<T> {
     fn as_mut(&mut self) -> &mut TextDisplay {
         &mut self.display
     }
