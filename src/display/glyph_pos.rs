@@ -260,28 +260,28 @@ impl TextDisplay {
     /// Like [`TextDisplay::glyphs`] but with added effects
     ///
     /// It is required that the list of `effects` is not empty and that the
-    /// first entry has `start == 0`.
-    /// The user payload `X` may be useful for attaching colour information.
+    /// first entry has `start == 0`. The user payload `X` is simply passed
+    /// through to `f` and `g` calls and may be useful for colour information.
     ///
-    /// The callback `f` receives an extra parameter: the user payload for this
-    /// glyph.
+    /// The callback `f` receives `font_id, dpu, height, glyph, i, aux` where
+    /// `dpu` and `height` are both measures of the font size (pixels per font
+    /// unit and pixels per height, respectively), and `i` is the index within
+    /// `effects`.
     ///
     /// The callback `g` receives positioning for each underline/strikethrough
     /// segment: `x1, x2, y_top, h` where `h` is the thickness (height). Note
     /// that it is possible to have `h < 1.0` and `y_top, y_top + h` to round to
     /// the same number; the renderer is responsible for ensuring such lines
-    /// are actually visible.
+    /// are actually visible. The last parameters are `i, aux` as for `f`.
     ///
     /// Note: this is significantly more computationally expensive than
-    /// [`TextDisplay::glyphs`].
-    /// Although glyph positions are already calculated prior to calling this
-    /// method, it is still computationally-intensive enough that it may be
-    /// worth caching the result for reuse. This is left to the caller.
+    /// [`TextDisplay::glyphs`]. Optionally one may choose to cache the result,
+    /// though this is not really necessary.
     pub fn glyphs_with_effects<X, F, G>(&self, effects: &[Effect<X>], mut f: F, mut g: G)
     where
         X: Copy + Default,
-        F: FnMut(FontId, f32, f32, Glyph, X),
-        G: FnMut(f32, f32, f32, f32, X),
+        F: FnMut(FontId, f32, f32, Glyph, usize, X),
+        G: FnMut(f32, f32, f32, f32, usize, X),
     {
         assert!(self.action.is_none(), "kas-text::TextDisplay: not ready");
         assert!(
@@ -390,7 +390,7 @@ impl TextDisplay {
                         let sf = fonts.get(run.font_id).scale_by_dpu(run.dpu);
                         if let Some((x1, y_top, h, aux)) = underline {
                             let x2 = glyph.position.0;
-                            g(x1, x2, y_top, h, aux);
+                            g(x1, x2, y_top, h, effect_cur, aux);
                             underline = None;
                         } else if let Some(metrics) = sf.underline_metrics() {
                             let y_top = glyph.position.1 - metrics.position;
@@ -403,7 +403,7 @@ impl TextDisplay {
                         let sf = fonts.get(run.font_id).scale_by_dpu(run.dpu);
                         if let Some((x1, y_top, h, aux)) = strikethrough {
                             let x2 = glyph.position.0;
-                            g(x1, x2, y_top, h, aux);
+                            g(x1, x2, y_top, h, effect_cur, aux);
                             strikethrough = None;
                         } else if let Some(metrics) = sf.strikethrough_metrics() {
                             let y_top = glyph.position.1 - metrics.position;
@@ -414,7 +414,7 @@ impl TextDisplay {
                     }
                 }
 
-                f(font_id, dpu, height, glyph, fmt.aux);
+                f(font_id, dpu, height, glyph, effect_cur, fmt.aux);
             }
 
             // In case of RTL, we need to correct the value for the next run
@@ -426,7 +426,7 @@ impl TextDisplay {
                 } else {
                     run.caret
                 } + run_part.offset.0;
-                g(x1, x2, y_top, h, aux);
+                g(x1, x2, y_top, h, effect_cur, aux);
             }
             if let Some((x1, y_top, h, aux)) = strikethrough {
                 let x2 = if run_part.glyph_range.end() < run.glyphs.len() {
@@ -434,7 +434,7 @@ impl TextDisplay {
                 } else {
                     run.caret
                 } + run_part.offset.0;
-                g(x1, x2, y_top, h, aux);
+                g(x1, x2, y_top, h, effect_cur, aux);
             }
         }
     }

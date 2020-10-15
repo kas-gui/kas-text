@@ -315,8 +315,8 @@ impl Text {
     pub fn glyphs_with_effects<X, F, G>(&self, effects: &[Effect<X>], f: F, g: G)
     where
         X: Copy + Default,
-        F: FnMut(FontId, f32, f32, Glyph, X),
-        G: FnMut(f32, f32, f32, f32, X),
+        F: FnMut(FontId, f32, f32, Glyph, usize, X),
+        G: FnMut(f32, f32, f32, f32, usize, X),
     {
         self.display.glyphs_with_effects(effects, f, g)
     }
