@@ -5,8 +5,8 @@
 
 //! KAS Rich-Text library — text-display enviroment
 
+use crate::display::Action;
 use crate::fonts::{fonts, FontId};
-use crate::prepared::Action;
 use crate::Vec2;
 
 /// Environment in which text is prepared for display

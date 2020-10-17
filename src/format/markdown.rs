@@ -5,7 +5,7 @@
 
 //! Markdown parsing
 
-use super::{Format, FormatData, Parser};
+use super::{EditableText, FontToken, FormattableText};
 use crate::conv::to_u32;
 use crate::fonts::{self, FamilyName, FontId, FontSelector, Style, Weight};
 use crate::Environment;
@@ -24,15 +24,7 @@ impl Markdown {
     }
 }
 
-impl Parser for Markdown {
-    type FormatData = Vec<Fmt>;
-
-    fn finish(self) -> (String, Self::FormatData) {
-        (self.text, self.fmt)
-    }
-}
-
-pub struct FormatIter<'a> {
+pub struct FontTokenIter<'a> {
     index: usize,
     fmt: &'a [Fmt],
     fonts: &'a fonts::FontLibrary,
@@ -41,9 +33,9 @@ pub struct FormatIter<'a> {
     base_dpem: f32,
 }
 
-impl<'a> FormatIter<'a> {
+impl<'a> FontTokenIter<'a> {
     fn new(fmt: &'a [Fmt], env: &Environment) -> Self {
-        FormatIter {
+        FontTokenIter {
             index: 0,
             fmt,
             fonts: fonts::fonts(),
@@ -54,10 +46,10 @@ impl<'a> FormatIter<'a> {
     }
 }
 
-impl<'a> Iterator for FormatIter<'a> {
-    type Item = Format;
+impl<'a> Iterator for FontTokenIter<'a> {
+    type Item = FontToken;
 
-    fn next(&mut self) -> Option<Format> {
+    fn next(&mut self) -> Option<FontToken> {
         if self.index < self.fmt.len() {
             let fmt = &self.fmt[self.index];
             if self.font_sel != fmt.sel {
@@ -65,7 +57,7 @@ impl<'a> Iterator for FormatIter<'a> {
                 self.font_sel.assign(&fmt.sel);
             }
             self.index += 1;
-            Some(Format {
+            Some(FontToken {
                 start: fmt.start,
                 font_id: self.font_id,
                 dpem: self.base_dpem * fmt.rel_size,
@@ -76,17 +68,55 @@ impl<'a> Iterator for FormatIter<'a> {
     }
 }
 
-impl FormatData for Vec<Fmt> {
-    fn clone_boxed(&self) -> Box<dyn FormatData> {
+impl FormattableText for Markdown {
+    #[inline]
+    fn clone_boxed(&self) -> Box<dyn FormattableText> {
         Box::new(self.clone())
     }
 
-    fn remove_range(&mut self, start: u32, end: u32) {
+    #[inline]
+    fn as_str(&self) -> &str {
+        &self.text
+    }
+
+    #[inline]
+    fn font_tokens<'a>(&'a self, env: &'a Environment) -> Box<dyn Iterator<Item = FontToken> + 'a> {
+        Box::new(FontTokenIter::new(&self.fmt, env))
+    }
+}
+
+impl EditableText for Markdown {
+    fn set_string(&mut self, string: String) {
+        self.text = string;
+        self.fmt.clear();
+    }
+
+    fn swap_string(&mut self, string: &mut String) {
+        std::mem::swap(&mut self.text, string);
+        self.fmt.clear();
+    }
+
+    fn insert_char(&mut self, index: usize, c: char) {
+        self.text.insert(index, c);
+        let start = to_u32(index);
+        let len = to_u32(c.len_utf8());
+        for fmt in &mut self.fmt {
+            if fmt.start >= start {
+                fmt.start += len;
+            }
+        }
+    }
+
+    fn replace_range(&mut self, start: usize, end: usize, replace_with: &str) {
+        self.text.replace_range(start..end, replace_with);
+
+        let start = to_u32(start);
+        let end = to_u32(end);
         let len = end - start;
         let mut last = None;
         let mut i = 0;
-        while i < self.len() {
-            let fmt = &mut self[i];
+        while i < self.str_len() {
+            let fmt = &mut self.fmt[i];
             if fmt.start >= start {
                 if fmt.start < end {
                     fmt.start = start;
@@ -95,7 +125,7 @@ impl FormatData for Vec<Fmt> {
                 }
                 if let Some((index, start)) = last {
                     if start == fmt.start {
-                        self.remove(index);
+                        self.fmt.remove(index);
                         continue;
                     }
                 }
@@ -103,18 +133,6 @@ impl FormatData for Vec<Fmt> {
             }
             i += 1;
         }
-    }
-
-    fn insert_range(&mut self, start: u32, len: u32) {
-        for fmt in self {
-            if fmt.start >= start {
-                fmt.start += len;
-            }
-        }
-    }
-
-    fn fmt_iter<'a>(&'a self, env: &'a Environment) -> Box<dyn Iterator<Item = Format> + 'a> {
-        Box::new(FormatIter::new(self, env))
     }
 }
 

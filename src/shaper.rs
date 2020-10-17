@@ -19,7 +19,7 @@
 
 use crate::conv::{to_u32, to_usize, DPU};
 use crate::fonts::{fonts, FontId};
-use crate::{prepared, Range, Vec2};
+use crate::{display, Range, Vec2};
 use smallvec::SmallVec;
 use unicode_bidi::Level;
 
@@ -196,7 +196,7 @@ impl GlyphRun {
 /// A "run" is expected to be the maximal sequence of code points of the same
 /// embedding level (as defined by Unicode TR9 aka BIDI algorithm) *and*
 /// excluding all hard line breaks (e.g. `\n`).
-pub(crate) fn shape(text: &str, run: &prepared::Run) -> GlyphRun {
+pub(crate) fn shape(text: &str, run: &display::Run) -> GlyphRun {
     let mut glyphs = vec![];
     let mut breaks = Default::default();
     let mut no_space_end = 0.0;
@@ -263,7 +263,7 @@ pub(crate) fn shape(text: &str, run: &prepared::Run) -> GlyphRun {
 #[cfg(feature = "harfbuzz_rs")]
 fn shape_harfbuzz(
     text: &str,
-    run: &prepared::Run,
+    run: &display::Run,
 ) -> (Vec<Glyph>, SmallVec<[GlyphBreak; 2]>, f32, f32) {
     let dpem = run.dpem;
     let mut font = fonts().get_harfbuzz(run.font_id);
@@ -352,7 +352,7 @@ fn shape_harfbuzz(
 fn shape_simple(
     sf: crate::fonts::ScaledFaceRef,
     text: &str,
-    run: &prepared::Run,
+    run: &display::Run,
 ) -> (Vec<Glyph>, SmallVec<[GlyphBreak; 2]>, f32, f32) {
     use unicode_bidi_mirroring::get_mirrored;
 
