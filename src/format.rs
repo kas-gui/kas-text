@@ -175,6 +175,6 @@ pub struct FontToken {
     /// Font size, in dots-per-em (pixel width of an 'M')
     ///
     /// This may be calculated from point size as `pt_size * dpp`, where `dpp`
-    /// is the number of pixels per point ([`Environment::dpp`]).
+    /// is the number of pixels per point (see [`crate::fonts`] documentation).
     pub dpem: f32,
 }

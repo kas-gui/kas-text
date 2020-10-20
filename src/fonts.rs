@@ -8,17 +8,51 @@
 //! Fonts are managed by the [`FontLibrary`], of which a static singleton
 //! exists and can be accessed via [`fonts`].
 //!
-//! The first font loaded is known as the "default font" and used for all texts
-//! which do not explicitly select another font. As such, the user of this
-//! library *must* load the default font before all other fonts and before
-//! any operation requiring font metrics:
+//! ### FontId and the default font
 //!
+//! The [`FontId`] type is a numeric identifier for loaded fonts. It may be
+//! default-constructed to access the *default* font, with number 0.
+//!
+//! To make this work, the user of this library *must* load the default font
+//! before all other fonts and before any operation requiring font metrics:
 //! ```
 //! if let Err(e) = kas_text::fonts::fonts().load_default() {
 //!     panic!("Error loading font: {}", e);
 //! }
 //! // from now on, kas_text::fonts::FontId::default() identifies the default font
 //! ```
+//!
+//! ### Font sizes
+//!
+//! Typically, font sizes are specified in "Points". Several other units and
+//! measures come into play here. Lets start with those dating back to the
+//! early printing press:
+//!
+//! -   1 *Point* = 1/72 inch (~0.35mm), by the usual DTP standard
+//! -   1 *Em* is the width of a capital `M` (inclusive of margin) in some font
+//! -   The *point size* of a font refers to the number of *points* per *em*
+//!
+//! Thus, with a "12 point font", one 'M' occupies 12/72 of an inch on paper.
+//!
+//! In digital typography, one must translate to/from pixel sizes. Here we have:
+//!
+//! -   DPI (Dots Per Inch) is the number of pixels per inch
+//! -   A *scale factor* is a measure of the number of pixels relative to a
+//!     standard DPI, usually 96
+//!
+//! We introduce two measures used by this library:
+//!
+//! -   DPP (Dots Per Point): `dpp = dpi / 72 = scale_factor × (96 / 72)`
+//! -   DPEM (Dots Per Em): `dpem = point_size × dpp`
+//!
+//! Warning: on MacOS and Apple systems, a *point* sometimes refers to a
+//! (virtual) pixel, yielding `dpp = 1` (or `dpp = 2` on Retina screens, or
+//! something else entirely on iPhones). Apple font sizes may therefore be
+//! difficult to compare.
+//!
+//! Finally, note that digital font files have an internally defined unit
+//! known as the *font unit*. This is not normally used directly but is used
+//! by the `DPU` type.
 
 use crate::conv::{to_u32, to_usize, LineMetrics, DPU};
 use crate::GlyphId;
@@ -86,7 +120,7 @@ impl FaceRef {
 
     /// Get a scaled reference
     ///
-    /// Units: `dpem` is dots (pixels) per Em.
+    /// Units: `dpem` is dots (pixels) per Em (module documentation).
     #[inline]
     pub(crate) fn scale_by_dpem(self, dpem: f32) -> ScaledFaceRef {
         ScaledFaceRef(self.0, self.dpu(dpem))
@@ -94,7 +128,7 @@ impl FaceRef {
 
     /// Get a scaled reference
     ///
-    /// Units: `dpu` is dots (pixels) per font-unit.
+    /// Units: `dpu` is dots (pixels) per font-unit (see module documentation).
     #[inline]
     pub(crate) fn scale_by_dpu(self, dpu: DPU) -> ScaledFaceRef {
         ScaledFaceRef(self.0, dpu)
@@ -102,7 +136,7 @@ impl FaceRef {
 
     /// Get the height of horizontal text in pixels
     ///
-    /// Units: `dpu` is dots (pixels) per font-unit.
+    /// Units: `dpem` is dots (pixels) per Em (module documentation).
     #[inline]
     pub fn height(&self, dpem: f32) -> f32 {
         self.scale_by_dpem(dpem).height()
