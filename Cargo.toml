@@ -19,6 +19,9 @@ shaping = ["harfbuzz_rs"]
 # Enable Markdown parsing
 markdown = ["pulldown-cmark"]
 
+# Use Generic Associated Types (experimental)
+gat = []
+
 [dependencies]
 bitflags = "1.2.1"
 ttf-parser = "0.8.2"

@@ -1,0 +1,65 @@
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License in the LICENSE-APACHE file or at:
+//     https://www.apache.org/licenses/LICENSE-2.0
+
+//! Impls for plain text
+
+use super::{EditableText, FontToken, FormattableText};
+use crate::Environment;
+#[cfg(not(feature = "gat"))]
+use crate::OwningVecIter;
+
+impl<'t> FormattableText for &'t str {
+    #[cfg(feature = "gat")]
+    type FontTokenIterator<'a> = std::iter::Empty<FontToken>;
+
+    fn as_str(&self) -> &str {
+        self
+    }
+
+    #[cfg(feature = "gat")]
+    fn font_tokens<'a>(&'a self, _: &Environment) -> Self::FontTokenIterator<'a> {
+        std::iter::empty()
+    }
+    #[cfg(not(feature = "gat"))]
+    fn font_tokens(&self, _: &Environment) -> OwningVecIter<FontToken> {
+        OwningVecIter::new(Vec::new())
+    }
+}
+
+impl FormattableText for String {
+    #[cfg(feature = "gat")]
+    type FontTokenIterator<'a> = std::iter::Empty<FontToken>;
+
+    fn as_str(&self) -> &str {
+        self
+    }
+
+    #[cfg(feature = "gat")]
+    fn font_tokens<'a>(&'a self, _: &Environment) -> Self::FontTokenIterator<'a> {
+        std::iter::empty()
+    }
+    #[cfg(not(feature = "gat"))]
+    fn font_tokens(&self, _: &Environment) -> OwningVecIter<FontToken> {
+        OwningVecIter::new(Vec::new())
+    }
+}
+
+impl EditableText for String {
+    fn set_string(&mut self, string: String) {
+        *self = string;
+    }
+
+    fn swap_string(&mut self, string: &mut String) {
+        std::mem::swap(self, string);
+    }
+
+    fn insert_char(&mut self, index: usize, c: char) {
+        self.insert(index, c);
+    }
+
+    fn replace_range(&mut self, start: usize, end: usize, replace_with: &str) {
+        self.replace_range(start..end, replace_with);
+    }
+}

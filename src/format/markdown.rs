@@ -9,6 +9,8 @@ use super::{EditableText, FontToken, FormattableText};
 use crate::conv::to_u32;
 use crate::fonts::{self, FamilyName, FontId, FontSelector, Style, Weight};
 use crate::Environment;
+#[cfg(not(feature = "gat"))]
+use crate::OwningVecIter;
 use pulldown_cmark::{Event, Tag};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -69,19 +71,24 @@ impl<'a> Iterator for FontTokenIter<'a> {
 }
 
 impl FormattableText for Markdown {
-    #[inline]
-    fn clone_boxed(&self) -> Box<dyn FormattableText> {
-        Box::new(self.clone())
-    }
+    #[cfg(feature = "gat")]
+    type FontTokenIterator<'a> = FontTokenIter<'a>;
 
     #[inline]
     fn as_str(&self) -> &str {
         &self.text
     }
 
+    #[cfg(feature = "gat")]
     #[inline]
-    fn font_tokens<'a>(&'a self, env: &'a Environment) -> Box<dyn Iterator<Item = FontToken> + 'a> {
-        Box::new(FontTokenIter::new(&self.fmt, env))
+    fn font_tokens<'a>(&'a self, env: &Environment) -> Self::FontTokenIterator<'a> {
+        FontTokenIter::new(&self.fmt, env)
+    }
+    #[cfg(not(feature = "gat"))]
+    #[inline]
+    fn font_tokens(&self, env: &Environment) -> OwningVecIter<FontToken> {
+        let iter = FontTokenIter::new(&self.fmt, env);
+        OwningVecIter::new(iter.collect())
     }
 }
 

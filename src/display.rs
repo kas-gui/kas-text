@@ -221,7 +221,7 @@ impl TextDisplay {
     /// method only performs the required steps. Updating line-wrapping due to
     /// changes in available width is significantly faster than updating the
     /// source text.
-    pub fn prepare(&mut self, text: &dyn FormattableText) {
+    pub fn prepare<F: FormattableText>(&mut self, text: &F) {
         let action = self.action;
         if action == Action::None {
             return;

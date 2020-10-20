@@ -45,7 +45,7 @@ pub(crate) struct LineRun {
 }
 
 impl TextDisplay {
-    pub(crate) fn update_run_dpem(&mut self, text: &dyn FormattableText) {
+    pub(crate) fn update_run_dpem<F: FormattableText>(&mut self, text: &F) {
         let mut dpem = self.env.pt_size * self.env.dpp;
 
         let mut font_tokens = text.font_tokens(&self.env);
@@ -73,7 +73,7 @@ impl TextDisplay {
     /// result of splitting and reversing according to Unicode TR9 aka
     /// Bidirectional algorithm), plus a list of "soft break" positions
     /// (where wrapping may introduce new lines depending on available space).
-    pub(crate) fn prepare_runs(&mut self, text: &dyn FormattableText) {
+    pub(crate) fn prepare_runs<F: FormattableText>(&mut self, text: &F) {
         self.runs.clear();
         self.line_runs.clear();
 
