@@ -78,7 +78,7 @@ impl TextDisplay {
                     let (part_offset, part_len_no_space, part_len) =
                         run.part_lengths(last_part..part);
                     let line_len = caret + part_len_no_space;
-                    if line_len > width_bound && end.2 > 0 {
+                    if env.wrap && line_len > width_bound && end.2 > 0 {
                         // Add up to last valid break point then wrap and reset
                         let slice = &mut parts[0..end.2];
                         adder.add_line(fonts, level, end_len, &self.glyph_runs, slice, true);
