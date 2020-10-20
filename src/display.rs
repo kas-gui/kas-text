@@ -10,8 +10,7 @@ use std::ops::{BitOr, BitOrAssign};
 
 use crate::conv::to_usize;
 use crate::format::FormattableText;
-use crate::{shaper, Vec2};
-use crate::{Environment, UpdateEnv};
+use crate::{shaper, Environment, Vec2};
 
 mod glyph_pos;
 mod text_runs;
@@ -36,14 +35,15 @@ impl PrepareAction {
     ///
     /// This may be useful when optionally calling multiple update methods:
     /// ```
-    /// # use kas_text::{PrepareAction, Text};
-    /// fn update_text(text: &mut Text<String>, opt_new_text: Option<String>) {
+    /// use kas_text::{PrepareAction, Text, Environment};
+    ///
+    /// fn update_text(text: &mut Text<String>, opt_new_text: Option<String>, env: &Environment) {
     ///     let mut prepare = PrepareAction::none();
     ///     if let Some(new_text) = opt_new_text {
     ///         prepare |= text.set_text(new_text.into());
     ///     }
     ///     if prepare.prepare() {
-    ///         text.prepare();
+    ///         text.prepare(env);
     ///     }
     /// }
     /// ```
@@ -147,7 +147,6 @@ impl Action {
 /// number, then [`TextDisplay::line_index_nearest`] to find the new index.
 #[derive(Clone, Debug)]
 pub struct TextDisplay {
-    pub(crate) env: Environment,
     /// Level runs within the text, in logical order
     runs: SmallVec<[Run; 1]>,
     /// Subsets of runs forming a line, with line direction
@@ -163,21 +162,12 @@ pub struct TextDisplay {
     /// Visual (wrapped) lines, in visual and logical order
     lines: Vec<Line>,
     num_glyphs: u32,
-}
-
-impl Default for TextDisplay {
-    fn default() -> Self {
-        TextDisplay::new(Environment::default())
-    }
+    width: f32,
 }
 
 impl TextDisplay {
-    /// Construct from an environment
-    ///
-    /// This struct must be made ready for usage by calling [`TextDisplay::prepare`].
-    pub fn new(env: Environment) -> Self {
+    pub(crate) fn new() -> Self {
         TextDisplay {
-            env,
             runs: Default::default(),
             line_runs: Default::default(),
             action: Action::Runs, // highest value
@@ -185,34 +175,9 @@ impl TextDisplay {
             glyph_runs: Default::default(),
             wrapped_runs: Default::default(),
             lines: Default::default(),
-            num_glyphs: Default::default(),
+            num_glyphs: 0,
+            width: 0.0,
         }
-    }
-
-    /// Read the environment
-    pub fn env(&self) -> &Environment {
-        &self.env
-    }
-
-    /// Update the environment
-    ///
-    /// If the only prepare action required after updating the environment is to
-    /// re-wrap text, this is done immediately. In other cases,
-    /// [`TextDisplay::prepare`] must be called and the returned
-    /// [`PrepareAction`] indicates this.
-    #[inline]
-    pub fn update_env<F: FnOnce(&mut UpdateEnv)>(&mut self, f: F) -> PrepareAction {
-        let mut update = UpdateEnv::new(&mut self.env);
-        f(&mut update);
-        self.action = update.finish().max(self.action);
-        if self.action > Action::Wrap {
-            return PrepareAction(true);
-        }
-        if self.action == Action::Wrap {
-            self.wrap_lines();
-            self.action = Action::None;
-        }
-        PrepareAction(false)
     }
 
     /// Prepare text for display
@@ -221,19 +186,19 @@ impl TextDisplay {
     /// method only performs the required steps. Updating line-wrapping due to
     /// changes in available width is significantly faster than updating the
     /// source text.
-    pub fn prepare<F: FormattableText>(&mut self, text: &F) {
+    pub fn prepare<F: FormattableText>(&mut self, text: &F, env: &Environment) {
         let action = self.action;
         if action == Action::None {
             return;
         }
 
         if action >= Action::Runs {
-            self.prepare_runs(text);
+            self.prepare_runs(text, env);
         }
 
         if action == Action::Dpem {
             // Note: this is only needed if we didn't just call prepare_runs()
-            self.update_run_dpem(text);
+            self.update_run_dpem(text, env);
         }
 
         if action >= Action::Shape {
@@ -245,27 +210,9 @@ impl TextDisplay {
         }
 
         if action >= Action::Wrap {
-            self.wrap_lines();
+            self.wrap_lines(env);
         }
 
-        self.action = Action::None;
-    }
-
-    /// Prepare (wrap only)
-    ///
-    /// This performs a sub-set of [`TextDisplay::prepare`]. It panics if any
-    /// action other than re-wrapping is required.
-    #[inline]
-    pub fn prepare_wrap(&mut self) {
-        if self.action == Action::None {
-            return;
-        }
-
-        if self.action > Action::Wrap {
-            panic!("kas-text::TextDisplay::prepare_wrap: action > wrap required");
-        }
-
-        self.wrap_lines();
         self.action = Action::None;
     }
 

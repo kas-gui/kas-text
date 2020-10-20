@@ -39,12 +39,12 @@ struct PartInfo {
 }
 
 impl TextDisplay {
-    pub(crate) fn wrap_lines(&mut self) {
+    pub(crate) fn wrap_lines(&mut self, env: &Environment) {
         let fonts = fonts();
         let capacity = 0; // TODO(opt): estimate like self.text_len() / 16 ?
-        let mut adder = LineAdder::new(capacity, &self.env);
+        let mut adder = LineAdder::new(capacity, env);
         let width_bound = adder.width_bound;
-        let justify = self.env.halign == Align::Stretch;
+        let justify = env.halign == Align::Stretch;
         let mut parts = Vec::with_capacity(16);
 
         // Almost everything in "this" method depends on the line direction, so
@@ -142,10 +142,11 @@ impl TextDisplay {
             }
         }
 
-        self.required = adder.finish(self.env.valign, self.env.bounds.1);
+        self.required = adder.finish(env.valign, env.bounds.1);
         self.wrapped_runs = adder.runs;
         self.lines = adder.lines;
         self.num_glyphs = adder.num_glyphs;
+        self.width = env.bounds.0;
     }
 }
 

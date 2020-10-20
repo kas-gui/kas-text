@@ -11,7 +11,7 @@ use std::ops::Bound;
 use crate::display::{Action, Effect, MarkerPosIter, PrepareAction, TextDisplay};
 use crate::fonts::FontId;
 use crate::format::{EditableText, FormattableText};
-use crate::{Environment, UpdateEnv};
+use crate::Environment;
 use crate::{Glyph, Vec2};
 
 /// Text, prepared for display in a given enviroment
@@ -27,38 +27,19 @@ pub struct Text<T: FormattableText> {
 
 impl<T: FormattableText + Default> Default for Text<T> {
     fn default() -> Self {
-        Text::new(Environment::default(), T::default())
+        Text::new(T::default())
     }
 }
 
 impl<T: FormattableText> Text<T> {
-    /// Construct from an environment and a text model
+    /// Construct from a text model
     ///
     /// This struct must be made ready for usage by calling [`Text::prepare`].
-    pub fn new(env: Environment, text: T) -> Self {
+    pub fn new(text: T) -> Self {
         Text {
             text: text,
-            display: TextDisplay::new(env),
+            display: TextDisplay::new(),
         }
-    }
-
-    /// Construct from a default environment (single-line) and text
-    ///
-    /// The environment is default-constructed, with [`Environment::wrap`]
-    /// turned off.
-    #[inline]
-    pub fn new_single(text: T) -> Self {
-        let mut env = Environment::new();
-        env.wrap = false;
-        Self::new(env, text)
-    }
-
-    /// Construct from a default environment (multi-line) and text
-    ///
-    /// The environment is default-constructed (line-wrap on).
-    #[inline]
-    pub fn new_multi(text: T) -> Self {
-        Self::new(Environment::new(), text)
     }
 
     /// Clone the formatted text
@@ -196,29 +177,12 @@ impl<T: EditableText> Text<T> {
 
 /// Wrappers around [`TextDisplay`] methods
 impl<T: FormattableText> Text<T> {
-    /// Read the environment
-    #[inline]
-    pub fn env(&self) -> &Environment {
-        self.display.env()
-    }
-
-    /// Update the environment and prepare for display
-    ///
-    /// Wraps [`TextDisplay::update_env`], passing text representation as
-    /// parameters. This calls [`TextDisplay::prepare`] when necessary.
-    #[inline]
-    pub fn update_env<F: FnOnce(&mut UpdateEnv)>(&mut self, f: F) {
-        if self.display.update_env(f).prepare() {
-            self.display.prepare(&self.text);
-        }
-    }
-
     /// Prepare text for display
     ///
     /// Wraps [`TextDisplay::prepare`], passing text representation as parameters.
     #[inline]
-    pub fn prepare(&mut self) {
-        self.display.prepare(&self.text);
+    pub fn prepare(&mut self, env: &Environment) {
+        self.display.prepare(&self.text, env);
     }
 
     /// Get size requirements
@@ -342,13 +306,10 @@ pub trait TextApi {
     /// Read the [`TextDisplay`]
     fn display(&self) -> &TextDisplay;
 
-    /// Set the environment and prepare (as necessary)
-    fn set_env(&mut self, env: Environment);
-
     /// Prepare text for display
     ///
     /// Calls [`TextDisplay::prepare`], passing text representation as parameters.
-    fn prepare(&mut self);
+    fn prepare(&mut self, env: &Environment);
 }
 
 impl<T: FormattableText> TextApi for Text<T> {
@@ -356,23 +317,8 @@ impl<T: FormattableText> TextApi for Text<T> {
         &self.display
     }
 
-    fn set_env(&mut self, env: Environment) {
-        let action = if env.dir != self.display.env.dir || env.bidi != self.display.env.bidi {
-            Action::Runs
-        } else if env.dpp != self.display.env.dpp || env.pt_size != self.display.env.pt_size {
-            Action::Dpem
-        } else if env != self.display.env {
-            Action::Wrap
-        } else {
-            Action::None
-        };
-        self.display.env = env;
-        self.display.action = self.display.action.max(action);
-        self.display.prepare(&self.text);
-    }
-
-    fn prepare(&mut self) {
-        self.display.prepare(&self.text);
+    fn prepare(&mut self, env: &Environment) {
+        self.display.prepare(&self.text, env);
     }
 }
 

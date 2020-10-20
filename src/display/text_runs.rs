@@ -9,6 +9,7 @@ use super::TextDisplay;
 use crate::conv::{to_u32, to_usize};
 use crate::fonts::FontId;
 use crate::format::FormattableText;
+use crate::Environment;
 use crate::{Direction, Range};
 use smallvec::SmallVec;
 use unicode_bidi::{BidiInfo, Level, LTR_LEVEL, RTL_LEVEL};
@@ -45,10 +46,10 @@ pub(crate) struct LineRun {
 }
 
 impl TextDisplay {
-    pub(crate) fn update_run_dpem<F: FormattableText>(&mut self, text: &F) {
-        let mut dpem = self.env.pt_size * self.env.dpp;
+    pub(crate) fn update_run_dpem<F: FormattableText>(&mut self, text: &F, env: &Environment) {
+        let mut dpem = env.pt_size * env.dpp;
 
-        let mut font_tokens = text.font_tokens(&self.env);
+        let mut font_tokens = text.font_tokens(env);
         let mut next_fmt = font_tokens.next();
 
         for run in &mut self.runs {
@@ -73,14 +74,14 @@ impl TextDisplay {
     /// result of splitting and reversing according to Unicode TR9 aka
     /// Bidirectional algorithm), plus a list of "soft break" positions
     /// (where wrapping may introduce new lines depending on available space).
-    pub(crate) fn prepare_runs<F: FormattableText>(&mut self, text: &F) {
+    pub(crate) fn prepare_runs<F: FormattableText>(&mut self, text: &F, env: &Environment) {
         self.runs.clear();
         self.line_runs.clear();
 
         let mut font_id = FontId::default();
-        let mut dpem = self.env.pt_size * self.env.dpp;
+        let mut dpem = env.pt_size * env.dpp;
 
-        let mut font_tokens = text.font_tokens(&self.env);
+        let mut font_tokens = text.font_tokens(env);
         let mut next_fmt = font_tokens.next();
         if let Some(fmt) = next_fmt.as_ref() {
             if fmt.start == 0 {
@@ -90,8 +91,8 @@ impl TextDisplay {
             }
         }
 
-        let bidi = self.env.bidi;
-        let default_para_level = match self.env.dir {
+        let bidi = env.bidi;
+        let default_para_level = match env.dir {
             Direction::Auto => None,
             Direction::LR => Some(LTR_LEVEL),
             Direction::RL => Some(RTL_LEVEL),

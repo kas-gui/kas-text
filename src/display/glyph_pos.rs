@@ -226,10 +226,11 @@ impl TextDisplay {
     /// glyphs yielded will equal [`TextDisplay::num_glyphs`]. This may be used as
     /// follows:
     /// ```no_run
-    /// # use kas_text::{Glyph, Text};
+    /// # use kas_text::{Glyph, Text, Environment};
     /// # fn draw(_: Vec<(f32, Glyph)>) {}
-    /// let mut text = Text::new_multi("Some example text");
-    /// text.prepare();
+    /// let env = Environment::default();
+    /// let mut text = Text::new("Some example text");
+    /// text.prepare(&env);
     ///
     /// let mut glyphs = Vec::with_capacity(text.num_glyphs());
     /// text.glyphs(|_, _, height, glyph| glyphs.push((height, glyph)));
@@ -463,7 +464,7 @@ impl TextDisplay {
 
         let mut lines = self.lines.iter();
         let mut rects = Vec::with_capacity(self.lines.len());
-        let rbound = self.env.bounds.0;
+        let rbound = self.width;
 
         // Find the first line
         let mut cur_line = 'l1: loop {

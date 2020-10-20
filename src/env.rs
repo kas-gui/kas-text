@@ -5,8 +5,6 @@
 
 //! KAS Rich-Text library — text-display enviroment
 
-use crate::display::Action;
-use crate::fonts::{fonts, FontId};
 use crate::Vec2;
 
 /// Environment in which text is prepared for display
@@ -91,98 +89,6 @@ impl Environment {
     /// default font size and zero-sized bounds.
     pub fn new() -> Self {
         Self::default()
-    }
-
-    /// Returns the height of standard horizontal text
-    ///
-    /// This depends on the `pt_size` and `dpp` fields.
-    ///
-    /// To use "the standard font", use `Default::default()`.
-    pub fn height(&self, font_id: FontId) -> f32 {
-        let dpem = self.pt_size * self.dpp;
-        fonts().get(font_id).height(dpem)
-    }
-}
-
-/// Helper to modify an environment
-#[derive(Debug)]
-pub struct UpdateEnv<'a> {
-    env: &'a mut Environment,
-    action: Action,
-}
-
-impl<'a> UpdateEnv<'a> {
-    pub(crate) fn new(env: &'a mut Environment) -> Self {
-        let action = Action::None;
-        UpdateEnv { env, action }
-    }
-
-    pub(crate) fn finish(self) -> Action {
-        self.action
-    }
-
-    /// Read access to the environment
-    pub fn env(&self) -> &Environment {
-        self.env
-    }
-
-    /// Set DPP
-    ///
-    /// Units are pixels/point (see [`Environment::dpp`]).
-    pub fn set_dpp(&mut self, dpp: f32) {
-        if dpp != self.env.dpp {
-            self.env.dpp = dpp;
-            self.action = Action::Dpem;
-        }
-    }
-
-    /// Set default font size in points
-    ///
-    /// Units are points/em (see [`Environment::pt_size`]).
-    pub fn set_pt_size(&mut self, pt_size: f32) {
-        if pt_size != self.env.pt_size {
-            self.env.pt_size = pt_size;
-            self.action = Action::Dpem;
-        }
-    }
-
-    /// Set the default direction
-    pub fn set_dir(&mut self, dir: Direction) {
-        if dir != self.env.dir {
-            self.env.dir = dir;
-            self.action = Action::Runs;
-        }
-    }
-
-    /// Set the alignment
-    ///
-    /// Takes `(horiz_align, vert_align)` tuple to allow easier parameter passing.
-    pub fn set_align(&mut self, (horiz, vert): (Align, Align)) {
-        if horiz != self.env.halign || vert != self.env.valign {
-            self.env.halign = horiz;
-            self.env.valign = vert;
-            self.action = self.action.max(Action::Wrap);
-        }
-    }
-
-    /// Enable or disable line-wrapping
-    pub fn set_wrap(&mut self, wrap: bool) {
-        if wrap != self.env.wrap {
-            self.env.wrap = wrap;
-            self.action = self.action.max(Action::Wrap);
-        }
-    }
-
-    /// Set the environment's bounds
-    pub fn set_bounds(&mut self, bounds: Vec2) {
-        if bounds != self.env.bounds {
-            // Note (opt): if we had separate align and wrap actions, then we
-            // would only need to do alignment provided:
-            // self.width_required <= bounds.0.min(self.env.bounds.0)
-            // This may not be worth pursuing however.
-            self.env.bounds = bounds;
-            self.action = self.action.max(Action::Wrap);
-        }
     }
 }
 
