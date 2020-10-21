@@ -6,6 +6,7 @@
 //! KAS Rich-Text library
 
 #![cfg_attr(doc_cfg, feature(doc_cfg))]
+#![cfg_attr(feature = "gat", feature(generic_associated_types))]
 
 mod env;
 pub use env::*;
@@ -16,13 +17,16 @@ mod data;
 pub use data::{Range, Vec2};
 
 mod display;
-pub use display::{Effect, EffectFlags, PrepareAction, TextDisplay};
+pub use display::*;
 
 pub mod fonts;
 pub mod format;
 
 mod text;
-pub use text::{Text, TextApi};
+pub use text::*;
+
+mod util;
+pub use util::{Action, OwningVecIter};
 
 pub(crate) mod shaper;
 pub use shaper::{Glyph, GlyphId};

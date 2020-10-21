@@ -6,21 +6,23 @@
 //! Text object
 
 use std::convert::{AsMut, AsRef};
-use std::ops::Bound;
 
-use crate::display::{Action, Effect, MarkerPosIter, PrepareAction, TextDisplay};
+use crate::display::{Effect, MarkerPosIter, TextDisplay};
 use crate::fonts::FontId;
 use crate::format::{EditableText, FormattableText};
-use crate::{Environment, UpdateEnv};
-use crate::{Glyph, Vec2};
+use crate::{Action, Glyph, Vec2};
+use crate::{EnvFlags, Environment, UpdateEnv};
 
 /// Text, prepared for display in a given enviroment
 ///
-/// This struct is composed of two parts: a representation of the text being
-/// displayed, and a [`TextDisplay`] object.
-/// See also documentation of [`TextDisplay`].
+/// This struct is composed of three parts: an [`Environment`], a representation
+/// of the [`FormattableText`] being displayed, and a [`TextDisplay`] object.
+///
+/// Most Functionality is implemented via the [`TextApi`] and [`TextApiExt`]
+/// traits.
 #[derive(Clone, Debug)]
 pub struct Text<T: FormattableText> {
+    env: Environment,
     text: T,
     display: TextDisplay,
 }
@@ -37,8 +39,9 @@ impl<T: FormattableText> Text<T> {
     /// This struct must be made ready for usage by calling [`Text::prepare`].
     pub fn new(env: Environment, text: T) -> Self {
         Text {
+            env,
             text: text,
-            display: TextDisplay::new(env),
+            display: TextDisplay::default(),
         }
     }
 
@@ -48,8 +51,8 @@ impl<T: FormattableText> Text<T> {
     /// turned off.
     #[inline]
     pub fn new_single(text: T) -> Self {
-        let mut env = Environment::new();
-        env.wrap = false;
+        let mut env = Environment::default();
+        env.flags.remove(EnvFlags::WRAP);
         Self::new(env, text)
     }
 
@@ -58,7 +61,7 @@ impl<T: FormattableText> Text<T> {
     /// The environment is default-constructed (line-wrap on).
     #[inline]
     pub fn new_multi(text: T) -> Self {
-        Self::new(Environment::new(), text)
+        Self::new(Environment::default(), text)
     }
 
     /// Clone the formatted text
@@ -75,30 +78,6 @@ impl<T: FormattableText> Text<T> {
         self.text
     }
 
-    /// Clone the unformatted text as a `String`
-    pub fn clone_string(&self) -> String {
-        self.text.as_str().to_string()
-    }
-
-    /// Access to the contiguous text
-    ///
-    /// This is the contiguous text without formatting information.
-    #[inline]
-    pub fn as_str(&self) -> &str {
-        self.text.as_str()
-    }
-
-    /// Length of contiguous text
-    ///
-    /// This is a shortcut to `self.as_str().len()`.
-    ///
-    /// It is valid to reference text within the range `0..text_len()`,
-    /// even if not all text within this range will be displayed (due to runs).
-    #[inline]
-    pub fn str_len(&self) -> usize {
-        self.as_str().len()
-    }
-
     /// Access the formattable text object
     #[inline]
     pub fn text(&self) -> &T {
@@ -106,7 +85,9 @@ impl<T: FormattableText> Text<T> {
     }
 
     /// Set the text
-    pub fn set_text(&mut self, text: T) -> PrepareAction {
+    ///
+    /// One must call [`Text::prepare`] afterwards.
+    pub fn set_text(&mut self, text: T) {
         /* TODO: enable if we have a way of testing equality (a hash?)
         if self.text == text {
             return self.action.into(); // no change
@@ -114,12 +95,271 @@ impl<T: FormattableText> Text<T> {
          */
 
         self.text = text;
-        self.display.action = Action::Runs;
-        true.into()
+        self.display.action = Action::All;
     }
 }
 
-impl<T: EditableText> Text<T> {
+/// Trait over a sub-set of [`Text`] functionality
+///
+/// This allows dynamic dispatch over [`Text`]'s type parameters.
+pub trait TextApi {
+    /// Length of text
+    ///
+    /// This is a shortcut to `self.as_str().len()`.
+    ///
+    /// It is valid to reference text within the range `0..text_len()`,
+    /// even if not all text within this range will be displayed (due to runs).
+    #[inline]
+    fn str_len(&self) -> usize {
+        self.as_str().len()
+    }
+
+    /// Access whole text as contiguous `str`
+    ///
+    /// It is valid to reference text within the range `0..text_len()`,
+    /// even if not all text within this range will be displayed (due to runs).
+    fn as_str(&self) -> &str;
+
+    /// Clone the unformatted text as a `String`
+    fn clone_string(&self) -> String;
+
+    /// Read the environment
+    fn env(&self) -> &Environment;
+
+    /// Mutate the environment
+    ///
+    /// If using this directly, ensure that necessary preparation actions are
+    /// completed afterwards. Consider using [`TextApi::update_env`] instead.
+    fn env_mut(&mut self) -> &mut Environment;
+
+    /// Read the [`TextDisplay`]
+    fn display(&self) -> &TextDisplay;
+
+    /// Require an action
+    ///
+    /// Wraps [`TextDisplay::require_action`].
+    fn require_action(&mut self, action: Action);
+
+    /// Prepare text for display
+    ///
+    /// Wraps [`TextDisplay::prepare`], passing through `env`.
+    fn prepare(&mut self);
+
+    /// Prepare text runs
+    ///
+    /// Wraps [`TextDisplay::prepare_runs`], passing parameters from the
+    /// environment state.
+    fn prepare_runs(&mut self);
+
+    /// Update font size
+    ///
+    /// Wraps [`TextDisplay::resize_runs`], passing parameters from the
+    /// environment state.
+    fn resize_runs(&mut self);
+
+    /// Prepare lines ("wrap")
+    ///
+    /// Wraps [`TextDisplay::prepare_lines`], passing parameters from the
+    /// environment state.
+    fn prepare_lines(&mut self) -> Vec2;
+}
+
+impl<T: FormattableText> TextApi for Text<T> {
+    #[inline]
+    fn display(&self) -> &TextDisplay {
+        &self.display
+    }
+
+    #[inline]
+    fn as_str(&self) -> &str {
+        self.text.as_str()
+    }
+
+    #[inline]
+    fn clone_string(&self) -> String {
+        self.text.as_str().to_string()
+    }
+
+    #[inline]
+    fn env(&self) -> &Environment {
+        &self.env
+    }
+
+    #[inline]
+    fn env_mut(&mut self) -> &mut Environment {
+        &mut self.env
+    }
+
+    #[inline]
+    fn require_action(&mut self, action: Action) {
+        self.display.require_action(action);
+    }
+
+    #[inline]
+    fn prepare(&mut self) {
+        self.display.prepare(&self.text, &self.env);
+    }
+
+    #[inline]
+    fn prepare_runs(&mut self) {
+        self.display.prepare_runs(
+            &self.text,
+            self.env.flags.contains(EnvFlags::BIDI),
+            self.env.dir,
+            self.env.dpp,
+            self.env.pt_size,
+        );
+    }
+
+    #[inline]
+    fn resize_runs(&mut self) {
+        self.display
+            .resize_runs(&self.text, self.env.dpp, self.env.pt_size);
+    }
+
+    #[inline]
+    fn prepare_lines(&mut self) -> Vec2 {
+        let wrap = self.env.flags.contains(EnvFlags::WRAP);
+        self.display
+            .prepare_lines(self.env.bounds, wrap, self.env.align)
+    }
+}
+
+/// Extension trait over [`TextApi`]
+pub trait TextApiExt: TextApi {
+    /// Update the environment and prepare, returning required size
+    ///
+    /// This prepares text as necessary. It always performs line-wrapping.
+    fn update_env<F: FnOnce(&mut UpdateEnv)>(&mut self, f: F) -> Vec2 {
+        let mut update = UpdateEnv::new(self.env_mut());
+        f(&mut update);
+        let action = update.finish().max(self.display().action);
+        match action {
+            Action::All => self.prepare_runs(),
+            Action::Resize => self.resize_runs(),
+            _ => (),
+        }
+        self.prepare_lines()
+    }
+
+    /// Get required action
+    #[inline]
+    fn required_action(&self) -> Action {
+        self.display().action
+    }
+
+    /// Get the number of lines
+    ///
+    /// Wraps [`TextDisplay::num_lines`].
+    #[inline]
+    fn num_lines(&self) -> usize {
+        self.display().num_lines()
+    }
+
+    /// Find the line containing text `index`
+    ///
+    /// Wraps [`TextDisplay::find_line`].
+    #[inline]
+    fn find_line(&self, index: usize) -> Option<(usize, std::ops::Range<usize>)> {
+        self.display().find_line(index)
+    }
+
+    /// Get the range of a line, by line number
+    ///
+    /// Wraps [`TextDisplay::line_range`].
+    #[inline]
+    fn line_range(&self, line: usize) -> Option<std::ops::Range<usize>> {
+        self.display().line_range(line)
+    }
+
+    /// Get the directionality of the current line
+    ///
+    /// Wraps [`TextDisplay::line_is_ltr`].
+    #[inline]
+    fn line_is_ltr(&self, line: usize) -> bool {
+        self.display().line_is_ltr(line)
+    }
+
+    /// Get the directionality of the current line
+    ///
+    /// Wraps [`TextDisplay::line_is_rtl`].
+    #[inline]
+    fn line_is_rtl(&self, line: usize) -> bool {
+        self.display().line_is_rtl(line)
+    }
+
+    /// Find the text index for the glyph nearest the given `pos`
+    ///
+    /// Wraps [`TextDisplay::text_index_nearest`].
+    #[inline]
+    fn text_index_nearest(&self, pos: Vec2) -> usize {
+        self.display().text_index_nearest(pos)
+    }
+
+    /// Find the text index nearest horizontal-coordinate `x` on `line`
+    ///
+    /// Wraps [`TextDisplay::line_index_nearest`].
+    #[inline]
+    fn line_index_nearest(&self, line: usize, x: f32) -> Option<usize> {
+        self.display().line_index_nearest(line, x)
+    }
+
+    /// Find the starting position (top-left) of the glyph at the given index
+    ///
+    /// Wraps [`TextDisplay::text_glyph_pos`].
+    fn text_glyph_pos(&self, index: usize) -> MarkerPosIter {
+        self.display().text_glyph_pos(index)
+    }
+
+    /// Get the number of glyphs
+    ///
+    /// Wraps [`TextDisplay::num_glyphs`].
+    #[inline]
+    fn num_glyphs(&self) -> usize {
+        self.display().num_glyphs()
+    }
+
+    /// Yield a sequence of positioned glyphs
+    ///
+    /// Wraps [`TextDisplay::glyphs`].
+    fn glyphs<F: FnMut(FontId, f32, f32, Glyph)>(&self, f: F) {
+        self.display().glyphs(f)
+    }
+
+    /// Like [`TextDisplay::glyphs`] but with added effects
+    ///
+    /// Wraps [`TextDisplay::glyphs_with_effects`].
+    fn glyphs_with_effects<X, F, G>(&self, effects: &[Effect<X>], f: F, g: G)
+    where
+        X: Copy + Default,
+        F: FnMut(FontId, f32, f32, Glyph, usize, X),
+        G: FnMut(f32, f32, f32, f32, usize, X),
+    {
+        self.display().glyphs_with_effects(effects, f, g)
+    }
+
+    /// Yield a sequence of rectangles to highlight a given range, by lines
+    ///
+    /// Wraps [`TextDisplay::highlight_lines`].
+    fn highlight_lines(&self, range: std::ops::Range<usize>) -> Vec<(Vec2, Vec2)> {
+        self.display().highlight_lines(range)
+    }
+
+    /// Yield a sequence of rectangles to highlight a given range, by runs
+    ///
+    /// Wraps [`TextDisplay::highlight_runs`].
+    #[inline]
+    fn highlight_runs(&self, range: std::ops::Range<usize>) -> Vec<(Vec2, Vec2)> {
+        self.display().highlight_runs(range)
+    }
+}
+
+impl<T: TextApi + ?Sized> TextApiExt for T {}
+
+/// Trait over a sub-set of [`Text`] functionality for editable text
+///
+/// This allows dynamic dispatch over [`Text`]'s type parameters.
+pub trait EditableTextApi {
     /// Insert a char at the given position
     ///
     /// This may be used to edit the raw text instead of replacing it.
@@ -130,16 +370,14 @@ impl<T: EditableText> Text<T> {
     ///
     /// Currently this is not significantly more efficent than
     /// [`Text::set_text`]. This may change in the future (TODO).
-    pub fn insert_char(&mut self, index: usize, c: char) -> PrepareAction {
-        self.text.insert_char(index, c);
-        self.display.action = Action::Runs;
-        true.into()
-    }
+    fn insert_char(&mut self, index: usize, c: char);
 
     /// Replace a section of text
     ///
     /// This may be used to edit the raw text instead of replacing it.
     /// One must call [`Text::prepare`] afterwards.
+    ///
+    /// One may simulate an unbounded range by via `start..usize::MAX`.
     ///
     /// Formatting is adjusted: any specifiers within the replaced text are
     /// pushed back to the end of the replacement, and the position of any
@@ -147,36 +385,14 @@ impl<T: EditableText> Text<T> {
     ///
     /// Currently this is not significantly more efficent than
     /// [`Text::set_text`]. This may change in the future (TODO).
-    #[inline]
-    pub fn replace_range<R>(&mut self, range: R, replace_with: &str) -> PrepareAction
-    where
-        R: std::ops::RangeBounds<usize> + std::iter::ExactSizeIterator + Clone,
-    {
-        let start = match range.start_bound() {
-            Bound::Included(x) => *x,
-            Bound::Excluded(x) => *x + 1,
-            Bound::Unbounded => 0,
-        };
-        let end = match range.end_bound() {
-            Bound::Included(x) => *x + 1,
-            Bound::Excluded(x) => *x,
-            Bound::Unbounded => usize::MAX,
-        };
-        self.text.replace_range(start, end, replace_with);
-        self.display.action = Action::Runs;
-        true.into()
-    }
+    fn replace_range(&mut self, range: std::ops::Range<usize>, replace_with: &str);
 
     /// Set text to a raw `String`
     ///
     /// One must call [`Text::prepare`] afterwards.
     ///
     /// All existing text formatting is removed.
-    pub fn set_string(&mut self, string: String) -> PrepareAction {
-        self.text.set_string(string);
-        self.display.action = Action::Runs;
-        true.into()
-    }
+    fn set_string(&mut self, string: String);
 
     /// Swap the raw text with a `String`
     ///
@@ -187,192 +403,33 @@ impl<T: EditableText> Text<T> {
     ///
     /// Currently this is not significantly more efficent than
     /// [`Text::set_text`]. This may change in the future (TODO).
-    pub fn swap_string(&mut self, string: &mut String) -> PrepareAction {
+    fn swap_string(&mut self, string: &mut String);
+}
+
+impl<T: EditableText> EditableTextApi for Text<T> {
+    #[inline]
+    fn insert_char(&mut self, index: usize, c: char) {
+        self.text.insert_char(index, c);
+        self.display.action = Action::All;
+    }
+
+    #[inline]
+    fn replace_range(&mut self, range: std::ops::Range<usize>, replace_with: &str) {
+        self.text
+            .replace_range(range.start, range.end, replace_with);
+        self.display.action = Action::All;
+    }
+
+    #[inline]
+    fn set_string(&mut self, string: String) {
+        self.text.set_string(string);
+        self.display.action = Action::All;
+    }
+
+    #[inline]
+    fn swap_string(&mut self, string: &mut String) {
         self.text.swap_string(string);
-        self.display.action = Action::Runs;
-        true.into()
-    }
-}
-
-/// Wrappers around [`TextDisplay`] methods
-impl<T: FormattableText> Text<T> {
-    /// Read the environment
-    #[inline]
-    pub fn env(&self) -> &Environment {
-        self.display.env()
-    }
-
-    /// Update the environment and prepare for display
-    ///
-    /// Wraps [`TextDisplay::update_env`], passing text representation as
-    /// parameters. This calls [`TextDisplay::prepare`] when necessary.
-    #[inline]
-    pub fn update_env<F: FnOnce(&mut UpdateEnv)>(&mut self, f: F) {
-        if self.display.update_env(f).prepare() {
-            self.display.prepare(&self.text);
-        }
-    }
-
-    /// Prepare text for display
-    ///
-    /// Wraps [`TextDisplay::prepare`], passing text representation as parameters.
-    #[inline]
-    pub fn prepare(&mut self) {
-        self.display.prepare(&self.text);
-    }
-
-    /// Get size requirements
-    ///
-    /// Wraps [`TextDisplay::required_size`].
-    #[inline]
-    pub fn required_size(&self) -> Vec2 {
-        self.display.required_size()
-    }
-
-    /// Get the number of lines
-    ///
-    /// Wraps [`TextDisplay::num_lines`].
-    #[inline]
-    pub fn num_lines(&self) -> usize {
-        self.display.num_lines()
-    }
-
-    /// Find the line containing text `index`
-    ///
-    /// Wraps [`TextDisplay::find_line`].
-    #[inline]
-    pub fn find_line(&self, index: usize) -> Option<(usize, std::ops::Range<usize>)> {
-        self.display.find_line(index)
-    }
-
-    /// Get the range of a line, by line number
-    ///
-    /// Wraps [`TextDisplay::line_range`].
-    #[inline]
-    pub fn line_range(&self, line: usize) -> Option<std::ops::Range<usize>> {
-        self.display.line_range(line)
-    }
-
-    /// Get the directionality of the current line
-    ///
-    /// Wraps [`TextDisplay::line_is_ltr`].
-    #[inline]
-    pub fn line_is_ltr(&self, line: usize) -> bool {
-        self.display.line_is_ltr(line)
-    }
-
-    /// Get the directionality of the current line
-    ///
-    /// Wraps [`TextDisplay::line_is_rtl`].
-    #[inline]
-    pub fn line_is_rtl(&self, line: usize) -> bool {
-        self.display.line_is_rtl(line)
-    }
-
-    /// Find the text index for the glyph nearest the given `pos`
-    ///
-    /// Wraps [`TextDisplay::text_index_nearest`].
-    #[inline]
-    pub fn text_index_nearest(&self, pos: Vec2) -> usize {
-        self.display.text_index_nearest(pos)
-    }
-
-    /// Find the text index nearest horizontal-coordinate `x` on `line`
-    ///
-    /// Wraps [`TextDisplay::line_index_nearest`].
-    #[inline]
-    pub fn line_index_nearest(&self, line: usize, x: f32) -> Option<usize> {
-        self.display.line_index_nearest(line, x)
-    }
-
-    /// Find the starting position (top-left) of the glyph at the given index
-    ///
-    /// Wraps [`TextDisplay::text_glyph_pos`].
-    pub fn text_glyph_pos(&self, index: usize) -> MarkerPosIter {
-        self.display.text_glyph_pos(index)
-    }
-
-    /// Get the number of glyphs
-    ///
-    /// Wraps [`TextDisplay::num_glyphs`].
-    #[inline]
-    pub fn num_glyphs(&self) -> usize {
-        self.display.num_glyphs()
-    }
-
-    /// Yield a sequence of positioned glyphs
-    ///
-    /// Wraps [`TextDisplay::glyphs`].
-    pub fn glyphs<F: FnMut(FontId, f32, f32, Glyph)>(&self, f: F) {
-        self.display.glyphs(f)
-    }
-
-    /// Like [`TextDisplay::glyphs`] but with added effects
-    ///
-    /// Wraps [`TextDisplay::glyphs_with_effects`].
-    pub fn glyphs_with_effects<X, F, G>(&self, effects: &[Effect<X>], f: F, g: G)
-    where
-        X: Copy + Default,
-        F: FnMut(FontId, f32, f32, Glyph, usize, X),
-        G: FnMut(f32, f32, f32, f32, usize, X),
-    {
-        self.display.glyphs_with_effects(effects, f, g)
-    }
-
-    /// Yield a sequence of rectangles to highlight a given range, by lines
-    ///
-    /// Wraps [`TextDisplay::highlight_lines`].
-    pub fn highlight_lines(&self, range: std::ops::Range<usize>) -> Vec<(Vec2, Vec2)> {
-        self.display.highlight_lines(range)
-    }
-
-    /// Yield a sequence of rectangles to highlight a given range, by runs
-    ///
-    /// Wraps [`TextDisplay::highlight_runs`].
-    #[inline]
-    pub fn highlight_runs(&self, range: std::ops::Range<usize>) -> Vec<(Vec2, Vec2)> {
-        self.display.highlight_runs(range)
-    }
-}
-
-/// Trait over a sub-set of [`Text`] functionality
-///
-/// This allows dynamic dispatch over [`Text`]'s type parameters.
-pub trait TextApi {
-    /// Read the [`TextDisplay`]
-    fn display(&self) -> &TextDisplay;
-
-    /// Set the environment and prepare (as necessary)
-    fn set_env(&mut self, env: Environment);
-
-    /// Prepare text for display
-    ///
-    /// Calls [`TextDisplay::prepare`], passing text representation as parameters.
-    fn prepare(&mut self);
-}
-
-impl<T: FormattableText> TextApi for Text<T> {
-    fn display(&self) -> &TextDisplay {
-        &self.display
-    }
-
-    fn set_env(&mut self, env: Environment) {
-        let action = if env.dir != self.display.env.dir || env.bidi != self.display.env.bidi {
-            Action::Runs
-        } else if env.dpp != self.display.env.dpp || env.pt_size != self.display.env.pt_size {
-            Action::Dpem
-        } else if env != self.display.env {
-            Action::Wrap
-        } else {
-            Action::None
-        };
-        self.display.env = env;
-        self.display.action = self.display.action.max(action);
-        self.display.prepare(&self.text);
-    }
-
-    fn prepare(&mut self) {
-        self.display.prepare(&self.text);
+        self.display.action = Action::All;
     }
 }
 

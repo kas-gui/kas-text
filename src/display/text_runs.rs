@@ -9,29 +9,9 @@ use super::TextDisplay;
 use crate::conv::{to_u32, to_usize};
 use crate::fonts::FontId;
 use crate::format::FormattableText;
-use crate::{Direction, Range};
-use smallvec::SmallVec;
+use crate::{shaper, Action, Direction, Range};
 use unicode_bidi::{BidiInfo, Level, LTR_LEVEL, RTL_LEVEL};
 use xi_unicode::LineBreakIterator;
-
-#[derive(Clone, Debug)]
-pub(crate) struct Run {
-    /// Range in source text
-    pub range: Range,
-    /// Font size (pixels/em)
-    pub dpem: f32,
-    /// Font identifier
-    pub font_id: FontId,
-    /// All soft-break locations within this range (excludes end)
-    ///
-    /// Note: it would be equivalent to use a separate `Run` for each sub-range
-    /// in the text instead of tracking breaks via this field.
-    pub breaks: SmallVec<[u32; 5]>,
-    /// If true, the logical-end of this Run is not a valid break point
-    pub no_break: bool,
-    /// BIDI level
-    pub level: Level,
-}
 
 #[derive(Copy, Clone, Debug)]
 pub(crate) struct LineRun {
@@ -45,10 +25,23 @@ pub(crate) struct LineRun {
 }
 
 impl TextDisplay {
-    pub(crate) fn update_run_dpem(&mut self, text: &dyn FormattableText) {
-        let mut dpem = self.env.pt_size * self.env.dpp;
+    /// Update font size
+    ///
+    /// This updates the result of [`TextDisplay::prepare_runs`] due to change
+    /// in font size.
+    ///
+    /// Prerequisites: prepared runs: panics if action is greater than `Action::Wrap`.  
+    /// Post-requirements: prepare lines (requires action `Action::Wrap`).  
+    /// Parameters: see [`crate::Environment`] documentation.
+    pub fn resize_runs<F: FormattableText>(&mut self, text: &F, dpp: f32, pt_size: f32) {
+        assert!(
+            self.action <= Action::Wrap,
+            "kas-text::TextDisplay: runs not prepared"
+        );
+        self.action = Action::Wrap;
+        let mut dpem = dpp * pt_size;
 
-        let mut font_tokens = text.font_tokens(&self.env);
+        let mut font_tokens = text.font_tokens(dpp, pt_size);
         let mut next_fmt = font_tokens.next();
 
         for run in &mut self.runs {
@@ -60,27 +53,54 @@ impl TextDisplay {
                 next_fmt = font_tokens.next();
             }
 
-            run.dpem = dpem;
+            // This is hacky, but should suffice!
+            let mut breaks = Default::default();
+            std::mem::swap(&mut breaks, &mut run.breaks);
+            if run.level.is_rtl() {
+                breaks.reverse();
+            }
+            *run = shaper::shape(
+                text.as_str(),
+                run.range,
+                dpem,
+                run.font_id,
+                breaks,
+                run.no_break,
+                run.level,
+            );
         }
     }
 
-    /// Bi-directional text and line-break processing
+    /// Prepare text runs
     ///
-    /// Result: self.runs and self.breaks are assigned
+    /// This is the first step of preparation: breaking text into runs according
+    /// to font properties, bidi-levels and line-wrap points.
     ///
-    /// This method constructs a list of "hard lines" (the initial line and any
-    /// caused by a hard break), each composed of a list of "level runs" (the
-    /// result of splitting and reversing according to Unicode TR9 aka
-    /// Bidirectional algorithm), plus a list of "soft break" positions
-    /// (where wrapping may introduce new lines depending on available space).
-    pub(crate) fn prepare_runs(&mut self, text: &dyn FormattableText) {
+    /// Prerequisites: none (ignores current `action` state).  
+    /// Post-requirements: prepare lines (requires action `Action::Wrap`).  
+    /// Parameters: see [`crate::Environment`] documentation.
+    pub fn prepare_runs<F: FormattableText>(
+        &mut self,
+        text: &F,
+        bidi: bool,
+        dir: Direction,
+        dpp: f32,
+        pt_size: f32,
+    ) {
+        // This method constructs a list of "hard lines" (the initial line and any
+        // caused by a hard break), each composed of a list of "level runs" (the
+        // result of splitting and reversing according to Unicode TR9 aka
+        // Bidirectional algorithm), plus a list of "soft break" positions
+        // (where wrapping may introduce new lines depending on available space).
+
         self.runs.clear();
         self.line_runs.clear();
+        self.action = Action::Wrap;
 
         let mut font_id = FontId::default();
-        let mut dpem = self.env.pt_size * self.env.dpp;
+        let mut dpem = dpp * pt_size;
 
-        let mut font_tokens = text.font_tokens(&self.env);
+        let mut font_tokens = text.font_tokens(dpp, pt_size);
         let mut next_fmt = font_tokens.next();
         if let Some(fmt) = next_fmt.as_ref() {
             if fmt.start == 0 {
@@ -90,8 +110,8 @@ impl TextDisplay {
             }
         }
 
-        let bidi = self.env.bidi;
-        let default_para_level = match self.env.dir {
+        let bidi = bidi;
+        let default_para_level = match dir {
             Direction::Auto => None,
             Direction::LR => Some(LTR_LEVEL),
             Direction::RL => Some(RTL_LEVEL),
@@ -131,14 +151,15 @@ impl TextDisplay {
                 range.start += to_u32(start);
                 range.end += to_u32(start);
 
-                self.runs.push(Run {
+                self.runs.push(shaper::shape(
+                    text.as_str(),
                     range,
                     dpem,
                     font_id,
                     breaks,
-                    no_break: !is_break,
+                    !is_break,
                     level,
-                });
+                ));
 
                 if let Some(fmt) = next_fmt.as_ref() {
                     if to_usize(fmt.start) == pos {
@@ -164,7 +185,7 @@ impl TextDisplay {
                     next_break = breaks_iter.next().unwrap_or((0, false));
                 }
             } else if is_break {
-                breaks.push(to_u32(pos));
+                breaks.push(shaper::GlyphBreak::new(to_u32(pos)));
                 next_break = breaks_iter.next().unwrap_or((0, false));
             }
         }
@@ -176,14 +197,15 @@ impl TextDisplay {
         // trim_control gives us a range within the slice; we need to offset:
         range.start += to_u32(start);
         range.end += to_u32(start);
-        self.runs.push(Run {
+        self.runs.push(shaper::shape(
+            text.as_str(),
             range,
             dpem,
             font_id,
             breaks,
-            no_break: false,
+            false,
             level,
-        });
+        ));
         if line_start < self.runs.len() {
             let range = Range::from(line_start..self.runs.len());
             let rtl = self.runs[line_start].level.is_rtl();
@@ -200,14 +222,15 @@ impl TextDisplay {
                 level = default_para_level.unwrap_or(LTR_LEVEL);
                 breaks = Default::default();
                 line_start = self.runs.len();
-                self.runs.push(Run {
+                self.runs.push(shaper::shape(
+                    text.as_str(),
                     range,
                     dpem,
                     font_id,
                     breaks,
-                    no_break: false,
+                    false,
                     level,
-                });
+                ));
 
                 let range = Range::from(line_start..self.runs.len());
                 let rtl = level.is_rtl();

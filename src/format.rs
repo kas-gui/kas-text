@@ -5,8 +5,10 @@
 
 //! Parsers for formatted text
 
-use crate::env::Environment;
 use crate::fonts::FontId;
+use crate::OwningVecIter;
+
+mod plain;
 
 #[cfg(feature = "markdown")]
 mod markdown;
@@ -15,17 +17,21 @@ pub use markdown::Markdown;
 
 /// Text, optionally with formatting data
 ///
-/// Note: this trait always returns a boxed dyn iterator. This allows usage in
-/// non-generic types and carries only a small
-/// usage penalty (since formatting data is not accessed frequently).
-/// To support generating non-dyn iterators would require use of generic
-/// associated types (an unstable nightly feature) to attach the lifetime
-/// restriction on the iterator or unsafe code to ignore it.
+/// Any `F: FormattableText` automatically support [`FormattableTextDyn`].
+/// Implement either this or [`FormattableTextDyn`], not both.
+///
+/// This trait can only be written as intended using Generic Associated Types
+/// ("gat", unstable nightly feature), thus `font_tokens` has a different
+/// signature with/without feature `gat` and the associated type
+/// `FontTokenIterator` is only present with feature `gat`.
 pub trait FormattableText: std::fmt::Debug {
-    /// Produce a boxed clone of self
-    fn clone_boxed(&self) -> Box<dyn FormattableText>;
+    #[cfg_attr(doc_cfg, doc(cfg(feature = "gat")))]
+    #[cfg(feature = "gat")]
+    type FontTokenIterator<'a>: Iterator<Item = FontToken>;
 
     /// Length of text
+    ///
+    /// Default implementation uses [`FormattableText::as_str`].
     #[inline]
     fn str_len(&self) -> usize {
         self.as_str().len()
@@ -39,8 +45,93 @@ pub trait FormattableText: std::fmt::Debug {
     /// It is expected that [`FontToken::start`] of yielded items is strictly
     /// increasing; if not, formatting may not be applied correctly.
     ///
+    /// The `dpp` and `pt_size` parameters are as in [`crate::Environment`].
+    ///
     /// For plain text this iterator will be empty.
-    fn font_tokens<'a>(&'a self, env: &'a Environment) -> Box<dyn Iterator<Item = FontToken> + 'a>;
+    #[cfg(feature = "gat")]
+    fn font_tokens<'a>(&'a self, dpp: f32, pt_size: f32) -> Self::FontTokenIterator<'a>;
+
+    /// Construct an iterator over formatting items
+    ///
+    /// It is expected that [`FontToken::start`] of yielded items is strictly
+    /// increasing; if not, formatting may not be applied correctly.
+    ///
+    /// The `dpp` and `pt_size` parameters are as in [`crate::Environment`].
+    ///
+    /// For plain text this iterator will be empty.
+    #[cfg(not(feature = "gat"))]
+    fn font_tokens(&self, dpp: f32, pt_size: f32) -> OwningVecIter<FontToken>;
+}
+
+/// Text, optionally with formatting data
+///
+/// The type `&dyn FormattableTextDyn` supports [`FormattableText`].
+/// Implement either this or [`FormattableText`], not both.
+pub trait FormattableTextDyn: std::fmt::Debug {
+    /// Produce a boxed clone of self
+    fn clone_boxed(&self) -> Box<dyn FormattableTextDyn>;
+
+    /// Length of text
+    fn str_len(&self) -> usize;
+
+    /// Access whole text as contiguous `str`
+    fn as_str(&self) -> &str;
+
+    /// Construct an iterator over formatting items
+    ///
+    /// It is expected that [`FontToken::start`] of yielded items is strictly
+    /// increasing; if not, formatting may not be applied correctly.
+    ///
+    /// The `dpp` and `pt_size` parameters are as in [`crate::Environment`].
+    ///
+    /// For plain text this iterator will be empty.
+    fn font_tokens(&self, dpp: f32, pt_size: f32) -> OwningVecIter<FontToken>;
+}
+
+// #[cfg(feature = "gat")]
+impl<F: FormattableText + Clone + 'static> FormattableTextDyn for F {
+    fn clone_boxed(&self) -> Box<dyn FormattableTextDyn> {
+        Box::new(self.clone())
+    }
+
+    fn str_len(&self) -> usize {
+        FormattableText::str_len(self)
+    }
+    fn as_str(&self) -> &str {
+        FormattableText::as_str(self)
+    }
+
+    fn font_tokens(&self, dpp: f32, pt_size: f32) -> OwningVecIter<FontToken> {
+        let iter = FormattableText::font_tokens(self, dpp, pt_size);
+        #[cfg(feature = "gat")]
+        {
+            OwningVecIter::new(iter.collect())
+        }
+        #[cfg(not(feature = "gat"))]
+        {
+            iter
+        }
+    }
+}
+
+impl<'t> FormattableText for &'t dyn FormattableTextDyn {
+    #[cfg(feature = "gat")]
+    type FontTokenIterator<'a> = OwningVecIter<FontToken>;
+
+    #[inline]
+    fn str_len(&self) -> usize {
+        FormattableTextDyn::str_len(*self)
+    }
+
+    #[inline]
+    fn as_str(&self) -> &str {
+        FormattableTextDyn::as_str(*self)
+    }
+
+    #[inline]
+    fn font_tokens(&self, dpp: f32, pt_size: f32) -> OwningVecIter<FontToken> {
+        FormattableTextDyn::font_tokens(*self, dpp, pt_size)
+    }
 }
 
 /// Extension of [`FormattableText`] allowing editing
@@ -71,55 +162,7 @@ pub trait EditableText: FormattableText {
     fn replace_range(&mut self, start: usize, end: usize, replace_with: &str);
 }
 
-impl<'t> FormattableText for &'t str {
-    fn clone_boxed(&self) -> Box<dyn FormattableText> {
-        // TODO(specialization): for 'static we can simply use this:
-        // Box::new(*self)
-        Box::new(self.to_string())
-    }
-
-    fn as_str(&self) -> &str {
-        self
-    }
-
-    fn font_tokens<'a>(&'a self, _: &'a Environment) -> Box<dyn Iterator<Item = FontToken> + 'a> {
-        Box::new(std::iter::empty())
-    }
-}
-
-impl FormattableText for String {
-    fn clone_boxed(&self) -> Box<dyn FormattableText> {
-        Box::new(self.clone())
-    }
-
-    fn as_str(&self) -> &str {
-        self
-    }
-
-    fn font_tokens<'a>(&'a self, _: &'a Environment) -> Box<dyn Iterator<Item = FontToken> + 'a> {
-        Box::new(std::iter::empty())
-    }
-}
-
-impl EditableText for String {
-    fn set_string(&mut self, string: String) {
-        *self = string;
-    }
-
-    fn swap_string(&mut self, string: &mut String) {
-        std::mem::swap(self, string);
-    }
-
-    fn insert_char(&mut self, index: usize, c: char) {
-        self.insert(index, c);
-    }
-
-    fn replace_range(&mut self, start: usize, end: usize, replace_with: &str) {
-        self.replace_range(start..end, replace_with);
-    }
-}
-
-impl Clone for Box<dyn FormattableText> {
+impl Clone for Box<dyn FormattableTextDyn> {
     fn clone(&self) -> Self {
         (**self).clone_boxed()
     }
@@ -138,6 +181,6 @@ pub struct FontToken {
     /// Font size, in dots-per-em (pixel width of an 'M')
     ///
     /// This may be calculated from point size as `pt_size * dpp`, where `dpp`
-    /// is the number of pixels per point ([`Environment::dpp`]).
+    /// is the number of pixels per point (see [`crate::fonts`] documentation).
     pub dpem: f32,
 }

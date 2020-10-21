@@ -142,7 +142,7 @@ impl TextDisplay {
     /// The result is also not guaranteed to be within the expected window
     /// between 0 and `self.env().bounds`. The user should clamp the result.
     pub fn text_glyph_pos(&self, index: usize) -> MarkerPosIter {
-        assert!(self.action.is_none(), "kas-text::TextDisplay: not ready");
+        assert!(self.action.is_ready(), "kas-text::TextDisplay: not ready");
 
         let mut v: [MarkerPos; 2] = Default::default();
         let (a, mut b) = (0, 0);
@@ -162,7 +162,7 @@ impl TextDisplay {
                 continue;
             }
 
-            let glyph_run = &self.glyph_runs[to_usize(run_part.glyph_run)];
+            let glyph_run = &self.runs[to_usize(run_part.glyph_run)];
             let sf = fonts().get(glyph_run.font_id).scale_by_dpu(glyph_run.dpu);
 
             // If index is at the end of a run, we potentially get two matches.
@@ -226,9 +226,9 @@ impl TextDisplay {
     /// glyphs yielded will equal [`TextDisplay::num_glyphs`]. This may be used as
     /// follows:
     /// ```no_run
-    /// # use kas_text::{Glyph, Text};
+    /// # use kas_text::{Glyph, Text, Environment, TextApi, TextApiExt};
     /// # fn draw(_: Vec<(f32, Glyph)>) {}
-    /// let mut text = Text::new_multi("Some example text");
+    /// let mut text = Text::new_single("Some example text");
     /// text.prepare();
     ///
     /// let mut glyphs = Vec::with_capacity(text.num_glyphs());
@@ -241,11 +241,11 @@ impl TextDisplay {
     ///
     /// One must call [`TextDisplay::prepare`] before this method.
     pub fn glyphs<F: FnMut(FontId, f32, f32, Glyph)>(&self, mut f: F) {
-        assert!(self.action.is_none(), "kas-text::TextDisplay: not ready");
+        assert!(self.action.is_ready(), "kas-text::TextDisplay: not ready");
 
         // self.wrapped_runs is in logical order
         for run_part in self.wrapped_runs.iter().cloned() {
-            let run = &self.glyph_runs[to_usize(run_part.glyph_run)];
+            let run = &self.runs[to_usize(run_part.glyph_run)];
             let font_id = run.font_id;
             let dpu = run.dpu.0;
             let height = run.height;
@@ -283,7 +283,7 @@ impl TextDisplay {
         F: FnMut(FontId, f32, f32, Glyph, usize, X),
         G: FnMut(f32, f32, f32, f32, usize, X),
     {
-        assert!(self.action.is_none(), "kas-text::TextDisplay: not ready");
+        assert!(self.action.is_ready(), "kas-text::TextDisplay: not ready");
         assert!(
             !effects.is_empty(),
             "kas-text::TextDisplay::glyphs_with_effects: effects list is empty"
@@ -307,7 +307,7 @@ impl TextDisplay {
                 continue;
             }
 
-            let run = &self.glyph_runs[to_usize(run_part.glyph_run)];
+            let run = &self.runs[to_usize(run_part.glyph_run)];
             let font_id = run.font_id;
             let dpu = run.dpu.0;
             let height = run.height;
@@ -456,14 +456,14 @@ impl TextDisplay {
     /// The result is also not guaranteed to be within the expected window
     /// between 0 and `self.env().bounds`. The user should clamp the result.
     pub fn highlight_lines(&self, range: std::ops::Range<usize>) -> Vec<(Vec2, Vec2)> {
-        assert!(self.action.is_none(), "kas-text::TextDisplay: not ready");
+        assert!(self.action.is_ready(), "kas-text::TextDisplay: not ready");
         if range.len() == 0 {
             return vec![];
         }
 
         let mut lines = self.lines.iter();
         let mut rects = Vec::with_capacity(self.lines.len());
-        let rbound = self.env.bounds.0;
+        let rbound = self.width;
 
         // Find the first line
         let mut cur_line = 'l1: loop {
@@ -482,7 +482,7 @@ impl TextDisplay {
                 let mut nearest = 0;
                 let first_run = cur_line.run_range.start();
                 let glyph_run = to_usize(self.wrapped_runs[first_run].glyph_run);
-                if self.glyph_runs[glyph_run].level.is_ltr() {
+                if self.runs[glyph_run].level.is_ltr() {
                     let mut dist = rbound - (rects[0].1).0;
                     for i in 1..rects.len() {
                         let d = rbound - (rects[i].1).0;
@@ -547,7 +547,7 @@ impl TextDisplay {
     /// between 0 and `self.env().bounds`. The user should clamp the result.
     #[inline]
     pub fn highlight_runs(&self, range: std::ops::Range<usize>) -> Vec<(Vec2, Vec2)> {
-        assert!(self.action.is_none(), "kas-text::TextDisplay: not ready");
+        assert!(self.action.is_ready(), "kas-text::TextDisplay: not ready");
         if range.len() == 0 {
             return vec![];
         }
@@ -585,7 +585,7 @@ impl TextDisplay {
                 continue;
             }
 
-            let glyph_run = &self.glyph_runs[to_usize(run_part.glyph_run)];
+            let glyph_run = &self.runs[to_usize(run_part.glyph_run)];
             let sf = fonts().get(glyph_run.font_id).scale_by_dpu(glyph_run.dpu);
 
             // else: range.start < to_usize(run_part.text_end)
@@ -614,7 +614,7 @@ impl TextDisplay {
         'a: while i < run_range.end {
             let run_part = &self.wrapped_runs[i];
             let offset = run_part.offset;
-            let glyph_run = &self.glyph_runs[to_usize(run_part.glyph_run)];
+            let glyph_run = &self.runs[to_usize(run_part.glyph_run)];
             let sf = fonts().get(glyph_run.font_id).scale_by_dpu(glyph_run.dpu);
 
             if !first {

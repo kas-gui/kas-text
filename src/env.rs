@@ -5,94 +5,87 @@
 
 //! KAS Rich-Text library — text-display enviroment
 
-use crate::display::Action;
 use crate::fonts::{fonts, FontId};
-use crate::Vec2;
+use crate::{Action, Vec2};
 
 /// Environment in which text is prepared for display
 ///
 /// An `Environment` can be default-constructed (without line-wrapping).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Environment {
-    /// The available (horizontal and vertical) space
+    /// Flags enabling/disabling certain features
     ///
-    /// This defaults to infinity (implying no bounds).
-    /// If line-wrapping is enabled, it is controlled by this width.
-    /// Glyphs outside of these bounds may not be drawn.
-    pub bounds: Vec2,
-    /// Pixels-per-point
-    ///
-    /// This is a scaling factor used to convert font sizes (in points) to a
-    /// size in pixels (dots). Units are `pixels/point`.
-    ///
-    /// Since "72 pt = 1 in" and the "standard" DPI is 96, calculate as:
-    /// ```none
-    /// dpp = dpi / 72 = scale_factor * (96 / 72)
-    /// ```
-    ///
-    /// Note that most systems allow the user to adjust the "font DPI" or set a
-    /// scaling factor, thus this value may not correspond to the real pixel
-    /// density of the display.
-    pub dpp: f32,
-    /// Default font size in points
-    ///
-    /// This is stored in units of pt/em partly because this is a standard unit
-    /// and partly because it allows fonts to scale with DPI.
-    pub pt_size: f32,
-    /// Default text direction
-    ///
-    /// Note: right-to-left text can still occur in a left-to-right environment
-    /// and vice-versa, however the default alignment direction can affect the
-    /// layout of complex texts.
-    pub dir: Direction,
-    /// Bidirectional text
+    /// ## Bidirectional text
     ///
     /// If enabled, right-to-left text embedded within left-to-right text and
-    /// RTL within LTR will be re-ordered correctly (up to the maximum embedding
-    /// level defined by Unicode Technical Report #9).
+    /// LTR within RTL will be re-ordered according to the Unicode Bidirectional
+    /// Algorithm (Unicode Technical Report #9).
     ///
     /// If disabled, the base paragraph direction may be LTR or RTL depending on
     /// [`Environment::dir`], but embedded text is not re-ordered.
     ///
-    /// Normally this should be enabled, but within text-editors it might be
-    /// disabled (at user's preference).
-    pub bidi: bool,
-    /// Horizontal alignment
-    pub halign: Align,
-    /// Vertical alignment
-    pub valign: Align,
-    /// Line wrapping
+    /// Default value: `true`. This should normally be enabled unless there is
+    /// a specific reason to disable it.
     ///
-    /// If true, text is wrapped at word boundaries to fit within the available
-    /// width (regardless of height). If false, only explicit line-breaks such
-    /// as `\n` result in new lines.
-    pub wrap: bool,
+    /// ## Line wrapping
+    ///
+    /// By default, this is true and long text lines are wrapped based on the
+    /// width bounds. If set to false, lines are not wrapped at the width
+    /// boundary, but explicit line-breaks such as `\n` still result in new
+    /// lines.
+    pub flags: EnvFlags,
+    /// Default text direction
+    ///
+    /// Usually this may be left to its default value of [`Direction::Auto`].
+    /// If `bidi == true`, this parameter sets the "paragraph embedding level"
+    /// (whose main affect is on lines without strongly-directional characters).
+    /// If `bidi == false` this directly sets the line direction, unless
+    /// `dir == Auto`, in which case direction is auto-detected.
+    pub dir: Direction,
+    /// Pixels-per-point
+    ///
+    /// This is a scaling factor used to convert font sizes (in points) to a
+    /// size in pixels (dots). Units are `pixels/point`. See [`crate::fonts`]
+    /// documentation.
+    ///
+    /// Default value: `96.0 / 72.0`
+    pub dpp: f32,
+    /// Default font size in points
+    ///
+    /// We use "point sizes" (Points per Em), since this is a widely used
+    /// measure of font size. See [`crate::fonts`] module documentation.
+    ///
+    /// Default value: `11.0`
+    pub pt_size: f32,
+    /// The available (horizontal and vertical) space
+    ///
+    /// This defaults to infinity (implying no bounds). To enable line-wrapping
+    /// set at least a horizontal bound. The vertical bound is required for
+    /// alignment (when aligning to the centre or bottom).
+    /// Glyphs outside of these bounds may not be drawn.
+    pub bounds: Vec2,
+    /// Alignment (horiz, vert)
+    ///
+    /// By default, horizontal alignment is left or right depending on the
+    /// text direction (see [`Environment::dir`]), and vertical alignment is
+    /// to the top.
+    pub align: (Align, Align),
 }
 
 impl Default for Environment {
     fn default() -> Self {
         Environment {
+            flags: Default::default(),
+            dir: Direction::default(),
             dpp: 96.0 / 72.0,
             pt_size: 11.0,
-            dir: Direction::default(),
-            bidi: true,
-            halign: Align::default(),
-            valign: Align::default(),
-            wrap: true,
             bounds: Vec2::INFINITY,
+            align: Default::default(),
         }
     }
 }
 
 impl Environment {
-    /// Alternative default constructor
-    ///
-    /// Has left-to-right direction, default alignment, no line-wrapping,
-    /// default font size and zero-sized bounds.
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     /// Returns the height of standard horizontal text
     ///
     /// This depends on the `pt_size` and `dpp` fields.
@@ -132,7 +125,7 @@ impl<'a> UpdateEnv<'a> {
     pub fn set_dpp(&mut self, dpp: f32) {
         if dpp != self.env.dpp {
             self.env.dpp = dpp;
-            self.action = Action::Dpem;
+            self.action = Action::Resize;
         }
     }
 
@@ -142,7 +135,7 @@ impl<'a> UpdateEnv<'a> {
     pub fn set_pt_size(&mut self, pt_size: f32) {
         if pt_size != self.env.pt_size {
             self.env.pt_size = pt_size;
-            self.action = Action::Dpem;
+            self.action = Action::Resize;
         }
     }
 
@@ -150,25 +143,24 @@ impl<'a> UpdateEnv<'a> {
     pub fn set_dir(&mut self, dir: Direction) {
         if dir != self.env.dir {
             self.env.dir = dir;
-            self.action = Action::Runs;
+            self.action = Action::All;
         }
     }
 
     /// Set the alignment
     ///
-    /// Takes `(horiz_align, vert_align)` tuple to allow easier parameter passing.
-    pub fn set_align(&mut self, (horiz, vert): (Align, Align)) {
-        if horiz != self.env.halign || vert != self.env.valign {
-            self.env.halign = horiz;
-            self.env.valign = vert;
+    /// Takes `(horiz, vert)` tuple to allow easier parameter passing.
+    pub fn set_align(&mut self, align: (Align, Align)) {
+        if align != self.env.align {
+            self.env.align = align;
             self.action = self.action.max(Action::Wrap);
         }
     }
 
     /// Enable or disable line-wrapping
     pub fn set_wrap(&mut self, wrap: bool) {
-        if wrap != self.env.wrap {
-            self.env.wrap = wrap;
+        if wrap != self.env.flags.contains(EnvFlags::WRAP) {
+            self.env.flags.set(EnvFlags::WRAP, wrap);
             self.action = self.action.max(Action::Wrap);
         }
     }
@@ -186,6 +178,35 @@ impl<'a> UpdateEnv<'a> {
     }
 }
 
+impl Environment {
+    /// Construct, with explicit font size
+    pub fn new(dpp: f32, pt_size: f32) -> Self {
+        Environment {
+            dpp,
+            pt_size,
+            ..Default::default()
+        }
+    }
+}
+
+bitflags::bitflags! {
+    /// Environment flags
+    ///
+    /// By default, all flags are enabled
+    pub struct EnvFlags: u8 {
+        /// Enable bidirectional text support
+        const BIDI = 1 << 0;
+        /// Enable line wrapping
+        const WRAP = 1 << 1;
+    }
+}
+
+impl Default for EnvFlags {
+    fn default() -> Self {
+        EnvFlags::all()
+    }
+}
+
 /// Alignment of contents
 ///
 /// Note that alignment information is often passed as a `(horiz, vert)` pair.
@@ -193,9 +214,8 @@ impl<'a> UpdateEnv<'a> {
 pub enum Align {
     /// Default alignment
     ///
-    /// This is context dependent: for things that want to stretch it means
-    /// stretch, for things which don't it means align-to-start (e.g. to
-    /// top-left for left-to-right text).
+    /// This is context dependent. For example, for Left-To-Right text it means
+    /// `TL`; for things which want to stretch it may mean `Stretch`.
     Default,
     /// Align to top or left
     TL,
@@ -232,4 +252,9 @@ impl Default for Direction {
     fn default() -> Self {
         Direction::Auto
     }
+}
+
+#[test]
+fn size() {
+    assert_eq!(std::mem::size_of::<Environment>(), 20);
 }
