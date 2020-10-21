@@ -10,28 +10,8 @@ use crate::conv::{to_u32, to_usize};
 use crate::fonts::FontId;
 use crate::format::FormattableText;
 use crate::{shaper, Action, Direction, Range};
-use smallvec::SmallVec;
 use unicode_bidi::{BidiInfo, Level, LTR_LEVEL, RTL_LEVEL};
 use xi_unicode::LineBreakIterator;
-
-#[derive(Clone, Debug)]
-pub(crate) struct Run {
-    /// Range in source text
-    pub range: Range,
-    /// Font size (pixels/em)
-    pub dpem: f32,
-    /// Font identifier
-    pub font_id: FontId,
-    /// All soft-break locations within this range (excludes end)
-    ///
-    /// Note: it would be equivalent to use a separate `Run` for each sub-range
-    /// in the text instead of tracking breaks via this field.
-    pub breaks: SmallVec<[u32; 5]>,
-    /// If true, the logical-end of this Run is not a valid break point
-    pub no_break: bool,
-    /// BIDI level
-    pub level: Level,
-}
 
 #[derive(Copy, Clone, Debug)]
 pub(crate) struct LineRun {
@@ -73,14 +53,19 @@ impl TextDisplay {
                 next_fmt = font_tokens.next();
             }
 
-            run.dpem = dpem;
+            // This is hacky, but should suffice!
+            let mut soft_breaks = Default::default();
+            std::mem::swap(&mut soft_breaks, &mut run.soft_breaks);
+            *run = shaper::shape(
+                text.as_str(),
+                run.range,
+                dpem,
+                run.font_id,
+                soft_breaks,
+                run.no_break,
+                run.level,
+            );
         }
-
-        self.glyph_runs = self
-            .runs
-            .iter()
-            .map(|run| shaper::shape(text.as_str(), &run))
-            .collect();
     }
 
     /// Prepare text runs
@@ -163,14 +148,15 @@ impl TextDisplay {
                 range.start += to_u32(start);
                 range.end += to_u32(start);
 
-                self.runs.push(Run {
+                self.runs.push(shaper::shape(
+                    text.as_str(),
                     range,
                     dpem,
                     font_id,
                     breaks,
-                    no_break: !is_break,
+                    !is_break,
                     level,
-                });
+                ));
 
                 if let Some(fmt) = next_fmt.as_ref() {
                     if to_usize(fmt.start) == pos {
@@ -208,14 +194,15 @@ impl TextDisplay {
         // trim_control gives us a range within the slice; we need to offset:
         range.start += to_u32(start);
         range.end += to_u32(start);
-        self.runs.push(Run {
+        self.runs.push(shaper::shape(
+            text.as_str(),
             range,
             dpem,
             font_id,
             breaks,
-            no_break: false,
+            false,
             level,
-        });
+        ));
         if line_start < self.runs.len() {
             let range = Range::from(line_start..self.runs.len());
             let rtl = self.runs[line_start].level.is_rtl();
@@ -232,14 +219,15 @@ impl TextDisplay {
                 level = default_para_level.unwrap_or(LTR_LEVEL);
                 breaks = Default::default();
                 line_start = self.runs.len();
-                self.runs.push(Run {
+                self.runs.push(shaper::shape(
+                    text.as_str(),
                     range,
                     dpem,
                     font_id,
                     breaks,
-                    no_break: false,
+                    false,
                     level,
-                });
+                ));
 
                 let range = Range::from(line_start..self.runs.len());
                 let rtl = level.is_rtl();
@@ -260,12 +248,6 @@ impl TextDisplay {
             }
         }
         */
-
-        self.glyph_runs = self
-            .runs
-            .iter()
-            .map(|run| shaper::shape(text.as_str(), &run))
-            .collect();
     }
 }
 

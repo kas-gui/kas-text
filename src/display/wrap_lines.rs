@@ -67,7 +67,7 @@ impl TextDisplay {
             // Each LineRun contains at least one Run, though a Run may be empty
             let end_index = line.range.end();
             debug_assert!(line.range.start < line.range.end);
-            assert!(end_index <= self.glyph_runs.len());
+            assert!(end_index <= self.runs.len());
             let level = match line.rtl {
                 false => Level::ltr(),
                 true => Level::rtl(),
@@ -82,7 +82,7 @@ impl TextDisplay {
             let mut caret = 0.0;
             let mut index = start.0;
             'a: while index < end_index {
-                let run = &self.glyph_runs[index];
+                let run = &self.runs[index];
                 let num_parts = run.num_parts();
                 let allow_break = !run.no_break; // break allowed at end of run
 
@@ -95,7 +95,7 @@ impl TextDisplay {
                     if wrap && line_len > width_bound && end.2 > 0 {
                         // Add up to last valid break point then wrap and reset
                         let slice = &mut parts[0..end.2];
-                        adder.add_line(fonts, level, end_len, &self.glyph_runs, slice, true);
+                        adder.add_line(fonts, level, end_len, &self.runs, slice, true);
 
                         end.2 = 0;
                         start = end;
@@ -152,7 +152,7 @@ impl TextDisplay {
             if parts.len() > 0 {
                 // It should not be possible for a line to end with a no-break, so:
                 debug_assert_eq!(parts.len(), end.2);
-                adder.add_line(fonts, level, end_len, &self.glyph_runs, &mut parts, false);
+                adder.add_line(fonts, level, end_len, &self.runs, &mut parts, false);
             }
         }
 

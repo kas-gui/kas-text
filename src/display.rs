@@ -15,7 +15,7 @@ mod glyph_pos;
 mod text_runs;
 mod wrap_lines;
 pub use glyph_pos::{Effect, EffectFlags, MarkerPos, MarkerPosIter};
-pub(crate) use text_runs::{LineRun, Run};
+pub(crate) use text_runs::LineRun;
 use wrap_lines::{Line, RunPart};
 
 /// Text display, without source text representation
@@ -62,13 +62,11 @@ use wrap_lines::{Line, RunPart};
 #[derive(Clone, Debug)]
 pub struct TextDisplay {
     /// Level runs within the text, in logical order
-    runs: SmallVec<[Run; 1]>,
+    runs: SmallVec<[shaper::GlyphRun; 1]>,
     /// Subsets of runs forming a line, with line direction
     line_runs: SmallVec<[LineRun; 1]>,
     pub(crate) action: Action,
     required: Vec2,
-    /// Runs of glyphs (same order as `runs` sequence)
-    glyph_runs: Vec<shaper::GlyphRun>,
     /// Contiguous runs, in logical order
     ///
     /// Within a line, runs may not be in visual order due to BIDI reversals.
@@ -87,7 +85,6 @@ impl TextDisplay {
             line_runs: Default::default(),
             action: Action::All, // highest value
             required: Default::default(),
-            glyph_runs: Default::default(),
             wrapped_runs: Default::default(),
             lines: Default::default(),
             num_glyphs: 0,
@@ -176,7 +173,7 @@ impl TextDisplay {
         assert!(self.action.is_ready(), "kas-text::TextDisplay: not ready");
         let first_run = self.lines[line].run_range.start();
         let glyph_run = to_usize(self.wrapped_runs[first_run].glyph_run);
-        self.glyph_runs[glyph_run].level.is_ltr()
+        self.runs[glyph_run].level.is_ltr()
     }
 
     /// Get the directionality of the current line
@@ -232,7 +229,7 @@ impl TextDisplay {
         };
 
         for run_part in &self.wrapped_runs[run_range] {
-            let glyph_run = &self.glyph_runs[to_usize(run_part.glyph_run)];
+            let glyph_run = &self.runs[to_usize(run_part.glyph_run)];
             let rel_pos = x - run_part.offset.0;
 
             let end_index;
