@@ -21,7 +21,7 @@ use wrap_lines::{Line, RunPart};
 /// Text display, without source text representation
 ///
 /// In general, it is recommended to use [`crate::Text`] instead, which includes
-/// a representation of the source text.
+/// a representation of the source text and environment state.
 ///
 /// Once prepared (via [`TextDisplay::prepare`]), this struct contains
 /// everything needed to display text, query glyph position and size
@@ -78,8 +78,8 @@ pub struct TextDisplay {
     width: f32,
 }
 
-impl TextDisplay {
-    pub(crate) fn new() -> Self {
+impl Default for TextDisplay {
+    fn default() -> Self {
         TextDisplay {
             runs: Default::default(),
             line_runs: Default::default(),
@@ -91,7 +91,9 @@ impl TextDisplay {
             width: 0.0,
         }
     }
+}
 
+impl TextDisplay {
     /// Require an action
     ///
     /// Required actions are tracked internally. This combines internal action

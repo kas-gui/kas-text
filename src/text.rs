@@ -38,7 +38,7 @@ impl<T: FormattableText> Text<T> {
     pub fn new(text: T) -> Self {
         Text {
             text: text,
-            display: TextDisplay::new(),
+            display: TextDisplay::default(),
         }
     }
 
