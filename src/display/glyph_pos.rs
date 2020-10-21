@@ -228,9 +228,8 @@ impl TextDisplay {
     /// ```no_run
     /// # use kas_text::{Glyph, Text, Environment};
     /// # fn draw(_: Vec<(f32, Glyph)>) {}
-    /// let env = Environment::default();
-    /// let mut text = Text::new("Some example text");
-    /// text.prepare(&env);
+    /// let mut text = Text::new_single("Some example text");
+    /// text.prepare();
     ///
     /// let mut glyphs = Vec::with_capacity(text.num_glyphs());
     /// text.glyphs(|_, _, height, glyph| glyphs.push((height, glyph)));

@@ -11,8 +11,8 @@ use std::ops::Bound;
 use crate::display::{Effect, MarkerPosIter, TextDisplay};
 use crate::fonts::FontId;
 use crate::format::{EditableText, FormattableText};
-use crate::Environment;
-use crate::{Action, Align, Direction, Glyph, Vec2};
+use crate::{Action, Glyph, Vec2};
+use crate::{Environment, UpdateEnv};
 
 /// Text, prepared for display in a given enviroment
 ///
@@ -21,25 +21,68 @@ use crate::{Action, Align, Direction, Glyph, Vec2};
 /// See also documentation of [`TextDisplay`].
 #[derive(Clone, Debug)]
 pub struct Text<T: FormattableText> {
+    env: Environment,
     text: T,
     display: TextDisplay,
 }
 
 impl<T: FormattableText + Default> Default for Text<T> {
     fn default() -> Self {
-        Text::new(T::default())
+        Text::new(Environment::default(), T::default())
     }
 }
 
 impl<T: FormattableText> Text<T> {
-    /// Construct from a text model
+    /// Construct from an environment and a text model
     ///
     /// This struct must be made ready for usage by calling [`Text::prepare`].
-    pub fn new(text: T) -> Self {
+    pub fn new(env: Environment, text: T) -> Self {
         Text {
+            env,
             text: text,
             display: TextDisplay::default(),
         }
+    }
+
+    /// Construct from a default environment (single-line) and text
+    ///
+    /// The environment is default-constructed, with [`Environment::wrap`]
+    /// turned off.
+    #[inline]
+    pub fn new_single(text: T) -> Self {
+        let mut env = Environment::default();
+        env.wrap = false;
+        Self::new(env, text)
+    }
+
+    /// Construct from a default environment (multi-line) and text
+    ///
+    /// The environment is default-constructed (line-wrap on).
+    #[inline]
+    pub fn new_multi(text: T) -> Self {
+        Self::new(Environment::default(), text)
+    }
+
+    /// Read the environment
+    #[inline]
+    pub fn env(&self) -> &Environment {
+        &self.env
+    }
+
+    /// Update the environment and prepare, returning required size
+    ///
+    /// This prepares text as necessary. It always performs line-wrapping.
+    #[inline]
+    pub fn update_env<F: FnOnce(&mut UpdateEnv)>(&mut self, f: F) -> Vec2 {
+        let mut update = UpdateEnv::new(&mut self.env);
+        f(&mut update);
+        let action = update.finish().max(self.display.action);
+        match action {
+            Action::All => self.prepare_runs(),
+            Action::Resize => self.resize_runs(),
+            _ => (),
+        }
+        self.prepare_lines()
     }
 
     /// Clone the formatted text
@@ -186,33 +229,43 @@ impl<T: FormattableText> Text<T> {
     ///
     /// Wraps [`TextDisplay::prepare`], passing through `env`.
     #[inline]
-    pub fn prepare(&mut self, env: &Environment) {
-        self.display.prepare(&self.text, env);
+    pub fn prepare(&mut self) {
+        self.display.prepare(&self.text, &self.env);
     }
 
     /// Prepare text runs
     ///
-    /// Wraps [`TextDisplay::prepare_runs`].
-    /// See parameter descriptions in [`Environment`].
-    pub fn prepare_runs(&mut self, bidi: bool, dir: Direction, dpp: f32, pt_size: f32) {
-        self.display
-            .prepare_runs(&self.text, bidi, dir, dpp, pt_size);
+    /// Wraps [`TextDisplay::prepare_runs`], passing parameters from the
+    /// environment state.
+    #[inline]
+    pub fn prepare_runs(&mut self) {
+        self.display.prepare_runs(
+            &self.text,
+            self.env.bidi,
+            self.env.dir,
+            self.env.dpp,
+            self.env.pt_size,
+        );
     }
 
     /// Update font size
     ///
-    /// Wraps [`TextDisplay::resize_runs`].
-    /// See parameter descriptions in [`Environment`].
-    pub fn resize_runs(&mut self, dpp: f32, pt_size: f32) {
-        self.display.resize_runs(&self.text, dpp, pt_size);
+    /// Wraps [`TextDisplay::resize_runs`], passing parameters from the
+    /// environment state.
+    #[inline]
+    pub fn resize_runs(&mut self) {
+        self.display
+            .resize_runs(&self.text, self.env.dpp, self.env.pt_size);
     }
 
     /// Prepare lines ("wrap")
     ///
-    /// Wraps [`TextDisplay::prepare_lines`].
-    /// See parameter descriptions in [`Environment`].
-    pub fn prepare_lines(&mut self, bounds: Vec2, wrap: bool, align: (Align, Align)) -> Vec2 {
-        self.display.prepare_lines(bounds, wrap, align)
+    /// Wraps [`TextDisplay::prepare_lines`], passing parameters from the
+    /// environment state.
+    #[inline]
+    pub fn prepare_lines(&mut self) -> Vec2 {
+        self.display
+            .prepare_lines(self.env.bounds, self.env.wrap, self.env.align)
     }
 
     /// Get the number of lines

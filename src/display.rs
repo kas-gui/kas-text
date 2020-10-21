@@ -128,7 +128,7 @@ impl TextDisplay {
             self.resize_runs(text, env.dpp, env.pt_size);
         }
 
-        self.prepare_lines(env.bounds, env.wrap, (env.halign, env.valign));
+        self.prepare_lines(env.bounds, env.wrap, env.align);
     }
 
     /// Get the number of lines
