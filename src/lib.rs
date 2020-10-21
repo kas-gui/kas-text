@@ -17,7 +17,7 @@ mod data;
 pub use data::{Range, Vec2};
 
 mod display;
-pub use display::{Effect, EffectFlags, PrepareAction, TextDisplay};
+pub use display::{Effect, EffectFlags, TextDisplay};
 
 pub mod fonts;
 pub mod format;
@@ -26,7 +26,7 @@ mod text;
 pub use text::{Text, TextApi};
 
 mod util;
-pub use util::OwningVecIter;
+pub use util::{Action, OwningVecIter};
 
 pub(crate) mod shaper;
 pub use shaper::{Glyph, GlyphId};

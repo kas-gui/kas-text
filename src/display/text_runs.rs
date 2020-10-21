@@ -9,8 +9,7 @@ use super::TextDisplay;
 use crate::conv::{to_u32, to_usize};
 use crate::fonts::FontId;
 use crate::format::FormattableText;
-use crate::Environment;
-use crate::{Direction, Range};
+use crate::{shaper, Action, Direction, Range};
 use smallvec::SmallVec;
 use unicode_bidi::{BidiInfo, Level, LTR_LEVEL, RTL_LEVEL};
 use xi_unicode::LineBreakIterator;
@@ -46,10 +45,23 @@ pub(crate) struct LineRun {
 }
 
 impl TextDisplay {
-    pub(crate) fn update_run_dpem<F: FormattableText>(&mut self, text: &F, env: &Environment) {
-        let mut dpem = env.pt_size * env.dpp;
+    /// Update font size
+    ///
+    /// This updates the result of [`TextDisplay::prepare_runs`] due to change
+    /// in font size.
+    ///
+    /// Prerequisites: prepared runs: panics if action is greater than `Action::Wrap`.  
+    /// Post-requirements: prepare lines (requires action `Action::Wrap`).  
+    /// Parameters: see [`crate::Environment`] documentation.
+    pub fn resize_runs<F: FormattableText>(&mut self, text: &F, dpp: f32, pt_size: f32) {
+        assert!(
+            self.action <= Action::Wrap,
+            "kas-text::TextDisplay: runs not prepared"
+        );
+        self.action = Action::Wrap;
+        let mut dpem = dpp * pt_size;
 
-        let mut font_tokens = text.font_tokens(env.dpp, env.pt_size);
+        let mut font_tokens = text.font_tokens(dpp, pt_size);
         let mut next_fmt = font_tokens.next();
 
         for run in &mut self.runs {
@@ -63,25 +75,44 @@ impl TextDisplay {
 
             run.dpem = dpem;
         }
+
+        self.glyph_runs = self
+            .runs
+            .iter()
+            .map(|run| shaper::shape(text.as_str(), &run))
+            .collect();
     }
 
-    /// Bi-directional text and line-break processing
+    /// Prepare text runs
     ///
-    /// Result: self.runs and self.breaks are assigned
+    /// This is the first step of preparation: breaking text into runs according
+    /// to font properties, bidi-levels and line-wrap points.
     ///
-    /// This method constructs a list of "hard lines" (the initial line and any
-    /// caused by a hard break), each composed of a list of "level runs" (the
-    /// result of splitting and reversing according to Unicode TR9 aka
-    /// Bidirectional algorithm), plus a list of "soft break" positions
-    /// (where wrapping may introduce new lines depending on available space).
-    pub(crate) fn prepare_runs<F: FormattableText>(&mut self, text: &F, env: &Environment) {
+    /// Prerequisites: none (ignores current `action` state).  
+    /// Post-requirements: prepare lines (requires action `Action::Wrap`).  
+    /// Parameters: see [`crate::Environment`] documentation.
+    pub fn prepare_runs<F: FormattableText>(
+        &mut self,
+        text: &F,
+        bidi: bool,
+        dir: Direction,
+        dpp: f32,
+        pt_size: f32,
+    ) {
+        // This method constructs a list of "hard lines" (the initial line and any
+        // caused by a hard break), each composed of a list of "level runs" (the
+        // result of splitting and reversing according to Unicode TR9 aka
+        // Bidirectional algorithm), plus a list of "soft break" positions
+        // (where wrapping may introduce new lines depending on available space).
+
         self.runs.clear();
         self.line_runs.clear();
+        self.action = Action::Wrap;
 
         let mut font_id = FontId::default();
-        let mut dpem = env.pt_size * env.dpp;
+        let mut dpem = dpp * pt_size;
 
-        let mut font_tokens = text.font_tokens(env.dpp, env.pt_size);
+        let mut font_tokens = text.font_tokens(dpp, pt_size);
         let mut next_fmt = font_tokens.next();
         if let Some(fmt) = next_fmt.as_ref() {
             if fmt.start == 0 {
@@ -91,8 +122,8 @@ impl TextDisplay {
             }
         }
 
-        let bidi = env.bidi;
-        let default_para_level = match env.dir {
+        let bidi = bidi;
+        let default_para_level = match dir {
             Direction::Auto => None,
             Direction::LR => Some(LTR_LEVEL),
             Direction::RL => Some(RTL_LEVEL),
@@ -229,6 +260,12 @@ impl TextDisplay {
             }
         }
         */
+
+        self.glyph_runs = self
+            .runs
+            .iter()
+            .map(|run| shaper::shape(text.as_str(), &run))
+            .collect();
     }
 }
 

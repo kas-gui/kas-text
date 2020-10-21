@@ -47,8 +47,9 @@
 //!
 //! Warning: on MacOS and Apple systems, a *point* sometimes refers to a
 //! (virtual) pixel, yielding `dpp = 1` (or `dpp = 2` on Retina screens, or
-//! something else entirely on iPhones). Apple font sizes may therefore be
-//! difficult to compare.
+//! something else entirely on iPhones). On any system, DPI/DPP/scale factor
+//! values may be set according to the user's taste rather than physical
+//! measurements.
 //!
 //! Finally, note that digital font files have an internally defined unit
 //! known as the *font unit*. This is not normally used directly but is used

@@ -8,11 +8,11 @@
 use std::convert::{AsMut, AsRef};
 use std::ops::Bound;
 
-use crate::display::{Action, Effect, MarkerPosIter, PrepareAction, TextDisplay};
+use crate::display::{Effect, MarkerPosIter, TextDisplay};
 use crate::fonts::FontId;
 use crate::format::{EditableText, FormattableText};
 use crate::Environment;
-use crate::{Glyph, Vec2};
+use crate::{Action, Align, Direction, Glyph, Vec2};
 
 /// Text, prepared for display in a given enviroment
 ///
@@ -87,7 +87,9 @@ impl<T: FormattableText> Text<T> {
     }
 
     /// Set the text
-    pub fn set_text(&mut self, text: T) -> PrepareAction {
+    ///
+    /// One must call [`Text::prepare`] afterwards.
+    pub fn set_text(&mut self, text: T) {
         /* TODO: enable if we have a way of testing equality (a hash?)
         if self.text == text {
             return self.action.into(); // no change
@@ -95,8 +97,7 @@ impl<T: FormattableText> Text<T> {
          */
 
         self.text = text;
-        self.display.action = Action::Runs;
-        true.into()
+        self.display.action = Action::All;
     }
 }
 
@@ -111,10 +112,9 @@ impl<T: EditableText> Text<T> {
     ///
     /// Currently this is not significantly more efficent than
     /// [`Text::set_text`]. This may change in the future (TODO).
-    pub fn insert_char(&mut self, index: usize, c: char) -> PrepareAction {
+    pub fn insert_char(&mut self, index: usize, c: char) {
         self.text.insert_char(index, c);
-        self.display.action = Action::Runs;
-        true.into()
+        self.display.action = Action::All;
     }
 
     /// Replace a section of text
@@ -129,7 +129,7 @@ impl<T: EditableText> Text<T> {
     /// Currently this is not significantly more efficent than
     /// [`Text::set_text`]. This may change in the future (TODO).
     #[inline]
-    pub fn replace_range<R>(&mut self, range: R, replace_with: &str) -> PrepareAction
+    pub fn replace_range<R>(&mut self, range: R, replace_with: &str)
     where
         R: std::ops::RangeBounds<usize> + std::iter::ExactSizeIterator + Clone,
     {
@@ -144,8 +144,7 @@ impl<T: EditableText> Text<T> {
             Bound::Unbounded => usize::MAX,
         };
         self.text.replace_range(start, end, replace_with);
-        self.display.action = Action::Runs;
-        true.into()
+        self.display.action = Action::All;
     }
 
     /// Set text to a raw `String`
@@ -153,10 +152,9 @@ impl<T: EditableText> Text<T> {
     /// One must call [`Text::prepare`] afterwards.
     ///
     /// All existing text formatting is removed.
-    pub fn set_string(&mut self, string: String) -> PrepareAction {
+    pub fn set_string(&mut self, string: String) {
         self.text.set_string(string);
-        self.display.action = Action::Runs;
-        true.into()
+        self.display.action = Action::All;
     }
 
     /// Swap the raw text with a `String`
@@ -168,29 +166,53 @@ impl<T: EditableText> Text<T> {
     ///
     /// Currently this is not significantly more efficent than
     /// [`Text::set_text`]. This may change in the future (TODO).
-    pub fn swap_string(&mut self, string: &mut String) -> PrepareAction {
+    pub fn swap_string(&mut self, string: &mut String) {
         self.text.swap_string(string);
-        self.display.action = Action::Runs;
-        true.into()
+        self.display.action = Action::All;
     }
 }
 
 /// Wrappers around [`TextDisplay`] methods
 impl<T: FormattableText> Text<T> {
+    /// Require an action
+    ///
+    /// Wraps [`TextDisplay::require_action`].
+    #[inline]
+    pub fn require_action(&mut self, action: Action) {
+        self.display.require_action(action);
+    }
+
     /// Prepare text for display
     ///
-    /// Wraps [`TextDisplay::prepare`], passing text representation as parameters.
+    /// Wraps [`TextDisplay::prepare`], passing through `env`.
     #[inline]
     pub fn prepare(&mut self, env: &Environment) {
         self.display.prepare(&self.text, env);
     }
 
-    /// Get size requirements
+    /// Prepare text runs
     ///
-    /// Wraps [`TextDisplay::required_size`].
-    #[inline]
-    pub fn required_size(&self) -> Vec2 {
-        self.display.required_size()
+    /// Wraps [`TextDisplay::prepare_runs`].
+    /// See parameter descriptions in [`Environment`].
+    pub fn prepare_runs(&mut self, bidi: bool, dir: Direction, dpp: f32, pt_size: f32) {
+        self.display
+            .prepare_runs(&self.text, bidi, dir, dpp, pt_size);
+    }
+
+    /// Update font size
+    ///
+    /// Wraps [`TextDisplay::resize_runs`].
+    /// See parameter descriptions in [`Environment`].
+    pub fn resize_runs(&mut self, dpp: f32, pt_size: f32) {
+        self.display.resize_runs(&self.text, dpp, pt_size);
+    }
+
+    /// Prepare lines ("wrap")
+    ///
+    /// Wraps [`TextDisplay::prepare_lines`].
+    /// See parameter descriptions in [`Environment`].
+    pub fn prepare_lines(&mut self, bounds: Vec2, wrap: bool, align: (Align, Align)) -> Vec2 {
+        self.display.prepare_lines(bounds, wrap, align)
     }
 
     /// Get the number of lines
@@ -308,7 +330,7 @@ pub trait TextApi {
 
     /// Prepare text for display
     ///
-    /// Calls [`TextDisplay::prepare`], passing text representation as parameters.
+    /// Calls [`TextDisplay::prepare`], passing through `env`.
     fn prepare(&mut self, env: &Environment);
 }
 

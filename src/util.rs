@@ -5,6 +5,27 @@
 
 //! Utility types and traits
 
+/// Describes required text-preparation actions
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Ord, PartialOrd, Hash)]
+pub enum Action {
+    /// Nothing to do
+    None,
+    /// Do wrapping and alignment
+    Wrap,
+    /// Resize text, and above
+    Resize,
+    /// Break text into runs, associate fonts, and above
+    All,
+}
+
+impl Action {
+    /// True if action is `Action::None`
+    #[inline]
+    pub fn is_ready(&self) -> bool {
+        *self == Action::None
+    }
+}
+
 /// An iterator over a `Vec` which clones elements
 pub struct OwningVecIter<T: Clone> {
     v: Vec<T>,

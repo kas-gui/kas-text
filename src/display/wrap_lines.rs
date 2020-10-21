@@ -9,7 +9,7 @@ use super::TextDisplay;
 use crate::conv::{to_u32, to_usize};
 use crate::fonts::{fonts, FontLibrary};
 use crate::shaper::GlyphRun;
-use crate::{Align, Environment, Range, Vec2};
+use crate::{Action, Align, Range, Vec2};
 use smallvec::SmallVec;
 use unicode_bidi::Level;
 
@@ -39,12 +39,26 @@ struct PartInfo {
 }
 
 impl TextDisplay {
-    pub(crate) fn wrap_lines(&mut self, env: &Environment) {
+    /// Prepare lines ("wrap")
+    ///
+    /// This does text layout, with wrapping if enabled.
+    ///
+    /// Prerequisites: prepared runs: panics if action is greater than `Action::Wrap`.  
+    /// Post-requirements: none (`Action::None`).  
+    /// Parameters: see [`crate::Environment`] documentation.  
+    /// Returns: required size, in pixels.
+    pub fn prepare_lines(&mut self, bounds: Vec2, wrap: bool, align: (Align, Align)) -> Vec2 {
+        assert!(
+            self.action <= Action::Wrap,
+            "kas-text::TextDisplay: runs not prepared"
+        );
+        self.action = Action::None;
+
         let fonts = fonts();
         let capacity = 0; // TODO(opt): estimate like self.text_len() / 16 ?
-        let mut adder = LineAdder::new(capacity, env);
+        let mut adder = LineAdder::new(capacity, bounds, align);
         let width_bound = adder.width_bound;
-        let justify = env.halign == Align::Stretch;
+        let justify = align.0 == Align::Stretch;
         let mut parts = Vec::with_capacity(16);
 
         // Almost everything in "this" method depends on the line direction, so
@@ -78,7 +92,7 @@ impl TextDisplay {
                     let (part_offset, part_len_no_space, part_len) =
                         run.part_lengths(last_part..part);
                     let line_len = caret + part_len_no_space;
-                    if env.wrap && line_len > width_bound && end.2 > 0 {
+                    if wrap && line_len > width_bound && end.2 > 0 {
                         // Add up to last valid break point then wrap and reset
                         let slice = &mut parts[0..end.2];
                         adder.add_line(fonts, level, end_len, &self.glyph_runs, slice, true);
@@ -142,11 +156,12 @@ impl TextDisplay {
             }
         }
 
-        self.required = adder.finish(env.valign, env.bounds.1);
+        let required = adder.finish(bounds, align);
         self.wrapped_runs = adder.runs;
         self.lines = adder.lines;
         self.num_glyphs = adder.num_glyphs;
-        self.width = env.bounds.0;
+        self.width = bounds.0;
+        required
     }
 }
 
@@ -162,12 +177,12 @@ struct LineAdder {
     width_bound: f32,
 }
 impl LineAdder {
-    fn new(run_capacity: usize, env: &Environment) -> Self {
+    fn new(run_capacity: usize, bounds: Vec2, align: (Align, Align)) -> Self {
         let runs = Vec::with_capacity(run_capacity);
         LineAdder {
             runs,
-            halign: env.halign,
-            width_bound: env.bounds.0,
+            halign: align.0,
+            width_bound: bounds.0,
             ..Default::default()
         }
     }
@@ -409,12 +424,12 @@ impl LineAdder {
     }
 
     // Returns: required dimensions
-    fn finish(&mut self, valign: Align, height_bound: f32) -> Vec2 {
+    fn finish(&mut self, bounds: Vec2, align: (Align, Align)) -> Vec2 {
         let height = self.vcaret;
-        let offset = match valign {
+        let offset = match align.1 {
             Align::Default | Align::TL | Align::Stretch => 0.0, // nothing to do
-            Align::Centre => 0.5 * (height_bound - height),
-            Align::BR => height_bound - height,
+            Align::Centre => 0.5 * (bounds.1 - height),
+            Align::BR => bounds.1 - height,
         };
         if offset != 0.0 {
             for run in &mut self.runs {

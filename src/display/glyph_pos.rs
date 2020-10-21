@@ -142,7 +142,7 @@ impl TextDisplay {
     /// The result is also not guaranteed to be within the expected window
     /// between 0 and `self.env().bounds`. The user should clamp the result.
     pub fn text_glyph_pos(&self, index: usize) -> MarkerPosIter {
-        assert!(self.action.is_none(), "kas-text::TextDisplay: not ready");
+        assert!(self.action.is_ready(), "kas-text::TextDisplay: not ready");
 
         let mut v: [MarkerPos; 2] = Default::default();
         let (a, mut b) = (0, 0);
@@ -242,7 +242,7 @@ impl TextDisplay {
     ///
     /// One must call [`TextDisplay::prepare`] before this method.
     pub fn glyphs<F: FnMut(FontId, f32, f32, Glyph)>(&self, mut f: F) {
-        assert!(self.action.is_none(), "kas-text::TextDisplay: not ready");
+        assert!(self.action.is_ready(), "kas-text::TextDisplay: not ready");
 
         // self.wrapped_runs is in logical order
         for run_part in self.wrapped_runs.iter().cloned() {
@@ -284,7 +284,7 @@ impl TextDisplay {
         F: FnMut(FontId, f32, f32, Glyph, usize, X),
         G: FnMut(f32, f32, f32, f32, usize, X),
     {
-        assert!(self.action.is_none(), "kas-text::TextDisplay: not ready");
+        assert!(self.action.is_ready(), "kas-text::TextDisplay: not ready");
         assert!(
             !effects.is_empty(),
             "kas-text::TextDisplay::glyphs_with_effects: effects list is empty"
@@ -457,7 +457,7 @@ impl TextDisplay {
     /// The result is also not guaranteed to be within the expected window
     /// between 0 and `self.env().bounds`. The user should clamp the result.
     pub fn highlight_lines(&self, range: std::ops::Range<usize>) -> Vec<(Vec2, Vec2)> {
-        assert!(self.action.is_none(), "kas-text::TextDisplay: not ready");
+        assert!(self.action.is_ready(), "kas-text::TextDisplay: not ready");
         if range.len() == 0 {
             return vec![];
         }
@@ -548,7 +548,7 @@ impl TextDisplay {
     /// between 0 and `self.env().bounds`. The user should clamp the result.
     #[inline]
     pub fn highlight_runs(&self, range: std::ops::Range<usize>) -> Vec<(Vec2, Vec2)> {
-        assert!(self.action.is_none(), "kas-text::TextDisplay: not ready");
+        assert!(self.action.is_ready(), "kas-text::TextDisplay: not ready");
         if range.len() == 0 {
             return vec![];
         }

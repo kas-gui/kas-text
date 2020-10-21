@@ -6,11 +6,10 @@
 //! Text prepared for display
 
 use smallvec::SmallVec;
-use std::ops::{BitOr, BitOrAssign};
 
 use crate::conv::to_usize;
 use crate::format::FormattableText;
-use crate::{shaper, Environment, Vec2};
+use crate::{shaper, Action, Environment, Vec2};
 
 mod glyph_pos;
 mod text_runs;
@@ -18,91 +17,6 @@ mod wrap_lines;
 pub use glyph_pos::{Effect, EffectFlags, MarkerPos, MarkerPosIter};
 pub(crate) use text_runs::{LineRun, Run};
 use wrap_lines::{Line, RunPart};
-
-/// Type used to indicate whether the [`TextDisplay`] object is ready for use
-///
-/// The user doesn't need to *do* anything with this value when returned from
-/// [`TextDisplay`] methods, but if [`PrepareAction::prepare`] returns true then
-/// the user must call [`TextDisplay::prepare`] before calling most other methods.
-///
-/// Multiple instances may be combined via the `|` (bit or) and `|=` operators.
-#[must_use]
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Ord, PartialOrd, Hash)]
-pub struct PrepareAction(bool);
-
-impl PrepareAction {
-    /// Construct an instance not requiring prepare
-    ///
-    /// This may be useful when optionally calling multiple update methods:
-    /// ```
-    /// use kas_text::{PrepareAction, Text, Environment};
-    ///
-    /// fn update_text(text: &mut Text<String>, opt_new_text: Option<String>, env: &Environment) {
-    ///     let mut prepare = PrepareAction::none();
-    ///     if let Some(new_text) = opt_new_text {
-    ///         prepare |= text.set_text(new_text.into());
-    ///     }
-    ///     if prepare.prepare() {
-    ///         text.prepare(env);
-    ///     }
-    /// }
-    /// ```
-    #[inline]
-    pub fn none() -> Self {
-        PrepareAction(false)
-    }
-
-    /// When true, [`TextDisplay::prepare`] must be called
-    #[inline]
-    pub fn prepare(self) -> bool {
-        self.0
-    }
-}
-
-impl BitOr for PrepareAction {
-    type Output = Self;
-
-    #[inline]
-    fn bitor(self, rhs: Self) -> Self {
-        PrepareAction(self.0 || rhs.0)
-    }
-}
-
-impl BitOrAssign for PrepareAction {
-    #[inline]
-    fn bitor_assign(&mut self, rhs: Self) {
-        self.0 = self.0 || rhs.0;
-    }
-}
-
-impl From<bool> for PrepareAction {
-    #[inline]
-    fn from(prepare: bool) -> Self {
-        PrepareAction(prepare)
-    }
-}
-
-impl From<Action> for PrepareAction {
-    #[inline]
-    fn from(action: Action) -> Self {
-        PrepareAction(action != Action::None)
-    }
-}
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Ord, PartialOrd, Hash)]
-pub(crate) enum Action {
-    None,  // do nothing
-    Wrap,  // do line-wrapping and alignment
-    Shape, // do text shaping and above
-    Dpem,  // update font size, redo shaping and above
-    Runs,  // do splitting into runs, BIDI and above
-}
-
-impl Action {
-    fn is_none(&self) -> bool {
-        *self == Action::None
-    }
-}
 
 /// Text display, without source text representation
 ///
@@ -162,6 +76,7 @@ pub struct TextDisplay {
     /// Visual (wrapped) lines, in visual and logical order
     lines: Vec<Line>,
     num_glyphs: u32,
+    /// Required for highlight_lines; may remove later:
     width: f32,
 }
 
@@ -170,7 +85,7 @@ impl TextDisplay {
         TextDisplay {
             runs: Default::default(),
             line_runs: Default::default(),
-            action: Action::Runs, // highest value
+            action: Action::All, // highest value
             required: Default::default(),
             glyph_runs: Default::default(),
             wrapped_runs: Default::default(),
@@ -180,55 +95,46 @@ impl TextDisplay {
         }
     }
 
-    /// Prepare text for display
+    /// Require an action
     ///
-    /// The required preparation/update steps are tracked internally; this
-    /// method only performs the required steps. Updating line-wrapping due to
-    /// changes in available width is significantly faster than updating the
-    /// source text.
+    /// Required actions are tracked internally. This combines internal action
+    /// state with that input via `max`. It may be used, for example, to mark
+    /// that fonts need resizing due to change in environment.
+    #[inline]
+    pub fn require_action(&mut self, action: Action) {
+        self.action = self.action.max(action);
+    }
+
+    /// Prepare text for display, as necessary
+    ///
+    /// Does all preparation steps necessary in order to display or query the
+    /// layout of this text.
+    ///
+    /// Required preparation actions are tracked internally, but cannot
+    /// notice changes in the environment. In case the environment has changed
+    /// one should either call [`TextDisplay::require_action`] before this
+    /// method or use the [`TextDisplay::prepare_runs`],
+    /// [`TextDisplay::resize_runs`] and [`TextDisplay::prepare_lines`] methods.
     pub fn prepare<F: FormattableText>(&mut self, text: &F, env: &Environment) {
         let action = self.action;
         if action == Action::None {
             return;
         }
-
-        if action >= Action::Runs {
-            self.prepare_runs(text, env);
-        }
-
-        if action == Action::Dpem {
-            // Note: this is only needed if we didn't just call prepare_runs()
-            self.update_run_dpem(text, env);
-        }
-
-        if action >= Action::Shape {
-            self.glyph_runs = self
-                .runs
-                .iter()
-                .map(|run| shaper::shape(text.as_str(), &run))
-                .collect();
-        }
-
-        if action >= Action::Wrap {
-            self.wrap_lines(env);
-        }
-
         self.action = Action::None;
-    }
 
-    /// Get size requirements
-    ///
-    /// One must set initial size bounds and call [`TextDisplay::prepare`]
-    /// before this method. Note that initial size bounds may cause wrapping
-    /// and may cause parts of the text outside the bounds to be cut off.
-    pub fn required_size(&self) -> Vec2 {
-        assert!(self.action.is_none(), "kas-text::TextDisplay: not ready");
-        self.required
+        if action >= Action::All {
+            self.prepare_runs(text, env.bidi, env.dir, env.dpp, env.pt_size);
+        } else if action == Action::Resize {
+            // Note: this is only needed if we didn't just call prepare_runs()
+            self.resize_runs(text, env.dpp, env.pt_size);
+        }
+
+        self.prepare_lines(env.bounds, env.wrap, (env.halign, env.valign));
     }
 
     /// Get the number of lines
     pub fn num_lines(&self) -> usize {
-        assert!(self.action.is_none(), "kas-text::TextDisplay: not ready");
+        assert!(self.action.is_ready(), "kas-text::TextDisplay: not ready");
         self.lines.len()
     }
 
@@ -240,7 +146,7 @@ impl TextDisplay {
     /// (which means either that `index` is beyond the end of the text or that
     /// `index` is within a mult-byte line break).
     pub fn find_line(&self, index: usize) -> Option<(usize, std::ops::Range<usize>)> {
-        assert!(self.action.is_none(), "kas-text::TextDisplay: not ready");
+        assert!(self.action.is_ready(), "kas-text::TextDisplay: not ready");
         let mut first = None;
         for (n, line) in self.lines.iter().enumerate() {
             if line.text_range.end() == index {
@@ -257,7 +163,7 @@ impl TextDisplay {
 
     /// Get the range of a line, by line number
     pub fn line_range(&self, line: usize) -> Option<std::ops::Range<usize>> {
-        assert!(self.action.is_none(), "kas-text::TextDisplay: not ready");
+        assert!(self.action.is_ready(), "kas-text::TextDisplay: not ready");
         self.lines.get(line).map(|line| line.text_range.to_std())
     }
 
@@ -267,7 +173,7 @@ impl TextDisplay {
     ///
     /// Panics if `line >= self.num_lines()`.
     pub fn line_is_ltr(&self, line: usize) -> bool {
-        assert!(self.action.is_none(), "kas-text::TextDisplay: not ready");
+        assert!(self.action.is_ready(), "kas-text::TextDisplay: not ready");
         let first_run = self.lines[line].run_range.start();
         let glyph_run = to_usize(self.wrapped_runs[first_run].glyph_run);
         self.glyph_runs[glyph_run].level.is_ltr()
@@ -280,7 +186,7 @@ impl TextDisplay {
     /// Panics if `line >= self.num_lines()`.
     #[inline]
     pub fn line_is_rtl(&self, line: usize) -> bool {
-        assert!(self.action.is_none(), "kas-text::TextDisplay: not ready");
+        assert!(self.action.is_ready(), "kas-text::TextDisplay: not ready");
         !self.line_is_ltr(line)
     }
 
@@ -292,7 +198,7 @@ impl TextDisplay {
     /// Note: if the font's rect does not start at the origin, then its top-left
     /// coordinate should first be subtracted from `pos`.
     pub fn text_index_nearest(&self, pos: Vec2) -> usize {
-        assert!(self.action.is_none(), "kas-text::TextDisplay: not ready");
+        assert!(self.action.is_ready(), "kas-text::TextDisplay: not ready");
         let mut n = 0;
         for (i, line) in self.lines.iter().enumerate() {
             if line.top > pos.1 {
@@ -309,7 +215,7 @@ impl TextDisplay {
     /// This is similar to [`TextDisplay::text_index_nearest`], but allows the
     /// line to be specified explicitly. Returns `None` only on invalid `line`.
     pub fn line_index_nearest(&self, line: usize, x: f32) -> Option<usize> {
-        assert!(self.action.is_none(), "kas-text::TextDisplay: not ready");
+        assert!(self.action.is_ready(), "kas-text::TextDisplay: not ready");
         if line >= self.lines.len() {
             return None;
         }
