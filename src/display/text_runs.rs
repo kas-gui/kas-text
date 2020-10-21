@@ -49,7 +49,7 @@ impl TextDisplay {
     pub(crate) fn update_run_dpem<F: FormattableText>(&mut self, text: &F, env: &Environment) {
         let mut dpem = env.pt_size * env.dpp;
 
-        let mut font_tokens = text.font_tokens(env);
+        let mut font_tokens = text.font_tokens(env.dpp, env.pt_size);
         let mut next_fmt = font_tokens.next();
 
         for run in &mut self.runs {
@@ -81,7 +81,7 @@ impl TextDisplay {
         let mut font_id = FontId::default();
         let mut dpem = env.pt_size * env.dpp;
 
-        let mut font_tokens = text.font_tokens(env);
+        let mut font_tokens = text.font_tokens(env.dpp, env.pt_size);
         let mut next_fmt = font_tokens.next();
         if let Some(fmt) = next_fmt.as_ref() {
             if fmt.start == 0 {

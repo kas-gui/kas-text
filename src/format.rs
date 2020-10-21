@@ -6,7 +6,7 @@
 //! Parsers for formatted text
 
 use crate::fonts::FontId;
-use crate::{Environment, OwningVecIter};
+use crate::OwningVecIter;
 
 mod plain;
 
@@ -45,18 +45,22 @@ pub trait FormattableText: std::fmt::Debug {
     /// It is expected that [`FontToken::start`] of yielded items is strictly
     /// increasing; if not, formatting may not be applied correctly.
     ///
+    /// The `dpp` and `pt_size` parameters are as in [`crate::Environment`].
+    ///
     /// For plain text this iterator will be empty.
     #[cfg(feature = "gat")]
-    fn font_tokens<'a>(&'a self, env: &'a Environment) -> Self::FontTokenIterator<'a>;
+    fn font_tokens<'a>(&'a self, dpp: f32, pt_size: f32) -> Self::FontTokenIterator<'a>;
 
     /// Construct an iterator over formatting items
     ///
     /// It is expected that [`FontToken::start`] of yielded items is strictly
     /// increasing; if not, formatting may not be applied correctly.
     ///
+    /// The `dpp` and `pt_size` parameters are as in [`crate::Environment`].
+    ///
     /// For plain text this iterator will be empty.
     #[cfg(not(feature = "gat"))]
-    fn font_tokens(&self, env: &Environment) -> OwningVecIter<FontToken>;
+    fn font_tokens(&self, dpp: f32, pt_size: f32) -> OwningVecIter<FontToken>;
 }
 
 /// Text, optionally with formatting data
@@ -78,8 +82,10 @@ pub trait FormattableTextDyn: std::fmt::Debug {
     /// It is expected that [`FontToken::start`] of yielded items is strictly
     /// increasing; if not, formatting may not be applied correctly.
     ///
+    /// The `dpp` and `pt_size` parameters are as in [`crate::Environment`].
+    ///
     /// For plain text this iterator will be empty.
-    fn font_tokens(&self, env: &Environment) -> OwningVecIter<FontToken>;
+    fn font_tokens(&self, dpp: f32, pt_size: f32) -> OwningVecIter<FontToken>;
 }
 
 // #[cfg(feature = "gat")]
@@ -95,8 +101,8 @@ impl<F: FormattableText + Clone + 'static> FormattableTextDyn for F {
         FormattableText::as_str(self)
     }
 
-    fn font_tokens(&self, env: &Environment) -> OwningVecIter<FontToken> {
-        let iter = FormattableText::font_tokens(self, env);
+    fn font_tokens(&self, dpp: f32, pt_size: f32) -> OwningVecIter<FontToken> {
+        let iter = FormattableText::font_tokens(self, dpp, pt_size);
         #[cfg(feature = "gat")]
         {
             OwningVecIter::new(iter.collect())
@@ -123,8 +129,8 @@ impl<'t> FormattableText for &'t dyn FormattableTextDyn {
     }
 
     #[inline]
-    fn font_tokens(&self, env: &Environment) -> OwningVecIter<FontToken> {
-        FormattableTextDyn::font_tokens(*self, env)
+    fn font_tokens(&self, dpp: f32, pt_size: f32) -> OwningVecIter<FontToken> {
+        FormattableTextDyn::font_tokens(*self, dpp, pt_size)
     }
 }
 

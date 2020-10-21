@@ -8,7 +8,6 @@
 use super::{EditableText, FontToken, FormattableText};
 use crate::conv::to_u32;
 use crate::fonts::{self, FamilyName, FontId, FontSelector, Style, Weight};
-use crate::Environment;
 #[cfg(not(feature = "gat"))]
 use crate::OwningVecIter;
 use pulldown_cmark::{Event, Tag};
@@ -36,14 +35,14 @@ pub struct FontTokenIter<'a> {
 }
 
 impl<'a> FontTokenIter<'a> {
-    fn new(fmt: &'a [Fmt], env: &Environment) -> Self {
+    fn new(fmt: &'a [Fmt], base_dpem: f32) -> Self {
         FontTokenIter {
             index: 0,
             fmt,
             fonts: fonts::fonts(),
             font_id: FontId::default(),
             font_sel: FontSelector::default(),
-            base_dpem: env.dpp * env.pt_size,
+            base_dpem,
         }
     }
 }
@@ -81,13 +80,13 @@ impl FormattableText for Markdown {
 
     #[cfg(feature = "gat")]
     #[inline]
-    fn font_tokens<'a>(&'a self, env: &Environment) -> Self::FontTokenIterator<'a> {
-        FontTokenIter::new(&self.fmt, env)
+    fn font_tokens<'a>(&'a self, dpp: f32, pt_size: f32) -> Self::FontTokenIterator<'a> {
+        FontTokenIter::new(&self.fmt, dpp * pt_size)
     }
     #[cfg(not(feature = "gat"))]
     #[inline]
-    fn font_tokens(&self, env: &Environment) -> OwningVecIter<FontToken> {
-        let iter = FontTokenIter::new(&self.fmt, env);
+    fn font_tokens(&self, dpp: f32, pt_size: f32) -> OwningVecIter<FontToken> {
+        let iter = FontTokenIter::new(&self.fmt, dpp * pt_size);
         OwningVecIter::new(iter.collect())
     }
 }

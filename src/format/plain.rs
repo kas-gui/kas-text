@@ -6,7 +6,6 @@
 //! Impls for plain text
 
 use super::{EditableText, FontToken, FormattableText};
-use crate::Environment;
 #[cfg(not(feature = "gat"))]
 use crate::OwningVecIter;
 
@@ -19,11 +18,11 @@ impl<'t> FormattableText for &'t str {
     }
 
     #[cfg(feature = "gat")]
-    fn font_tokens<'a>(&'a self, _: &Environment) -> Self::FontTokenIterator<'a> {
+    fn font_tokens<'a>(&'a self, _: f32, _: f32) -> Self::FontTokenIterator<'a> {
         std::iter::empty()
     }
     #[cfg(not(feature = "gat"))]
-    fn font_tokens(&self, _: &Environment) -> OwningVecIter<FontToken> {
+    fn font_tokens(&self, _: f32, _: f32) -> OwningVecIter<FontToken> {
         OwningVecIter::new(Vec::new())
     }
 }
@@ -37,11 +36,11 @@ impl FormattableText for String {
     }
 
     #[cfg(feature = "gat")]
-    fn font_tokens<'a>(&'a self, _: &Environment) -> Self::FontTokenIterator<'a> {
+    fn font_tokens<'a>(&'a self, _: f32, _: f32) -> Self::FontTokenIterator<'a> {
         std::iter::empty()
     }
     #[cfg(not(feature = "gat"))]
-    fn font_tokens(&self, _: &Environment) -> OwningVecIter<FontToken> {
+    fn font_tokens(&self, _: f32, _: f32) -> OwningVecIter<FontToken> {
         OwningVecIter::new(Vec::new())
     }
 }
