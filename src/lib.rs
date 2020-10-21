@@ -17,13 +17,13 @@ mod data;
 pub use data::{Range, Vec2};
 
 mod display;
-pub use display::{Effect, EffectFlags, TextDisplay};
+pub use display::*;
 
 pub mod fonts;
 pub mod format;
 
 mod text;
-pub use text::{Text, TextApi};
+pub use text::*;
 
 mod util;
 pub use util::{Action, OwningVecIter};

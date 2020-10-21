@@ -94,6 +94,12 @@ impl Default for TextDisplay {
 }
 
 impl TextDisplay {
+    /// Get required action
+    #[inline]
+    pub fn required_action(&self) -> Action {
+        self.action
+    }
+
     /// Require an action
     ///
     /// Required actions are tracked internally. This combines internal action

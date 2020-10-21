@@ -226,7 +226,7 @@ impl TextDisplay {
     /// glyphs yielded will equal [`TextDisplay::num_glyphs`]. This may be used as
     /// follows:
     /// ```no_run
-    /// # use kas_text::{Glyph, Text, Environment};
+    /// # use kas_text::{Glyph, Text, Environment, TextApi, TextApiExt};
     /// # fn draw(_: Vec<(f32, Glyph)>) {}
     /// let mut text = Text::new_single("Some example text");
     /// text.prepare();
