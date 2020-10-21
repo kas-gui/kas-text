@@ -54,14 +54,17 @@ impl TextDisplay {
             }
 
             // This is hacky, but should suffice!
-            let mut soft_breaks = Default::default();
-            std::mem::swap(&mut soft_breaks, &mut run.soft_breaks);
+            let mut breaks = Default::default();
+            std::mem::swap(&mut breaks, &mut run.breaks);
+            if run.level.is_rtl() {
+                breaks.reverse();
+            }
             *run = shaper::shape(
                 text.as_str(),
                 run.range,
                 dpem,
                 run.font_id,
-                soft_breaks,
+                breaks,
                 run.no_break,
                 run.level,
             );
@@ -182,7 +185,7 @@ impl TextDisplay {
                     next_break = breaks_iter.next().unwrap_or((0, false));
                 }
             } else if is_break {
-                breaks.push(to_u32(pos));
+                breaks.push(shaper::GlyphBreak::new(to_u32(pos)));
                 next_break = breaks_iter.next().unwrap_or((0, false));
             }
         }

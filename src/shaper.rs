@@ -41,10 +41,24 @@ pub struct Glyph {
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct GlyphBreak {
+    /// Index of char in source text
+    pub index: u32,
     /// Position in sequence of glyphs
     pub pos: u32,
     /// End position of previous "word" excluding space
     pub no_space_end: f32,
+}
+impl GlyphBreak {
+    /// Constructs with first field only
+    ///
+    /// Other fields are set later by shaper.
+    pub(crate) fn new(index: u32) -> Self {
+        GlyphBreak {
+            index,
+            pos: u32::MAX,
+            no_space_end: f32::NAN,
+        }
+    }
 }
 
 /// A glyph run
@@ -66,11 +80,6 @@ pub(crate) struct GlyphRun {
     pub dpem: f32,
     /// Font identifier
     pub font_id: FontId,
-    /// All soft-break locations within this range (excludes end)
-    ///
-    /// Note: it would be equivalent to use a separate `Run` for each sub-range
-    /// in the text instead of tracking breaks via this field.
-    pub soft_breaks: SmallVec<[u32; 5]>,
     /// If true, the logical-end of this Run is not a valid break point
     pub no_break: bool,
     /// BIDI level
@@ -78,8 +87,11 @@ pub(crate) struct GlyphRun {
 
     /// Sequence of all glyphs, in left-to-right order
     pub glyphs: Vec<Glyph>,
-    /// Sequence of all break points, in left-to-right order
-    pub breaks: SmallVec<[GlyphBreak; 2]>,
+    /// All soft-breaks within this run, in left-to-right order
+    ///
+    /// Note: it would be equivalent to use a separate `Run` for each sub-range
+    /// in the text instead of tracking breaks via this field.
+    pub breaks: SmallVec<[GlyphBreak; 5]>,
 
     pub dpu: DPU,
     /// Text height in pixels (stored for compat with glyph_brush downstream)
@@ -209,13 +221,16 @@ pub(crate) fn shape(
     dpem: f32,
     font_id: FontId,
     // All soft-break locations within this run, excluding the end
-    soft_breaks: SmallVec<[u32; 5]>,
+    mut breaks: SmallVec<[GlyphBreak; 5]>,
     // If true, the logical-end of this Run is not a valid break point
     no_break: bool,
     level: Level,
 ) -> GlyphRun {
+    if level.is_rtl() {
+        breaks.reverse();
+    }
+
     let mut glyphs = vec![];
-    let mut breaks = Default::default();
     let mut no_space_end = 0.0;
     let mut caret = 0.0;
 
@@ -225,15 +240,14 @@ pub(crate) fn shape(
 
     if dpem >= 0.0 {
         #[cfg(feature = "harfbuzz_rs")]
-        let r = shape_harfbuzz(text, range, dpem, font_id, level, &soft_breaks);
+        let r = shape_harfbuzz(text, range, dpem, font_id, level, &mut breaks);
 
         #[cfg(not(feature = "harfbuzz_rs"))]
-        let r = shape_simple(sf, text, range, level, &soft_breaks);
+        let r = shape_simple(sf, text, range, level, &mut breaks);
 
         glyphs = r.0;
-        breaks = r.1;
-        no_space_end = r.2;
-        caret = r.3;
+        no_space_end = r.1;
+        caret = r.2;
     }
 
     if level.is_rtl() {
@@ -266,7 +280,6 @@ pub(crate) fn shape(
         range,
         dpem,
         font_id,
-        soft_breaks,
         no_break,
         level,
 
@@ -287,8 +300,8 @@ fn shape_harfbuzz(
     dpem: f32,
     font_id: FontId,
     level: Level,
-    soft_breaks: &[u32],
-) -> (Vec<Glyph>, SmallVec<[GlyphBreak; 2]>, f32, f32) {
+    breaks: &mut [GlyphBreak],
+) -> (Vec<Glyph>, f32, f32) {
     let dpem = dpem;
     let mut font = fonts().get_harfbuzz(font_id);
 
@@ -320,15 +333,7 @@ fn shape_harfbuzz(
 
     let mut caret = 0.0;
     let mut no_space_end = caret;
-
-    let mut breaks_iter = soft_breaks.iter();
-    let mut get_next_break = || match rtl {
-        false => breaks_iter.next().cloned().unwrap_or(u32::MAX),
-        true => breaks_iter.next_back().cloned().unwrap_or(u32::MAX),
-    };
-    let mut next_break = get_next_break();
-    assert!(next_break >= idx_offset);
-    let mut breaks = SmallVec::<[GlyphBreak; 2]>::with_capacity(soft_breaks.len());
+    let mut break_i = 0;
 
     let mut glyphs = Vec::with_capacity(output.len());
 
@@ -341,10 +346,14 @@ fn shape_harfbuzz(
         assert!(info.codepoint <= u16::MAX as u32, "failed to map glyph id");
         let id = GlyphId(info.codepoint as u16);
 
-        if index == next_break {
-            let pos = to_u32(glyphs.len());
-            breaks.push(GlyphBreak { pos, no_space_end });
-            next_break = get_next_break();
+        if breaks
+            .get(break_i)
+            .map(|b| b.index == index)
+            .unwrap_or(false)
+        {
+            breaks[break_i].pos = to_u32(glyphs.len());
+            breaks[break_i].no_space_end = no_space_end;
+            break_i += 1;
         }
 
         let position = Vec2(caret + unit(pos.x_offset), unit(pos.y_offset));
@@ -368,7 +377,7 @@ fn shape_harfbuzz(
         }
     }
 
-    (glyphs, breaks, no_space_end, caret)
+    (glyphs, no_space_end, caret)
 }
 
 // Simple implementation (kerning but no shaping)
@@ -378,8 +387,8 @@ fn shape_simple(
     text: &str,
     range: Range,
     level: Level,
-    soft_breaks: &[u32],
-) -> (Vec<Glyph>, SmallVec<[GlyphBreak; 2]>, f32, f32) {
+    breaks: &mut [GlyphBreak],
+) -> (Vec<Glyph>, f32, f32) {
     use unicode_bidi_mirroring::get_mirrored;
 
     let slice = &text[range];
@@ -389,15 +398,7 @@ fn shape_simple(
     let mut caret = 0.0;
     let mut no_space_end = caret;
     let mut prev_glyph_id: Option<GlyphId> = None;
-
-    let mut breaks_iter = soft_breaks.iter();
-    let mut get_next_break = || match rtl {
-        false => breaks_iter.next().cloned().unwrap_or(u32::MAX),
-        true => breaks_iter.next_back().cloned().unwrap_or(u32::MAX),
-    };
-    let mut next_break = get_next_break();
-    assert!(next_break >= idx_offset);
-    let mut breaks = SmallVec::<[GlyphBreak; 2]>::with_capacity(soft_breaks.len());
+    let mut break_i = 0;
 
     // Allocate with an over-estimate and shrink later:
     let mut glyphs = Vec::with_capacity(slice.len());
@@ -415,10 +416,14 @@ fn shape_simple(
         }
         let id = sf.glyph_id(c);
 
-        if index == next_break {
-            let pos = to_u32(glyphs.len());
-            breaks.push(GlyphBreak { pos, no_space_end });
-            next_break = get_next_break();
+        if breaks
+            .get(break_i)
+            .map(|b| b.index == index)
+            .unwrap_or(false)
+        {
+            breaks[break_i].pos = to_u32(glyphs.len());
+            breaks[break_i].no_space_end = no_space_end;
+            break_i += 1;
             no_space_end = caret;
         }
 
@@ -450,5 +455,5 @@ fn shape_simple(
 
     glyphs.shrink_to_fit();
 
-    (glyphs, breaks, no_space_end, caret)
+    (glyphs, no_space_end, caret)
 }
