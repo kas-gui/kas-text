@@ -13,7 +13,9 @@ use crate::{Action, Vec2};
 /// An `Environment` can be default-constructed (without line-wrapping).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Environment {
-    /// Bidirectional text
+    /// Flags enabling/disabling certain features
+    ///
+    /// ## Bidirectional text
     ///
     /// If enabled, right-to-left text embedded within left-to-right text and
     /// LTR within RTL will be re-ordered according to the Unicode Bidirectional
@@ -24,7 +26,14 @@ pub struct Environment {
     ///
     /// Default value: `true`. This should normally be enabled unless there is
     /// a specific reason to disable it.
-    pub bidi: bool,
+    ///
+    /// ## Line wrapping
+    ///
+    /// By default, this is true and long text lines are wrapped based on the
+    /// width bounds. If set to false, lines are not wrapped at the width
+    /// boundary, but explicit line-breaks such as `\n` still result in new
+    /// lines.
+    pub flags: EnvFlags,
     /// Default text direction
     ///
     /// Usually this may be left to its default value of [`Direction::Auto`].
@@ -55,13 +64,6 @@ pub struct Environment {
     /// alignment (when aligning to the centre or bottom).
     /// Glyphs outside of these bounds may not be drawn.
     pub bounds: Vec2,
-    /// Line wrapping
-    ///
-    /// By default, this is true and long text lines are wrapped based on the
-    /// width bounds. If set to false, lines are not wrapped at the width
-    /// boundary, but explicit line-breaks such as `\n` still result in new
-    /// lines.
-    pub wrap: bool,
     /// Alignment (horiz, vert)
     ///
     /// By default, horizontal alignment is left or right depending on the
@@ -73,12 +75,11 @@ pub struct Environment {
 impl Default for Environment {
     fn default() -> Self {
         Environment {
-            bidi: true,
+            flags: Default::default(),
             dir: Direction::default(),
             dpp: 96.0 / 72.0,
             pt_size: 11.0,
             bounds: Vec2::INFINITY,
-            wrap: true,
             align: Default::default(),
         }
     }
@@ -158,8 +159,8 @@ impl<'a> UpdateEnv<'a> {
 
     /// Enable or disable line-wrapping
     pub fn set_wrap(&mut self, wrap: bool) {
-        if wrap != self.env.wrap {
-            self.env.wrap = wrap;
+        if wrap != self.env.flags.contains(EnvFlags::WRAP) {
+            self.env.flags.set(EnvFlags::WRAP, wrap);
             self.action = self.action.max(Action::Wrap);
         }
     }
@@ -185,6 +186,24 @@ impl Environment {
             pt_size,
             ..Default::default()
         }
+    }
+}
+
+bitflags::bitflags! {
+    /// Environment flags
+    ///
+    /// By default, all flags are enabled
+    pub struct EnvFlags: u8 {
+        /// Enable bidirectional text support
+        const BIDI = 1 << 0;
+        /// Enable line wrapping
+        const WRAP = 1 << 1;
+    }
+}
+
+impl Default for EnvFlags {
+    fn default() -> Self {
+        EnvFlags::all()
     }
 }
 
@@ -233,4 +252,9 @@ impl Default for Direction {
     fn default() -> Self {
         Direction::Auto
     }
+}
+
+#[test]
+fn size() {
+    assert_eq!(std::mem::size_of::<Environment>(), 20);
 }

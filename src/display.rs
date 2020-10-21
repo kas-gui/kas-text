@@ -9,7 +9,7 @@ use smallvec::SmallVec;
 
 use crate::conv::to_usize;
 use crate::format::FormattableText;
-use crate::{shaper, Action, Environment, Vec2};
+use crate::{shaper, Action, EnvFlags, Environment, Vec2};
 
 mod glyph_pos;
 mod text_runs;
@@ -122,13 +122,15 @@ impl TextDisplay {
         self.action = Action::None;
 
         if action >= Action::All {
-            self.prepare_runs(text, env.bidi, env.dir, env.dpp, env.pt_size);
+            let bidi = env.flags.contains(EnvFlags::BIDI);
+            self.prepare_runs(text, bidi, env.dir, env.dpp, env.pt_size);
         } else if action == Action::Resize {
             // Note: this is only needed if we didn't just call prepare_runs()
             self.resize_runs(text, env.dpp, env.pt_size);
         }
 
-        self.prepare_lines(env.bounds, env.wrap, env.align);
+        let wrap = env.flags.contains(EnvFlags::WRAP);
+        self.prepare_lines(env.bounds, wrap, env.align);
     }
 
     /// Get the number of lines

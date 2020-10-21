@@ -12,7 +12,7 @@ use crate::display::{Effect, MarkerPosIter, TextDisplay};
 use crate::fonts::FontId;
 use crate::format::{EditableText, FormattableText};
 use crate::{Action, Glyph, Vec2};
-use crate::{Environment, UpdateEnv};
+use crate::{EnvFlags, Environment, UpdateEnv};
 
 /// Text, prepared for display in a given enviroment
 ///
@@ -51,7 +51,7 @@ impl<T: FormattableText> Text<T> {
     #[inline]
     pub fn new_single(text: T) -> Self {
         let mut env = Environment::default();
-        env.wrap = false;
+        env.flags.remove(EnvFlags::WRAP);
         Self::new(env, text)
     }
 
@@ -241,7 +241,7 @@ impl<T: FormattableText> Text<T> {
     pub fn prepare_runs(&mut self) {
         self.display.prepare_runs(
             &self.text,
-            self.env.bidi,
+            self.env.flags.contains(EnvFlags::BIDI),
             self.env.dir,
             self.env.dpp,
             self.env.pt_size,
@@ -264,8 +264,9 @@ impl<T: FormattableText> Text<T> {
     /// environment state.
     #[inline]
     pub fn prepare_lines(&mut self) -> Vec2 {
+        let wrap = self.env.flags.contains(EnvFlags::WRAP);
         self.display
-            .prepare_lines(self.env.bounds, self.env.wrap, self.env.align)
+            .prepare_lines(self.env.bounds, wrap, self.env.align)
     }
 
     /// Get the number of lines
