@@ -13,6 +13,15 @@ use crate::{shaper, Action, Direction, Range};
 use unicode_bidi::{BidiInfo, Level, LTR_LEVEL, RTL_LEVEL};
 use xi_unicode::LineBreakIterator;
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum RunSpecial {
+    None,
+    /// Forbid a break here
+    NoBreak,
+    /// Horizontal tab
+    HTab,
+}
+
 #[derive(Copy, Clone, Debug)]
 pub(crate) struct LineRun {
     /// Range within runs
@@ -65,7 +74,7 @@ impl TextDisplay {
                 dpem,
                 run.font_id,
                 breaks,
-                run.no_break,
+                run.special,
                 run.level,
             );
         }
@@ -134,30 +143,45 @@ impl TextDisplay {
         let mut next_break = breaks_iter.next().unwrap_or((0, false));
 
         let mut line_start = 0;
+        let mut last_is_control = false;
+        let mut last_is_htab = false;
+        let mut non_control_end = 0;
 
-        for pos in 1..text.str_len() {
+        for (pos, c) in text.as_str().char_indices() {
+            // Handling for control chars
+            if !last_is_control {
+                non_control_end = pos;
+            }
+            let is_control = c.is_control();
+            let is_htab = c == '\t';
+            let control_break = is_htab || (last_is_control && !is_control);
+
+            // Is wrapping allowed at this position?
             let is_break = next_break.0 == pos;
+            // Forcibly end the line?
             let hard_break = is_break && next_break.1;
-            let bidi_break = bidi && levels[pos] != level;
 
+            // Force end of current run?
+            let bidi_break = bidi && levels[pos] != level;
             let fmt_break = next_fmt
                 .as_ref()
                 .map(|fmt| to_usize(fmt.start) == pos)
                 .unwrap_or(false);
 
-            if hard_break || bidi_break || fmt_break {
-                let mut range = trim_control(&text.as_str()[start..pos]);
-                // trim_control gives us a range within the slice; we need to offset:
-                range.start += to_u32(start);
-                range.end += to_u32(start);
-
+            if hard_break || control_break || bidi_break || fmt_break {
+                let range = (start..non_control_end).into();
+                let special = match (last_is_htab, last_is_control || is_break) {
+                    (true, _) => RunSpecial::HTab,
+                    (false, true) => RunSpecial::None,
+                    (false, false) => RunSpecial::NoBreak,
+                };
                 self.runs.push(shaper::shape(
                     text.as_str(),
                     range,
                     dpem,
                     font_id,
                     breaks,
-                    !is_break,
+                    special,
                     level,
                 ));
 
@@ -177,6 +201,7 @@ impl TextDisplay {
                 }
 
                 start = pos;
+                non_control_end = pos;
                 if bidi {
                     level = levels[pos];
                 }
@@ -185,27 +210,42 @@ impl TextDisplay {
                     next_break = breaks_iter.next().unwrap_or((0, false));
                 }
             } else if is_break {
-                breaks.push(shaper::GlyphBreak::new(to_u32(pos)));
+                if !is_control {
+                    // We break runs when hitting control chars, but do so
+                    // later; we do not want a "soft break" here.
+                    breaks.push(shaper::GlyphBreak::new(to_u32(pos)));
+                }
                 next_break = breaks_iter.next().unwrap_or((0, false));
             }
+
+            last_is_control = is_control;
+            last_is_htab = is_htab;
         }
 
         // The loop above misses the last break at the end of the text.
         // LineBreakIterator always reports a hard break at the text's end
         // regardless of whether the text ends with a line-break char.
-        let mut range = trim_control(&text.as_str()[start..]);
-        // trim_control gives us a range within the slice; we need to offset:
-        range.start += to_u32(start);
-        range.end += to_u32(start);
-        self.runs.push(shaper::shape(
-            text.as_str(),
-            range,
-            dpem,
-            font_id,
-            breaks,
-            false,
-            level,
-        ));
+        if !last_is_control {
+            non_control_end = text.str_len();
+        }
+        if non_control_end > start || last_is_htab {
+            // Note: range can be empty if and only if text is empty. In this
+            // case we should add a run anyway.
+            let range = (start..non_control_end).into();
+            let special = match last_is_htab {
+                true => RunSpecial::HTab,
+                false => RunSpecial::None,
+            };
+            self.runs.push(shaper::shape(
+                text.as_str(),
+                range,
+                dpem,
+                font_id,
+                breaks,
+                special,
+                level,
+            ));
+        }
         if line_start < self.runs.len() {
             let range = Range::from(line_start..self.runs.len());
             let rtl = self.runs[line_start].level.is_rtl();
@@ -228,7 +268,7 @@ impl TextDisplay {
                     dpem,
                     font_id,
                     breaks,
-                    false,
+                    RunSpecial::None,
                     level,
                 ));
 
@@ -252,41 +292,4 @@ impl TextDisplay {
         }
         */
     }
-}
-
-fn trim_control(slice: &str) -> Range {
-    let (mut a, mut b) = (0, 0);
-    let mut char_indices = slice.char_indices();
-
-    loop {
-        let pre_iter_len = char_indices.as_str().len();
-        if let Some((i, c)) = char_indices.next() {
-            if char::is_control(c) {
-                continue;
-            } else {
-                // First non-control char. It may also be the last and we have
-                // now removed it from the iter, so we must record the location.
-                let char_len = pre_iter_len - char_indices.as_str().len();
-                a = i;
-                b = i + char_len;
-                break;
-            }
-        }
-        break;
-    }
-
-    loop {
-        let pre_iter_len = char_indices.as_str().len();
-        if let Some((i, c)) = char_indices.next_back() {
-            if char::is_control(c) {
-                continue;
-            } else {
-                let char_len = pre_iter_len - char_indices.as_str().len();
-                b = i + char_len;
-            }
-        }
-        break;
-    }
-
-    (a..b).into()
 }

@@ -312,12 +312,11 @@ impl StackItem {
             Tag::Item => {
                 state.list_item(text);
                 match &mut self.list {
-                    // TODO: indent properly
                     Some(x) => {
-                        text.push_str(&format!("{:<4}", x));
+                        text.push_str(&format!("{}\t", x));
                         *x = *x + 1;
                     }
-                    None => text.push_str("•   "),
+                    None => text.push_str("•\t"),
                 }
                 None
             }

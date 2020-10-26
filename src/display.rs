@@ -15,7 +15,7 @@ mod glyph_pos;
 mod text_runs;
 mod wrap_lines;
 pub use glyph_pos::{Effect, EffectFlags, MarkerPos, MarkerPosIter};
-pub(crate) use text_runs::LineRun;
+pub(crate) use text_runs::{LineRun, RunSpecial};
 use wrap_lines::{Line, RunPart};
 
 /// Text display, without source text representation

@@ -18,6 +18,7 @@
 //! This module *does not* perform line-breaking, wrapping or text reversal.
 
 use crate::conv::{to_u32, to_usize, DPU};
+use crate::display::RunSpecial;
 use crate::fonts::{fonts, FontId};
 use crate::{Range, Vec2};
 use smallvec::SmallVec;
@@ -80,8 +81,8 @@ pub(crate) struct GlyphRun {
     pub dpem: f32,
     /// Font identifier
     pub font_id: FontId,
-    /// If true, the logical-end of this Run is not a valid break point
-    pub no_break: bool,
+    /// Tab or no-break property
+    pub special: RunSpecial,
     /// BIDI level
     pub level: Level,
 
@@ -222,10 +223,19 @@ pub(crate) fn shape(
     font_id: FontId,
     // All soft-break locations within this run, excluding the end
     mut breaks: SmallVec<[GlyphBreak; 5]>,
-    // If true, the logical-end of this Run is not a valid break point
-    no_break: bool,
+    special: RunSpecial,
     level: Level,
 ) -> GlyphRun {
+    /*
+    print!("shape[{:?}]:\t", special);
+    let mut start = range.start();
+    for b in &breaks {
+        print!("\"{}\" ", &text[start..(b.index as usize)]);
+        start = b.index as usize;
+    }
+    println!("\"{}\"", &text[start..range.end()]);
+    */
+
     if level.is_rtl() {
         breaks.reverse();
     }
@@ -280,7 +290,7 @@ pub(crate) fn shape(
         range,
         dpem,
         font_id,
-        no_break,
+        special,
         level,
 
         glyphs,

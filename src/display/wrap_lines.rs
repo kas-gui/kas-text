@@ -5,7 +5,7 @@
 
 //! Text preparation: wrapping
 
-use super::TextDisplay;
+use super::{RunSpecial, TextDisplay};
 use crate::conv::{to_u32, to_usize};
 use crate::fonts::{fonts, FontLibrary};
 use crate::shaper::GlyphRun;
@@ -84,13 +84,32 @@ impl TextDisplay {
             'a: while index < end_index {
                 let run = &self.runs[index];
                 let num_parts = run.num_parts();
-                let allow_break = !run.no_break; // break allowed at end of run
+                let (allow_break, tab) = match run.special {
+                    RunSpecial::None => (true, false),
+                    RunSpecial::NoBreak => (false, false),
+                    RunSpecial::HTab => (true, true),
+                };
 
                 let mut last_part = start.1;
                 let mut part = last_part + 1;
                 while part <= num_parts {
-                    let (part_offset, part_len_no_space, part_len) =
+                    let (part_offset, part_len_no_space, mut part_len) =
                         run.part_lengths(last_part..part);
+                    if tab {
+                        // Tab runs have no glyph; instead we calculate part_len
+                        // based on the current line length.
+
+                        // TODO(bidi): we should really calculate this after
+                        // re-ordering the line based on full line contents,
+                        // then use a checkpoint reset if too long.
+
+                        let sf = fonts.get(run.font_id).scale_by_dpu(run.dpu);
+                        // TODO: custom tab sizes?
+                        let tab_size = sf.h_advance(sf.glyph_id(' ')) * 8.0;
+                        let stops = (caret / tab_size).floor() + 1.0;
+                        part_len = tab_size * stops - caret;
+                    }
+
                     let line_len = caret + part_len_no_space;
                     if wrap && line_len > width_bound && end.2 > 0 {
                         // Add up to last valid break point then wrap and reset
@@ -343,7 +362,7 @@ impl LineAdder {
                     } else {
                         part.glyph_range.start > 0
                     };
-                    if not_at_end || !run.no_break {
+                    if not_at_end || run.special != RunSpecial::NoBreak {
                         is_gap[i] = true;
                         num_gaps += 1;
                     }
