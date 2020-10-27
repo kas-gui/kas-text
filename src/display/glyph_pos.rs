@@ -259,14 +259,16 @@ impl TextDisplay {
 
     /// Like [`TextDisplay::glyphs`] but with added effects
     ///
-    /// It is required that the list of `effects` is not empty and that the
-    /// first entry has `start == 0`. The user payload `X` is simply passed
+    /// If the list `effects` is empty or has have first entry with `start > 0`,
+    /// a default-constructed `Effect<X>` token is used.
+    /// The user payload `X` is simply passed
     /// through to `f` and `g` calls and may be useful for colour information.
     ///
     /// The callback `f` receives `font_id, dpu, height, glyph, i, aux` where
     /// `dpu` and `height` are both measures of the font size (pixels per font
     /// unit and pixels per height, respectively), and `i` is the index within
-    /// `effects`.
+    /// `effects` (or `usize::MAX` when a default-constructed effect token is
+    /// used).
     ///
     /// The callback `g` receives positioning for each underline/strikethrough
     /// segment: `x1, x2, y_top, h` where `h` is the thickness (height). Note
@@ -284,18 +286,10 @@ impl TextDisplay {
         G: FnMut(f32, f32, f32, f32, usize, X),
     {
         assert!(self.action.is_ready(), "kas-text::TextDisplay: not ready");
-        assert!(
-            !effects.is_empty(),
-            "kas-text::TextDisplay::glyphs_with_effects: effects list is empty"
-        );
-        assert_eq!(
-            effects[0].start, 0,
-            "kas-text::TextDisplay::glyphs_with_effects: first effect has non-zero start"
-        );
         let fonts = fonts();
 
-        let mut effect_cur = 0;
-        let mut effect_next = 1;
+        let mut effect_cur = usize::MAX;
+        let mut effect_next = 0;
         let mut next_start = effects
             .get(effect_next)
             .map(|e| e.start)
@@ -331,7 +325,10 @@ impl TextDisplay {
                     .map(|e| e.start)
                     .unwrap_or(u32::MAX);
             }
-            let mut fmt = effects[effect_cur].clone();
+            let mut fmt = effects
+                .get(effect_cur)
+                .cloned()
+                .unwrap_or(Default::default());
 
             if !fmt.flags.is_empty() {
                 let sf = fonts.get(run.font_id).scale_by_dpu(run.dpu);
@@ -378,13 +375,17 @@ impl TextDisplay {
                             .unwrap_or(u32::MAX);
                     } else {
                         loop {
-                            effect_cur -= 1;
-                            if effects[effect_cur].start <= glyph.index {
+                            effect_cur = effect_cur.wrapping_sub(1);
+                            if effects.get(effect_cur).map(|e| e.start).unwrap_or(0) <= glyph.index
+                            {
                                 break;
                             }
                         }
                     }
-                    fmt = effects[effect_cur].clone();
+                    fmt = effects
+                        .get(effect_cur)
+                        .cloned()
+                        .unwrap_or(Default::default());
 
                     if underline.is_some() != fmt.flags.contains(EffectFlags::UNDERLINE) {
                         let sf = fonts.get(run.font_id).scale_by_dpu(run.dpu);
@@ -418,7 +419,7 @@ impl TextDisplay {
             }
 
             // In case of RTL, we need to correct the value for the next run
-            effect_cur = effect_next - 1;
+            effect_cur = effect_next.wrapping_sub(1);
 
             if let Some((x1, y_top, h, aux)) = underline {
                 let x2 = if run_part.glyph_range.end() < run.glyphs.len() {
