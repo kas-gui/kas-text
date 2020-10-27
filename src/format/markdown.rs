@@ -10,7 +10,9 @@ use crate::conv::to_u32;
 use crate::fonts::{self, FamilyName, FontId, FontSelector, Style, Weight};
 #[cfg(not(feature = "gat"))]
 use crate::OwningVecIter;
+use crate::{Effect, EffectFlags};
 use pulldown_cmark::{Event, Tag};
+use std::iter::FusedIterator;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Markdown {
@@ -23,7 +25,60 @@ impl Markdown {
     pub fn new(input: &str) -> Self {
         parse(input)
     }
+
+    /// Get an effect iterator
+    #[inline]
+    pub fn effects<'a>(&'a self) -> EffectTokenIter<'a, ()> {
+        self.effects_with_aux(())
+    }
+
+    /// Get an effect iterator with `aux` payload
+    ///
+    /// Limitation: the `aux` payload is constant throughout the sequence.
+    #[inline]
+    pub fn effects_with_aux<'a, X: Clone>(&'a self, aux: X) -> EffectTokenIter<'a, X> {
+        EffectTokenIter {
+            index: 0,
+            fmt: &self.fmt,
+            effect: Effect {
+                start: 0,
+                flags: EffectFlags::empty(),
+                aux,
+            },
+        }
+    }
 }
+
+#[derive(Clone, Debug)]
+pub struct EffectTokenIter<'a, X> {
+    index: usize,
+    fmt: &'a [Fmt],
+    effect: Effect<X>,
+}
+
+impl<'a, X: Clone> Iterator for EffectTokenIter<'a, X> {
+    type Item = Effect<X>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while self.index < self.fmt.len() {
+            let fmt = &self.fmt[self.index];
+            self.index += 1;
+            if fmt.start > self.effect.start {
+                let effect = self.effect.clone();
+                self.effect.start = fmt.start;
+                return Some(effect);
+            }
+            self.effect.flags = fmt.flags;
+        }
+        None
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (0, Some(self.fmt.len() - self.index))
+    }
+}
+
+impl<'a, X: Clone> FusedIterator for EffectTokenIter<'a, X> {}
 
 pub struct FontTokenIter<'a> {
     index: usize,
@@ -67,7 +122,15 @@ impl<'a> Iterator for FontTokenIter<'a> {
             None
         }
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = self.fmt.len();
+        (len, Some(len))
+    }
 }
+
+impl<'a> ExactSizeIterator for FontTokenIter<'a> {}
+impl<'a> FusedIterator for FontTokenIter<'a> {}
 
 impl FormattableText for Markdown {
     #[cfg(feature = "gat")]
@@ -159,8 +222,8 @@ fn parse(input: &str) -> Markdown {
     let mut stack = Vec::with_capacity(16);
     let mut item = StackItem::default();
 
-    // TODO: parser options — perhaps strikethrough?
-    let mut parser = pulldown_cmark::Parser::new(input);
+    let options = pulldown_cmark::Options::ENABLE_STRIKETHROUGH;
+    let mut parser = pulldown_cmark::Parser::new_ext(input, options);
     while let Some(ev) = parser.next() {
         match ev {
             Event::Start(tag) => {
@@ -250,6 +313,7 @@ pub struct Fmt {
     start: u32,
     sel: FontSelector,
     rel_size: f32,
+    flags: EffectFlags,
 }
 
 impl Default for Fmt {
@@ -258,6 +322,7 @@ impl Default for Fmt {
             start: 0,
             sel: FontSelector::default(),
             rel_size: 1.0,
+            flags: EffectFlags::empty(),
         }
     }
 }
@@ -322,6 +387,9 @@ impl StackItem {
             }
             Tag::Emphasis => with_clone(self, |item| item.fmt.sel.set_style(Style::Italic)),
             Tag::Strong => with_clone(self, |item| item.fmt.sel.set_weight(Weight::BOLD)),
+            Tag::Strikethrough => with_clone(self, |item| {
+                item.fmt.flags.set(EffectFlags::STRIKETHROUGH, true)
+            }),
             tag @ _ => unimplemented!("{:?}", tag),
         }
     }
