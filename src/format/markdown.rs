@@ -136,6 +136,9 @@ impl FormattableText for Markdown {
     #[cfg(feature = "gat")]
     type FontTokenIterator<'a> = FontTokenIter<'a>;
 
+    #[cfg(feature = "gat")]
+    type EffectTokenIter<'a, X: Clone> = EffectTokenIter<'a, X>;
+
     #[inline]
     fn as_str(&self) -> &str {
         &self.text
@@ -150,6 +153,16 @@ impl FormattableText for Markdown {
     #[inline]
     fn font_tokens(&self, dpp: f32, pt_size: f32) -> OwningVecIter<FontToken> {
         let iter = FontTokenIter::new(&self.fmt, dpp * pt_size);
+        OwningVecIter::new(iter.collect())
+    }
+
+    #[cfg(feature = "gat")]
+    fn effect_tokens<'a, X: Clone>(&'a self, aux: X) -> Self::EffectTokenIter<'a, X> {
+        self.effects_with_aux(aux)
+    }
+    #[cfg(not(feature = "gat"))]
+    fn effect_tokens<'a, X: Clone>(&'a self, aux: X) -> OwningVecIter<Effect<X>> {
+        let iter = self.effects_with_aux(aux);
         OwningVecIter::new(iter.collect())
     }
 }

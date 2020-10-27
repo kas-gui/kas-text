@@ -6,6 +6,7 @@
 //! Impls for plain text
 
 use super::{EditableText, FontToken, FormattableText};
+use crate::Effect;
 #[cfg(not(feature = "gat"))]
 use crate::OwningVecIter;
 
@@ -13,6 +14,9 @@ impl<'t> FormattableText for &'t str {
     #[cfg(feature = "gat")]
     type FontTokenIterator<'a> = std::iter::Empty<FontToken>;
 
+    #[cfg(feature = "gat")]
+    type EffectTokenIter<'a, X: Clone> = std::iter::Empty<Effect<X>>;
+
     fn as_str(&self) -> &str {
         self
     }
@@ -24,6 +28,15 @@ impl<'t> FormattableText for &'t str {
     #[cfg(not(feature = "gat"))]
     fn font_tokens(&self, _: f32, _: f32) -> OwningVecIter<FontToken> {
         OwningVecIter::new(Vec::new())
+    }
+
+    #[cfg(feature = "gat")]
+    fn effect_tokens<'a, X: Clone>(&'a self, _: X) -> Self::EffectTokenIter<'a, X> {
+        std::iter::empty()
+    }
+    #[cfg(not(feature = "gat"))]
+    fn effect_tokens<'a, X: Clone>(&'a self, _: X) -> OwningVecIter<Effect<X>> {
+        OwningVecIter::new(vec![])
     }
 }
 
@@ -31,6 +44,9 @@ impl FormattableText for String {
     #[cfg(feature = "gat")]
     type FontTokenIterator<'a> = std::iter::Empty<FontToken>;
 
+    #[cfg(feature = "gat")]
+    type EffectTokenIter<'a, X: Clone> = std::iter::Empty<Effect<X>>;
+
     fn as_str(&self) -> &str {
         self
     }
@@ -42,6 +58,15 @@ impl FormattableText for String {
     #[cfg(not(feature = "gat"))]
     fn font_tokens(&self, _: f32, _: f32) -> OwningVecIter<FontToken> {
         OwningVecIter::new(Vec::new())
+    }
+
+    #[cfg(feature = "gat")]
+    fn effect_tokens<'a, X: Clone>(&'a self, _: X) -> Self::EffectTokenIter<'a, X> {
+        std::iter::empty()
+    }
+    #[cfg(not(feature = "gat"))]
+    fn effect_tokens<'a, X: Clone>(&'a self, _: X) -> OwningVecIter<Effect<X>> {
+        OwningVecIter::new(vec![])
     }
 }
 
