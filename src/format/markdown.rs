@@ -134,7 +134,7 @@ impl<'a> FusedIterator for FontTokenIter<'a> {}
 
 impl FormattableText for Markdown {
     #[cfg(feature = "gat")]
-    type FontTokenIterator<'a> = FontTokenIter<'a>;
+    type FontTokenIter<'a> = FontTokenIter<'a>;
 
     #[cfg(feature = "gat")]
     type EffectTokenIter<'a, X: Clone> = EffectTokenIter<'a, X>;
@@ -146,7 +146,7 @@ impl FormattableText for Markdown {
 
     #[cfg(feature = "gat")]
     #[inline]
-    fn font_tokens<'a>(&'a self, dpp: f32, pt_size: f32) -> Self::FontTokenIterator<'a> {
+    fn font_tokens<'a>(&'a self, dpp: f32, pt_size: f32) -> Self::FontTokenIter<'a> {
         FontTokenIter::new(&self.fmt, dpp * pt_size)
     }
     #[cfg(not(feature = "gat"))]

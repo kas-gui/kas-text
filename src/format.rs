@@ -23,11 +23,12 @@ pub use markdown::Markdown;
 /// This trait can only be written as intended using Generic Associated Types
 /// ("gat", unstable nightly feature), thus `font_tokens` has a different
 /// signature with/without feature `gat` and the associated type
-/// `FontTokenIterator` is only present with feature `gat`.
+/// `FontTokenIter` is only present with feature `gat`.
 pub trait FormattableText: std::fmt::Debug {
     #[cfg_attr(doc_cfg, doc(cfg(feature = "gat")))]
     #[cfg(feature = "gat")]
-    type FontTokenIterator<'a>: Iterator<Item = FontToken>;
+    // TODO: rename → Iter
+    type FontTokenIter<'a>: Iterator<Item = FontToken>;
 
     #[cfg_attr(doc_cfg, doc(cfg(feature = "gat")))]
     #[cfg(feature = "gat")]
@@ -53,7 +54,7 @@ pub trait FormattableText: std::fmt::Debug {
     ///
     /// For plain text this iterator will be empty.
     #[cfg(feature = "gat")]
-    fn font_tokens<'a>(&'a self, dpp: f32, pt_size: f32) -> Self::FontTokenIterator<'a>;
+    fn font_tokens<'a>(&'a self, dpp: f32, pt_size: f32) -> Self::FontTokenIter<'a>;
 
     /// Construct an iterator over formatting items
     ///
@@ -156,7 +157,7 @@ impl<F: FormattableText + Clone + 'static> FormattableTextDyn for F {
 
 impl<'t> FormattableText for &'t dyn FormattableTextDyn {
     #[cfg(feature = "gat")]
-    type FontTokenIterator<'a> = OwningVecIter<FontToken>;
+    type FontTokenIter<'a> = OwningVecIter<FontToken>;
 
     #[cfg(feature = "gat")]
     type EffectTokenIter<'a, X: Clone> = FormattableTextDynEffectIter<X>;
