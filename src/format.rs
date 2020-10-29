@@ -79,7 +79,7 @@ pub trait FormattableText: std::fmt::Debug {
     /// Limitation: the `aux` payload is constant throughout the sequence. If
     /// this is a problem, pass `aux = ()` and construct a sequence externally.
     #[cfg(not(feature = "gat"))]
-    fn effect_tokens<'a, X: Clone>(&'a self, aux: X) -> OwningVecIter<Effect<X>>;
+    fn effect_tokens<'a, X: Clone>(&'a self, aux: X) -> Vec<Effect<X>>;
 }
 
 /// Text, optionally with formatting data
@@ -114,7 +114,7 @@ pub trait FormattableTextDyn: std::fmt::Debug {
     ///
     /// Unlike [`FormattableText::effect_tokens`] this method cannot accept an
     /// `aux` payload since it cannot have a generic parameter `X`.
-    fn effect_tokens<'a>(&'a self) -> OwningVecIter<Effect<()>>;
+    fn effect_tokens<'a>(&'a self) -> Vec<Effect<()>>;
 }
 
 // #[cfg(feature = "gat")]
@@ -142,11 +142,11 @@ impl<F: FormattableText + Clone + 'static> FormattableTextDyn for F {
         }
     }
 
-    fn effect_tokens<'a>(&'a self) -> OwningVecIter<Effect<()>> {
+    fn effect_tokens<'a>(&'a self) -> Vec<Effect<()>> {
         let iter = FormattableText::effect_tokens(self, ());
         #[cfg(feature = "gat")]
         {
-            OwningVecIter::new(iter.collect())
+            iter.collect()
         }
         #[cfg(not(feature = "gat"))]
         {
@@ -180,25 +180,29 @@ impl<'t> FormattableText for &'t dyn FormattableTextDyn {
     #[cfg(feature = "gat")]
     #[inline]
     fn effect_tokens<'a, X: Clone>(&'a self, aux: X) -> FormattableTextDynEffectIter<X> {
-        let iter = FormattableTextDyn::effect_tokens(*self);
-        FormattableTextDynEffectIter { iter, aux }
+        let v = FormattableTextDyn::effect_tokens(*self);
+        let i = 0;
+        FormattableTextDynEffectIter { v, i, aux }
     }
 
     #[cfg(not(feature = "gat"))]
     #[inline]
-    fn effect_tokens<'a, X: Clone>(&'a self, aux: X) -> OwningVecIter<Effect<X>> {
+    fn effect_tokens<'a, X: Clone>(&'a self, aux: X) -> Vec<Effect<X>> {
         // TODO(opt): avoid copy where X=() ?
-        let iter = FormattableTextDyn::effect_tokens(*self).map(|effect| Effect {
-            start: effect.start,
-            flags: effect.flags,
-            aux: aux.clone(),
-        });
-        OwningVecIter::new(iter.collect())
+        FormattableTextDyn::effect_tokens(*self)
+            .iter()
+            .map(|effect| Effect {
+                start: effect.start,
+                flags: effect.flags,
+                aux: aux.clone(),
+            })
+            .collect()
     }
 }
 
 pub struct FormattableTextDynEffectIter<X: Clone> {
-    iter: OwningVecIter<Effect<()>>,
+    v: Vec<Effect<()>>,
+    i: usize,
     aux: X,
 }
 
@@ -207,16 +211,23 @@ impl<X: Clone> Iterator for FormattableTextDynEffectIter<X> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next().map(|effect| Effect {
-            start: effect.start,
-            flags: effect.flags,
-            aux: self.aux.clone(),
-        })
+        if self.i < self.v.len() {
+            let effect = &self.v[self.i];
+            self.i += 1;
+            Some(Effect {
+                start: effect.start,
+                flags: effect.flags,
+                aux: self.aux.clone(),
+            })
+        } else {
+            None
+        }
     }
 
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
-        self.iter.size_hint()
+        let len = self.v.len() - self.i;
+        (len, Some(len))
     }
 }
 

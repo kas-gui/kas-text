@@ -40,6 +40,6 @@ optional = true
 
 [package.metadata.docs.rs]
 # To build locally:
-# RUSTDOCFLAGS="--cfg doc_cfg" cargo +nightly doc --all-features --no-deps --open
-all-features = true
+# RUSTDOCFLAGS="--cfg doc_cfg" cargo +nightly doc --features markdown --no-deps --open
+features = ["markdown"]
 rustdoc-args = ["--cfg", "doc_cfg"]

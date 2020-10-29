@@ -35,8 +35,8 @@ impl<'t> FormattableText for &'t str {
         std::iter::empty()
     }
     #[cfg(not(feature = "gat"))]
-    fn effect_tokens<'a, X: Clone>(&'a self, _: X) -> OwningVecIter<Effect<X>> {
-        OwningVecIter::new(vec![])
+    fn effect_tokens<'a, X: Clone>(&'a self, _: X) -> Vec<Effect<X>> {
+        vec![]
     }
 }
 
@@ -65,8 +65,8 @@ impl FormattableText for String {
         std::iter::empty()
     }
     #[cfg(not(feature = "gat"))]
-    fn effect_tokens<'a, X: Clone>(&'a self, _: X) -> OwningVecIter<Effect<X>> {
-        OwningVecIter::new(vec![])
+    fn effect_tokens<'a, X: Clone>(&'a self, _: X) -> Vec<Effect<X>> {
+        vec![]
     }
 }
 

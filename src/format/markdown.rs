@@ -161,9 +161,8 @@ impl FormattableText for Markdown {
         self.effects_with_aux(aux)
     }
     #[cfg(not(feature = "gat"))]
-    fn effect_tokens<'a, X: Clone>(&'a self, aux: X) -> OwningVecIter<Effect<X>> {
-        let iter = self.effects_with_aux(aux);
-        OwningVecIter::new(iter.collect())
+    fn effect_tokens<'a, X: Clone>(&'a self, aux: X) -> Vec<Effect<X>> {
+        self.effects_with_aux(aux).collect()
     }
 }
 
@@ -389,6 +388,8 @@ impl StackItem {
             }
             Tag::Item => {
                 state.list_item(text);
+                // NOTE: we use \t for indent, which indents only the first
+                // line. Without better flow control we cannot fix this.
                 match &mut self.list {
                     Some(x) => {
                         text.push_str(&format!("{}\t", x));
