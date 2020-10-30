@@ -17,6 +17,8 @@
 //! -   `gat`: experimental API improvements using Generic Associated Types;
 //!     since Rust's support for this is incomplete, it should be considered no
 //!     more than an API preview and usage is not recommended in practice
+//!
+//! [`format`]: mod@format
 
 #![cfg_attr(doc_cfg, feature(doc_cfg))]
 #![cfg_attr(feature = "gat", feature(generic_associated_types))]

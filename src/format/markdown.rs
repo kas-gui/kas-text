@@ -18,6 +18,7 @@ use std::iter::FusedIterator;
 pub struct Markdown {
     text: String,
     fmt: Vec<Fmt>,
+    effects: Vec<Effect<()>>,
 }
 
 impl Markdown {
@@ -25,60 +26,7 @@ impl Markdown {
     pub fn new(input: &str) -> Self {
         parse(input)
     }
-
-    /// Get an effect iterator
-    #[inline]
-    pub fn effects<'a>(&'a self) -> EffectTokenIter<'a, ()> {
-        self.effects_with_aux(())
-    }
-
-    /// Get an effect iterator with `aux` payload
-    ///
-    /// Limitation: the `aux` payload is constant throughout the sequence.
-    #[inline]
-    pub fn effects_with_aux<'a, X: Clone>(&'a self, aux: X) -> EffectTokenIter<'a, X> {
-        EffectTokenIter {
-            index: 0,
-            fmt: &self.fmt,
-            effect: Effect {
-                start: 0,
-                flags: EffectFlags::empty(),
-                aux,
-            },
-        }
-    }
 }
-
-#[derive(Clone, Debug)]
-pub struct EffectTokenIter<'a, X> {
-    index: usize,
-    fmt: &'a [Fmt],
-    effect: Effect<X>,
-}
-
-impl<'a, X: Clone> Iterator for EffectTokenIter<'a, X> {
-    type Item = Effect<X>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        while self.index < self.fmt.len() {
-            let fmt = &self.fmt[self.index];
-            self.index += 1;
-            if fmt.start > self.effect.start {
-                let effect = self.effect.clone();
-                self.effect.start = fmt.start;
-                return Some(effect);
-            }
-            self.effect.flags = fmt.flags;
-        }
-        None
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        (0, Some(self.fmt.len() - self.index))
-    }
-}
-
-impl<'a, X: Clone> FusedIterator for EffectTokenIter<'a, X> {}
 
 pub struct FontTokenIter<'a> {
     index: usize,
@@ -136,9 +84,6 @@ impl FormattableText for Markdown {
     #[cfg(feature = "gat")]
     type FontTokenIter<'a> = FontTokenIter<'a>;
 
-    #[cfg(feature = "gat")]
-    type EffectTokenIter<'a, X: Clone> = EffectTokenIter<'a, X>;
-
     #[inline]
     fn as_str(&self) -> &str {
         &self.text
@@ -156,13 +101,8 @@ impl FormattableText for Markdown {
         OwningVecIter::new(iter.collect())
     }
 
-    #[cfg(feature = "gat")]
-    fn effect_tokens<'a, X: Clone>(&'a self, aux: X) -> Self::EffectTokenIter<'a, X> {
-        self.effects_with_aux(aux)
-    }
-    #[cfg(not(feature = "gat"))]
-    fn effect_tokens<'a, X: Clone>(&'a self, aux: X) -> Vec<Effect<X>> {
-        self.effects_with_aux(aux).collect()
+    fn effect_tokens(&self) -> &[Effect<()>] {
+        &self.effects
     }
 }
 
@@ -279,7 +219,21 @@ fn parse(input: &str) -> Markdown {
         }
     }
 
-    Markdown { text, fmt }
+    // TODO(opt): don't need to store flags in fmt?
+    let mut effects = Vec::new();
+    let mut flags = EffectFlags::default();
+    for token in &fmt {
+        if token.flags != flags {
+            effects.push(Effect {
+                start: token.start,
+                flags: token.flags,
+                aux: (),
+            });
+            flags = token.flags;
+        }
+    }
+
+    Markdown { text, fmt, effects }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]

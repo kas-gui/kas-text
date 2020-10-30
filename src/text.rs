@@ -47,8 +47,8 @@ impl<T: FormattableText> Text<T> {
 
     /// Construct from a default environment (single-line) and text
     ///
-    /// The environment is default-constructed, with [`Environment::wrap`]
-    /// turned off.
+    /// The environment is default-constructed, with line-wrapping
+    /// turned off (see [`Environment::flags`] doc).
     #[inline]
     pub fn new_single(text: T) -> Self {
         let mut env = Environment::default();
@@ -129,7 +129,7 @@ pub trait TextApi {
     /// Mutate the environment
     ///
     /// If using this directly, ensure that necessary preparation actions are
-    /// completed afterwards. Consider using [`TextApi::update_env`] instead.
+    /// completed afterwards. Consider using [`TextApiExt::update_env`] instead.
     fn env_mut(&mut self) -> &mut Environment;
 
     /// Read the [`TextDisplay`]
@@ -162,6 +162,16 @@ pub trait TextApi {
     /// Wraps [`TextDisplay::prepare_lines`], passing parameters from the
     /// environment state.
     fn prepare_lines(&mut self) -> Vec2;
+
+    /// Get the sequence of effect tokens
+    ///
+    /// This method has some limitations: (1) it may only return a reference to
+    /// an existing sequence, (2) effect tokens cannot be generated dependent
+    /// on input state, and (3) it does not incorporate colour information. For
+    /// most uses it should still be sufficient, but for other cases it may be
+    /// preferable not to use this method (use a dummy implementation returning
+    /// `&[]` and use inherent methods on the text object via [`Text::text`]).
+    fn effect_tokens(&self) -> &[Effect<()>];
 }
 
 impl<T: FormattableText> TextApi for Text<T> {
@@ -222,6 +232,11 @@ impl<T: FormattableText> TextApi for Text<T> {
         let wrap = self.env.flags.contains(EnvFlags::WRAP);
         self.display
             .prepare_lines(self.env.bounds, wrap, self.env.align)
+    }
+
+    #[inline]
+    fn effect_tokens(&self) -> &[Effect<()>] {
+        self.text.effect_tokens()
     }
 }
 

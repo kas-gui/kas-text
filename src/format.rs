@@ -6,7 +6,9 @@
 //! Parsers for formatted text
 
 use crate::fonts::FontId;
-use crate::{Effect, OwningVecIter};
+#[allow(unused)]
+use crate::Text;
+use crate::{Effect, OwningVecIter}; // for doc-links
 
 mod plain;
 
@@ -29,10 +31,6 @@ pub trait FormattableText: std::fmt::Debug {
     #[cfg(feature = "gat")]
     // TODO: rename → Iter
     type FontTokenIter<'a>: Iterator<Item = FontToken>;
-
-    #[cfg_attr(doc_cfg, doc(cfg(feature = "gat")))]
-    #[cfg(feature = "gat")]
-    type EffectTokenIter<'a, X: Clone>: Iterator<Item = Effect<X>>;
 
     /// Length of text
     ///
@@ -67,19 +65,15 @@ pub trait FormattableText: std::fmt::Debug {
     #[cfg(not(feature = "gat"))]
     fn font_tokens(&self, dpp: f32, pt_size: f32) -> OwningVecIter<FontToken>;
 
-    /// Get an effect token iterator with `aux` payload
+    /// Get the sequence of effect tokens
     ///
-    /// Limitation: the `aux` payload is constant throughout the sequence. If
-    /// this is a problem, pass `aux = ()` and construct a sequence externally.
-    #[cfg(feature = "gat")]
-    fn effect_tokens<'a, X: Clone>(&'a self, aux: X) -> Self::EffectTokenIter<'a, X>;
-
-    /// Get an effect token iterator with `aux` payload
-    ///
-    /// Limitation: the `aux` payload is constant throughout the sequence. If
-    /// this is a problem, pass `aux = ()` and construct a sequence externally.
-    #[cfg(not(feature = "gat"))]
-    fn effect_tokens<'a, X: Clone>(&'a self, aux: X) -> Vec<Effect<X>>;
+    /// This method has some limitations: (1) it may only return a reference to
+    /// an existing sequence, (2) effect tokens cannot be generated dependent
+    /// on input state, and (3) it does not incorporate colour information. For
+    /// most uses it should still be sufficient, but for other cases it may be
+    /// preferable not to use this method (use a dummy implementation returning
+    /// `&[]` and use inherent methods on the text object via [`Text::text`]).
+    fn effect_tokens(&self) -> &[Effect<()>];
 }
 
 /// Text, optionally with formatting data
@@ -110,11 +104,15 @@ pub trait FormattableTextDyn: std::fmt::Debug {
     /// For plain text this iterator will be empty.
     fn font_tokens(&self, dpp: f32, pt_size: f32) -> OwningVecIter<FontToken>;
 
-    /// Construct an iterator over effect tokens
+    /// Get the sequence of effect tokens
     ///
-    /// Unlike [`FormattableText::effect_tokens`] this method cannot accept an
-    /// `aux` payload since it cannot have a generic parameter `X`.
-    fn effect_tokens<'a>(&'a self) -> Vec<Effect<()>>;
+    /// This method has some limitations: (1) it may only return a reference to
+    /// an existing sequence, (2) effect tokens cannot be generated dependent
+    /// on input state, and (3) it does not incorporate colour information. For
+    /// most uses it should still be sufficient, but for other cases it may be
+    /// preferable not to use this method (use a dummy implementation returning
+    /// `&[]` and use inherent methods on the text object via [`Text::text`]).
+    fn effect_tokens(&self) -> &[Effect<()>];
 }
 
 // #[cfg(feature = "gat")]
@@ -142,25 +140,14 @@ impl<F: FormattableText + Clone + 'static> FormattableTextDyn for F {
         }
     }
 
-    fn effect_tokens<'a>(&'a self) -> Vec<Effect<()>> {
-        let iter = FormattableText::effect_tokens(self, ());
-        #[cfg(feature = "gat")]
-        {
-            iter.collect()
-        }
-        #[cfg(not(feature = "gat"))]
-        {
-            iter
-        }
+    fn effect_tokens(&self) -> &[Effect<()>] {
+        FormattableText::effect_tokens(self)
     }
 }
 
 impl<'t> FormattableText for &'t dyn FormattableTextDyn {
     #[cfg(feature = "gat")]
     type FontTokenIter<'a> = OwningVecIter<FontToken>;
-
-    #[cfg(feature = "gat")]
-    type EffectTokenIter<'a, X: Clone> = FormattableTextDynEffectIter<X>;
 
     #[inline]
     fn str_len(&self) -> usize {
@@ -177,62 +164,10 @@ impl<'t> FormattableText for &'t dyn FormattableTextDyn {
         FormattableTextDyn::font_tokens(*self, dpp, pt_size)
     }
 
-    #[cfg(feature = "gat")]
-    #[inline]
-    fn effect_tokens<'a, X: Clone>(&'a self, aux: X) -> FormattableTextDynEffectIter<X> {
-        let v = FormattableTextDyn::effect_tokens(*self);
-        let i = 0;
-        FormattableTextDynEffectIter { v, i, aux }
-    }
-
-    #[cfg(not(feature = "gat"))]
-    #[inline]
-    fn effect_tokens<'a, X: Clone>(&'a self, aux: X) -> Vec<Effect<X>> {
-        // TODO(opt): avoid copy where X=() ?
+    fn effect_tokens(&self) -> &[Effect<()>] {
         FormattableTextDyn::effect_tokens(*self)
-            .iter()
-            .map(|effect| Effect {
-                start: effect.start,
-                flags: effect.flags,
-                aux: aux.clone(),
-            })
-            .collect()
     }
 }
-
-pub struct FormattableTextDynEffectIter<X: Clone> {
-    v: Vec<Effect<()>>,
-    i: usize,
-    aux: X,
-}
-
-impl<X: Clone> Iterator for FormattableTextDynEffectIter<X> {
-    type Item = Effect<X>;
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.i < self.v.len() {
-            let effect = &self.v[self.i];
-            self.i += 1;
-            Some(Effect {
-                start: effect.start,
-                flags: effect.flags,
-                aux: self.aux.clone(),
-            })
-        } else {
-            None
-        }
-    }
-
-    #[inline]
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let len = self.v.len() - self.i;
-        (len, Some(len))
-    }
-}
-
-impl<X: Clone> ExactSizeIterator for FormattableTextDynEffectIter<X> {}
-impl<X: Clone> std::iter::FusedIterator for FormattableTextDynEffectIter<X> {}
 
 /// Extension of [`FormattableText`] allowing editing
 pub trait EditableText: FormattableText {
