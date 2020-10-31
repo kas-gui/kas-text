@@ -28,7 +28,7 @@ ttf-parser = "0.8.2"
 font-kit = "0.8.0"
 lazy_static = "1.4.0"
 smallvec = "1.4.1"
-xi-unicode = "0.2.1"
+xi-unicode = "0.3.0"
 unicode-bidi = "0.3.4"
 unicode-bidi-mirroring = "0.1.0"
 thiserror = "1.0.20"
@@ -40,6 +40,6 @@ optional = true
 
 [package.metadata.docs.rs]
 # To build locally:
-# RUSTDOCFLAGS="--cfg doc_cfg" cargo +nightly doc --all-features --no-deps --open
-all-features = true
+# RUSTDOCFLAGS="--cfg doc_cfg" cargo +nightly doc --features markdown --no-deps --open
+features = ["markdown"]
 rustdoc-args = ["--cfg", "doc_cfg"]

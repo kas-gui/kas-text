@@ -6,7 +6,9 @@
 //! Parsers for formatted text
 
 use crate::fonts::FontId;
-use crate::OwningVecIter;
+#[allow(unused)]
+use crate::Text;
+use crate::{Effect, OwningVecIter}; // for doc-links
 
 mod plain;
 
@@ -23,11 +25,12 @@ pub use markdown::Markdown;
 /// This trait can only be written as intended using Generic Associated Types
 /// ("gat", unstable nightly feature), thus `font_tokens` has a different
 /// signature with/without feature `gat` and the associated type
-/// `FontTokenIterator` is only present with feature `gat`.
+/// `FontTokenIter` is only present with feature `gat`.
 pub trait FormattableText: std::fmt::Debug {
     #[cfg_attr(doc_cfg, doc(cfg(feature = "gat")))]
     #[cfg(feature = "gat")]
-    type FontTokenIterator<'a>: Iterator<Item = FontToken>;
+    // TODO: rename → Iter
+    type FontTokenIter<'a>: Iterator<Item = FontToken>;
 
     /// Length of text
     ///
@@ -49,7 +52,7 @@ pub trait FormattableText: std::fmt::Debug {
     ///
     /// For plain text this iterator will be empty.
     #[cfg(feature = "gat")]
-    fn font_tokens<'a>(&'a self, dpp: f32, pt_size: f32) -> Self::FontTokenIterator<'a>;
+    fn font_tokens<'a>(&'a self, dpp: f32, pt_size: f32) -> Self::FontTokenIter<'a>;
 
     /// Construct an iterator over formatting items
     ///
@@ -61,12 +64,26 @@ pub trait FormattableText: std::fmt::Debug {
     /// For plain text this iterator will be empty.
     #[cfg(not(feature = "gat"))]
     fn font_tokens(&self, dpp: f32, pt_size: f32) -> OwningVecIter<FontToken>;
+
+    /// Get the sequence of effect tokens
+    ///
+    /// This method has some limitations: (1) it may only return a reference to
+    /// an existing sequence, (2) effect tokens cannot be generated dependent
+    /// on input state, and (3) it does not incorporate colour information. For
+    /// most uses it should still be sufficient, but for other cases it may be
+    /// preferable not to use this method (use a dummy implementation returning
+    /// `&[]` and use inherent methods on the text object via [`Text::text`]).
+    fn effect_tokens(&self) -> &[Effect<()>];
 }
 
 /// Text, optionally with formatting data
 ///
-/// The type `&dyn FormattableTextDyn` supports [`FormattableText`].
-/// Implement either this or [`FormattableText`], not both.
+/// This is an object-safe version of the [`FormattableText`] trait (i.e.
+/// `dyn FormattableTextDyn` is a valid type).
+///
+/// This trait is auto-implemented for every implementation of [`FormattableText`].
+/// The type `&dyn FormattableTextDyn` implements [`FormattableText`].
+/// Implement either this or (preferably) [`FormattableText`], not both.
 pub trait FormattableTextDyn: std::fmt::Debug {
     /// Produce a boxed clone of self
     fn clone_boxed(&self) -> Box<dyn FormattableTextDyn>;
@@ -86,6 +103,16 @@ pub trait FormattableTextDyn: std::fmt::Debug {
     ///
     /// For plain text this iterator will be empty.
     fn font_tokens(&self, dpp: f32, pt_size: f32) -> OwningVecIter<FontToken>;
+
+    /// Get the sequence of effect tokens
+    ///
+    /// This method has some limitations: (1) it may only return a reference to
+    /// an existing sequence, (2) effect tokens cannot be generated dependent
+    /// on input state, and (3) it does not incorporate colour information. For
+    /// most uses it should still be sufficient, but for other cases it may be
+    /// preferable not to use this method (use a dummy implementation returning
+    /// `&[]` and use inherent methods on the text object via [`Text::text`]).
+    fn effect_tokens(&self) -> &[Effect<()>];
 }
 
 // #[cfg(feature = "gat")]
@@ -112,11 +139,15 @@ impl<F: FormattableText + Clone + 'static> FormattableTextDyn for F {
             iter
         }
     }
+
+    fn effect_tokens(&self) -> &[Effect<()>] {
+        FormattableText::effect_tokens(self)
+    }
 }
 
 impl<'t> FormattableText for &'t dyn FormattableTextDyn {
     #[cfg(feature = "gat")]
-    type FontTokenIterator<'a> = OwningVecIter<FontToken>;
+    type FontTokenIter<'a> = OwningVecIter<FontToken>;
 
     #[inline]
     fn str_len(&self) -> usize {
@@ -131,6 +162,10 @@ impl<'t> FormattableText for &'t dyn FormattableTextDyn {
     #[inline]
     fn font_tokens(&self, dpp: f32, pt_size: f32) -> OwningVecIter<FontToken> {
         FormattableTextDyn::font_tokens(*self, dpp, pt_size)
+    }
+
+    fn effect_tokens(&self) -> &[Effect<()>] {
+        FormattableTextDyn::effect_tokens(*self)
     }
 }
 

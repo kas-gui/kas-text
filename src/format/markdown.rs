@@ -10,12 +10,15 @@ use crate::conv::to_u32;
 use crate::fonts::{self, FamilyName, FontId, FontSelector, Style, Weight};
 #[cfg(not(feature = "gat"))]
 use crate::OwningVecIter;
+use crate::{Effect, EffectFlags};
 use pulldown_cmark::{Event, Tag};
+use std::iter::FusedIterator;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Markdown {
     text: String,
     fmt: Vec<Fmt>,
+    effects: Vec<Effect<()>>,
 }
 
 impl Markdown {
@@ -67,11 +70,19 @@ impl<'a> Iterator for FontTokenIter<'a> {
             None
         }
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = self.fmt.len();
+        (len, Some(len))
+    }
 }
+
+impl<'a> ExactSizeIterator for FontTokenIter<'a> {}
+impl<'a> FusedIterator for FontTokenIter<'a> {}
 
 impl FormattableText for Markdown {
     #[cfg(feature = "gat")]
-    type FontTokenIterator<'a> = FontTokenIter<'a>;
+    type FontTokenIter<'a> = FontTokenIter<'a>;
 
     #[inline]
     fn as_str(&self) -> &str {
@@ -80,7 +91,7 @@ impl FormattableText for Markdown {
 
     #[cfg(feature = "gat")]
     #[inline]
-    fn font_tokens<'a>(&'a self, dpp: f32, pt_size: f32) -> Self::FontTokenIterator<'a> {
+    fn font_tokens<'a>(&'a self, dpp: f32, pt_size: f32) -> Self::FontTokenIter<'a> {
         FontTokenIter::new(&self.fmt, dpp * pt_size)
     }
     #[cfg(not(feature = "gat"))]
@@ -88,6 +99,10 @@ impl FormattableText for Markdown {
     fn font_tokens(&self, dpp: f32, pt_size: f32) -> OwningVecIter<FontToken> {
         let iter = FontTokenIter::new(&self.fmt, dpp * pt_size);
         OwningVecIter::new(iter.collect())
+    }
+
+    fn effect_tokens(&self) -> &[Effect<()>] {
+        &self.effects
     }
 }
 
@@ -159,8 +174,8 @@ fn parse(input: &str) -> Markdown {
     let mut stack = Vec::with_capacity(16);
     let mut item = StackItem::default();
 
-    // TODO: parser options — perhaps strikethrough?
-    let mut parser = pulldown_cmark::Parser::new(input);
+    let options = pulldown_cmark::Options::ENABLE_STRIKETHROUGH;
+    let mut parser = pulldown_cmark::Parser::new_ext(input, options);
     while let Some(ev) = parser.next() {
         match ev {
             Event::Start(tag) => {
@@ -197,14 +212,28 @@ fn parse(input: &str) -> Markdown {
             }
             Event::Html(part) => unimplemented!("{:?}", part),
             Event::FootnoteReference(part) => unimplemented!("{:?}", part),
-            Event::SoftBreak => (),
-            Event::HardBreak => (),
+            Event::SoftBreak => state.soft_break(&mut text),
+            Event::HardBreak => state.hard_break(&mut text),
             Event::Rule => unimplemented!(),
             Event::TaskListMarker(checked) => unimplemented!("{:?}", checked),
         }
     }
 
-    Markdown { text, fmt }
+    // TODO(opt): don't need to store flags in fmt?
+    let mut effects = Vec::new();
+    let mut flags = EffectFlags::default();
+    for token in &fmt {
+        if token.flags != flags {
+            effects.push(Effect {
+                start: token.start,
+                flags: token.flags,
+                aux: (),
+            });
+            flags = token.flags;
+        }
+    }
+
+    Markdown { text, fmt, effects }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -243,6 +272,12 @@ impl State {
         }
         *self = State::ListItem;
     }
+    fn soft_break(&mut self, text: &mut String) {
+        text.push_str(" ");
+    }
+    fn hard_break(&mut self, text: &mut String) {
+        text.push_str("\n");
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -250,6 +285,7 @@ pub struct Fmt {
     start: u32,
     sel: FontSelector,
     rel_size: f32,
+    flags: EffectFlags,
 }
 
 impl Default for Fmt {
@@ -258,6 +294,7 @@ impl Default for Fmt {
             start: 0,
             sel: FontSelector::default(),
             rel_size: 1.0,
+            flags: EffectFlags::empty(),
         }
     }
 }
@@ -311,18 +348,22 @@ impl StackItem {
             }
             Tag::Item => {
                 state.list_item(text);
+                // NOTE: we use \t for indent, which indents only the first
+                // line. Without better flow control we cannot fix this.
                 match &mut self.list {
-                    // TODO: indent properly
                     Some(x) => {
-                        text.push_str(&format!("{:<4}", x));
+                        text.push_str(&format!("{}\t", x));
                         *x = *x + 1;
                     }
-                    None => text.push_str("•   "),
+                    None => text.push_str("•\t"),
                 }
                 None
             }
             Tag::Emphasis => with_clone(self, |item| item.fmt.sel.set_style(Style::Italic)),
             Tag::Strong => with_clone(self, |item| item.fmt.sel.set_weight(Weight::BOLD)),
+            Tag::Strikethrough => with_clone(self, |item| {
+                item.fmt.flags.set(EffectFlags::STRIKETHROUGH, true)
+            }),
             tag @ _ => unimplemented!("{:?}", tag),
         }
     }
@@ -338,7 +379,7 @@ impl StackItem {
                 true
             }
             Tag::Item => false,
-            Tag::Emphasis | Tag::Strong => true,
+            Tag::Emphasis | Tag::Strong | Tag::Strikethrough => true,
             tag @ _ => unimplemented!("{:?}", tag),
         }
     }

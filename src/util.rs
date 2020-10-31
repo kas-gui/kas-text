@@ -51,4 +51,12 @@ impl<T: Clone> Iterator for OwningVecIter<T> {
             None
         }
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = self.v.len() - self.i;
+        (len, Some(len))
+    }
 }
+
+impl<T: Clone> ExactSizeIterator for OwningVecIter<T> {}
+impl<T: Clone> std::iter::FusedIterator for OwningVecIter<T> {}

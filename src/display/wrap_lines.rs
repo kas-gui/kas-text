@@ -5,7 +5,7 @@
 
 //! Text preparation: wrapping
 
-use super::TextDisplay;
+use super::{RunSpecial, TextDisplay};
 use crate::conv::{to_u32, to_usize};
 use crate::fonts::{fonts, FontLibrary};
 use crate::shaper::GlyphRun;
@@ -36,6 +36,7 @@ struct PartInfo {
     len: f32,
     len_no_space: f32,
     glyph_range: Range,
+    end_space: bool,
 }
 
 impl TextDisplay {
@@ -76,7 +77,6 @@ impl TextDisplay {
             // Tuples: (index, part)
             let mut start = (line.range.start(), 0, 0);
             let mut end = start;
-            let mut end_len = 0.0;
             parts.clear();
 
             let mut caret = 0.0;
@@ -84,18 +84,37 @@ impl TextDisplay {
             'a: while index < end_index {
                 let run = &self.runs[index];
                 let num_parts = run.num_parts();
-                let allow_break = !run.no_break; // break allowed at end of run
+                let (allow_break, tab) = match run.special {
+                    RunSpecial::None => (true, false),
+                    RunSpecial::NoBreak => (false, false),
+                    RunSpecial::HTab => (true, true),
+                };
 
                 let mut last_part = start.1;
                 let mut part = last_part + 1;
                 while part <= num_parts {
-                    let (part_offset, part_len_no_space, part_len) =
+                    let (part_offset, part_len_no_space, mut part_len) =
                         run.part_lengths(last_part..part);
+                    if tab {
+                        // Tab runs have no glyph; instead we calculate part_len
+                        // based on the current line length.
+
+                        // TODO(bidi): we should really calculate this after
+                        // re-ordering the line based on full line contents,
+                        // then use a checkpoint reset if too long.
+
+                        let sf = fonts.get(run.font_id).scale_by_dpu(run.dpu);
+                        // TODO: custom tab sizes?
+                        let tab_size = sf.h_advance(sf.glyph_id(' ')) * 8.0;
+                        let stops = (caret / tab_size).floor() + 1.0;
+                        part_len = tab_size * stops - caret;
+                    }
+
                     let line_len = caret + part_len_no_space;
                     if wrap && line_len > width_bound && end.2 > 0 {
                         // Add up to last valid break point then wrap and reset
                         let slice = &mut parts[0..end.2];
-                        adder.add_line(fonts, level, end_len, &self.runs, slice, true);
+                        adder.add_line(fonts, level, &self.runs, slice, true);
 
                         end.2 = 0;
                         start = end;
@@ -120,6 +139,7 @@ impl TextDisplay {
                             len: part_len,
                             len_no_space: part_len_no_space,
                             glyph_range,
+                            end_space: false, // set later
                         });
                     } else {
                         // Combine with last part (not strictly necessary)
@@ -139,7 +159,6 @@ impl TextDisplay {
                     }
                     if checkpoint {
                         end = (index, part, parts.len());
-                        end_len = line_len;
                     }
                     last_part = part;
                     part += 1;
@@ -152,7 +171,7 @@ impl TextDisplay {
             if parts.len() > 0 {
                 // It should not be possible for a line to end with a no-break, so:
                 debug_assert_eq!(parts.len(), end.2);
-                adder.add_line(fonts, level, end_len, &self.runs, &mut parts, false);
+                adder.add_line(fonts, level, &self.runs, &mut parts, false);
             }
         }
 
@@ -191,7 +210,6 @@ impl LineAdder {
         &mut self,
         fonts: &FontLibrary,
         line_level: Level,
-        line_len: f32,
         runs: &[GlyphRun],
         parts: &mut [PartInfo],
         is_wrap: bool,
@@ -245,6 +263,7 @@ impl LineAdder {
         // Adjust the (logical) tail: optionally exclude last glyph, calculate
         // line_text_end, trim whitespace for the purposes of layout.
         let mut line_text_end;
+        let mut line_len = 0.0;
         {
             let part = &mut parts[parts.len() - 1];
             let run = &runs[to_usize(part.run)];
@@ -276,17 +295,21 @@ impl LineAdder {
                 }
             }
 
+            // With bidi text, the logical end may not actually be at the end;
+            // we must not allow spaces here to move other content.
             for part in parts.iter_mut().rev() {
-                let run = &runs[to_usize(part.run)];
-
-                if run.level.is_rtl() {
-                    part.offset += part.len - part.len_no_space;
-                }
-                part.len = part.len_no_space;
+                part.end_space = true;
 
                 if part.len_no_space > 0.0 {
                     break;
                 }
+            }
+            for part in parts.iter() {
+                line_len += if part.end_space {
+                    part.len_no_space
+                } else {
+                    part.len
+                };
             }
         }
 
@@ -297,6 +320,7 @@ impl LineAdder {
         // Our shaper(s) accept both LTR and RTL input; additionally, our line
         // wrapping must explicitly handle both LTR and RTL lines; the missing
         // step is to rearrange non-wrapped runs on the line.
+
         {
             let mut level = max_level;
             while level > Level::ltr() {
@@ -343,7 +367,7 @@ impl LineAdder {
                     } else {
                         part.glyph_range.start > 0
                     };
-                    if not_at_end || !run.no_break {
+                    if not_at_end || run.special != RunSpecial::NoBreak {
                         is_gap[i] = true;
                         num_gaps += 1;
                     }
@@ -376,12 +400,14 @@ impl LineAdder {
             }
         };
 
+        let mut end_caret = caret;
         for (i, part) in parts.iter().enumerate() {
             let run = &runs[to_usize(part.run)];
 
             self.num_glyphs += to_u32(part.glyph_range.len());
 
             let mut text_end = run.range.end;
+            let mut offset = 0.0;
             if run.level.is_ltr() {
                 if part.glyph_range.end() < run.glyphs.len() {
                     text_end = run.glyphs[part.glyph_range.end()].index;
@@ -391,16 +417,27 @@ impl LineAdder {
                 if 0 < start && start < run.glyphs.len() {
                     text_end = run.glyphs[start - 1].index
                 }
+                offset = part.len_no_space - part.len;
             }
 
-            let xoffset = caret - part.offset;
+            let xoffset = if part.end_space {
+                end_caret - part.offset + offset
+            } else {
+                caret - part.offset
+            };
             self.runs.push(RunPart {
                 text_end,
                 glyph_run: part.run,
                 glyph_range: part.glyph_range.into(),
                 offset: Vec2(xoffset, self.vcaret),
             });
-            caret += part.len;
+            if part.end_space {
+                caret += part.len_no_space;
+                end_caret += part.len;
+            } else {
+                caret += part.len;
+                end_caret = caret;
+            }
 
             if is_gap.len() > 0 && is_gap[i] {
                 caret += per_gap;
