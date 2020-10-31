@@ -212,8 +212,8 @@ fn parse(input: &str) -> Markdown {
             }
             Event::Html(part) => unimplemented!("{:?}", part),
             Event::FootnoteReference(part) => unimplemented!("{:?}", part),
-            Event::SoftBreak => (),
-            Event::HardBreak => (),
+            Event::SoftBreak => state.soft_break(&mut text),
+            Event::HardBreak => state.hard_break(&mut text),
             Event::Rule => unimplemented!(),
             Event::TaskListMarker(checked) => unimplemented!("{:?}", checked),
         }
@@ -271,6 +271,12 @@ impl State {
             State::ListItem | State::Part => text.push_str("\n"),
         }
         *self = State::ListItem;
+    }
+    fn soft_break(&mut self, text: &mut String) {
+        text.push_str(" ");
+    }
+    fn hard_break(&mut self, text: &mut String) {
+        text.push_str("\n");
     }
 }
 
@@ -373,7 +379,7 @@ impl StackItem {
                 true
             }
             Tag::Item => false,
-            Tag::Emphasis | Tag::Strong => true,
+            Tag::Emphasis | Tag::Strong | Tag::Strikethrough => true,
             tag @ _ => unimplemented!("{:?}", tag),
         }
     }
