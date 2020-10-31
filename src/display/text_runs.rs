@@ -222,9 +222,7 @@ impl TextDisplay {
             last_is_htab = is_htab;
         }
 
-        // The loop above misses the last break at the end of the text.
-        // LineBreakIterator always reports a hard break at the text's end
-        // regardless of whether the text ends with a line-break char.
+        // Finish: the loop above does not evaluate the last break.
         if !last_is_control {
             non_control_end = text.str_len();
         }
@@ -252,30 +250,28 @@ impl TextDisplay {
             self.line_runs.push(LineRun { range, rtl });
         }
 
-        // If the text *does* end with a line-break, we add an empty line.
-        // TODO: do we want the empty line for labels or only for edit boxes?
-        if let Some(c) = text.as_str().chars().next_back() {
-            // Match according to https://www.unicode.org/reports/tr14/#Table1
-            if let '\x0C' | '\x0B' | '\u{2028}' | '\u{2029}' | '\r' | '\n' | '\u{85}' = c {
-                let text_len = text.str_len();
-                let range = Range::from(text_len..text_len);
-                level = default_para_level.unwrap_or(LTR_LEVEL);
-                breaks = Default::default();
-                line_start = self.runs.len();
-                self.runs.push(shaper::shape(
-                    text.as_str(),
-                    range,
-                    dpem,
-                    font_id,
-                    breaks,
-                    RunSpecial::None,
-                    level,
-                ));
+        // The LineBreakIterator finishes with a break (unless the string is empty).
+        // This is a hard break when the string finishes with an explicit line-break.
+        debug_assert_eq!(next_break.0, text.str_len());
+        if next_break.1 {
+            let text_len = text.str_len();
+            let range = Range::from(text_len..text_len);
+            level = default_para_level.unwrap_or(LTR_LEVEL);
+            breaks = Default::default();
+            line_start = self.runs.len();
+            self.runs.push(shaper::shape(
+                text.as_str(),
+                range,
+                dpem,
+                font_id,
+                breaks,
+                RunSpecial::None,
+                level,
+            ));
 
-                let range = Range::from(line_start..self.runs.len());
-                let rtl = level.is_rtl();
-                self.line_runs.push(LineRun { range, rtl });
-            }
+            let range = Range::from(line_start..self.runs.len());
+            let rtl = level.is_rtl();
+            self.line_runs.push(LineRun { range, rtl });
         }
 
         /*
