@@ -15,7 +15,7 @@ mod plain;
 #[cfg(feature = "markdown")]
 mod markdown;
 #[cfg(feature = "markdown")]
-pub use markdown::Markdown;
+pub use markdown::{Error as MarkdownError, Markdown};
 
 /// Text, optionally with formatting data
 ///
