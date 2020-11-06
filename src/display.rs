@@ -213,8 +213,8 @@ impl TextDisplay {
             }
             n = i;
         }
-        // We now know that `n` is a valid line (we must have at least one).
-        self.line_index_nearest(n, pos.0).unwrap()
+        // Expected to return Some(..) value but None has been observed:
+        self.line_index_nearest(n, pos.0).unwrap_or(0)
     }
 
     /// Find the text index nearest horizontal-coordinate `x` on `line`
