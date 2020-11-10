@@ -430,8 +430,7 @@ impl<T: EditableText> EditableTextApi for Text<T> {
 
     #[inline]
     fn replace_range(&mut self, range: std::ops::Range<usize>, replace_with: &str) {
-        self.text
-            .replace_range(range.start, range.end, replace_with);
+        self.text.replace_range(range, replace_with);
         self.display.action = Action::All;
     }
 

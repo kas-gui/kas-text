@@ -67,7 +67,7 @@ impl EditableText for String {
         self.insert(index, c);
     }
 
-    fn replace_range(&mut self, start: usize, end: usize, replace_with: &str) {
-        self.replace_range(start..end, replace_with);
+    fn replace_range(&mut self, range: std::ops::Range<usize>, replace_with: &str) {
+        self.replace_range(range, replace_with);
     }
 }

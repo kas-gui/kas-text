@@ -136,11 +136,11 @@ impl EditableText for Markdown {
         }
     }
 
-    fn replace_range(&mut self, start: usize, end: usize, replace_with: &str) {
-        self.text.replace_range(start..end, replace_with);
+    fn replace_range(&mut self, range: std::ops::Range<usize>, replace_with: &str) {
+        self.text.replace_range(range.clone(), replace_with);
 
-        let start = to_u32(start);
-        let end = to_u32(end);
+        let start = to_u32(range.start);
+        let end = to_u32(range.end);
         let len = end - start;
         let mut last = None;
         let mut i = 0;
