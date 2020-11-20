@@ -13,6 +13,14 @@ use crate::OwningVecIter;
 use crate::{Effect, EffectFlags};
 use pulldown_cmark::{Event, Tag};
 use std::iter::FusedIterator;
+use thiserror::Error;
+
+/// Markdown parsing errors
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error("Not supported by Markdown parser: {0}")]
+    NotSupported(&'static str),
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Markdown {
@@ -23,7 +31,7 @@ pub struct Markdown {
 
 impl Markdown {
     #[inline]
-    pub fn new(input: &str) -> Self {
+    pub fn new(input: &str) -> Result<Self, Error> {
         parse(input)
     }
 }
@@ -128,11 +136,11 @@ impl EditableText for Markdown {
         }
     }
 
-    fn replace_range(&mut self, start: usize, end: usize, replace_with: &str) {
-        self.text.replace_range(start..end, replace_with);
+    fn replace_range(&mut self, range: std::ops::Range<usize>, replace_with: &str) {
+        self.text.replace_range(range.clone(), replace_with);
 
-        let start = to_u32(start);
-        let end = to_u32(end);
+        let start = to_u32(range.start);
+        let end = to_u32(range.end);
         let len = end - start;
         let mut last = None;
         let mut i = 0;
@@ -157,7 +165,7 @@ impl EditableText for Markdown {
     }
 }
 
-fn parse(input: &str) -> Markdown {
+fn parse(input: &str) -> Result<Markdown, Error> {
     let mut text = String::with_capacity(input.len());
     let mut fmt: Vec<Fmt> = Vec::new();
     let mut set_last = |item: &Fmt| {
@@ -180,7 +188,7 @@ fn parse(input: &str) -> Markdown {
         match ev {
             Event::Start(tag) => {
                 item.fmt.start = to_u32(text.len());
-                if let Some(clone) = item.start_tag(&mut text, &mut state, tag) {
+                if let Some(clone) = item.start_tag(&mut text, &mut state, tag)? {
                     stack.push(item);
                     item = clone;
                     set_last(&item.fmt);
@@ -210,12 +218,12 @@ fn parse(input: &str) -> Markdown {
                 item.fmt.start = to_u32(text.len());
                 set_last(&item.fmt);
             }
-            Event::Html(part) => unimplemented!("{:?}", part),
-            Event::FootnoteReference(part) => unimplemented!("{:?}", part),
+            Event::Html(_) => return Err(Error::NotSupported("embedded HTML")),
+            Event::FootnoteReference(_) => return Err(Error::NotSupported("footnote")),
             Event::SoftBreak => state.soft_break(&mut text),
             Event::HardBreak => state.hard_break(&mut text),
-            Event::Rule => unimplemented!(),
-            Event::TaskListMarker(checked) => unimplemented!("{:?}", checked),
+            Event::Rule => return Err(Error::NotSupported("horizontal rule")),
+            Event::TaskListMarker(_) => return Err(Error::NotSupported("task list")),
         }
     }
 
@@ -233,7 +241,7 @@ fn parse(input: &str) -> Markdown {
         }
     }
 
-    Markdown { text, fmt, effects }
+    Ok(Markdown { text, fmt, effects })
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -307,14 +315,19 @@ struct StackItem {
 
 impl StackItem {
     // process a tag; may modify current item and may return new item
-    fn start_tag(&mut self, text: &mut String, state: &mut State, tag: Tag) -> Option<Self> {
+    fn start_tag(
+        &mut self,
+        text: &mut String,
+        state: &mut State,
+        tag: Tag,
+    ) -> Result<Option<Self>, Error> {
         fn with_clone<F: Fn(&mut StackItem)>(s: &mut StackItem, c: F) -> Option<StackItem> {
             let mut item = s.clone();
             c(&mut item);
             Some(item)
         }
 
-        match tag {
+        Ok(match tag {
             Tag::Paragraph => {
                 state.start_block(text);
                 None
@@ -329,7 +342,8 @@ impl StackItem {
                         3 => 1.5,
                         4 => 1.35,
                         5 => 1.2,
-                        _ => panic!("Heading level > 5 not supported"),
+                        6 => 1.1,
+                        _ => panic!("Unexpected: heading level not in 1..=6"),
                     }
                 })
             }
@@ -364,8 +378,14 @@ impl StackItem {
             Tag::Strikethrough => with_clone(self, |item| {
                 item.fmt.flags.set(EffectFlags::STRIKETHROUGH, true)
             }),
-            tag @ _ => unimplemented!("{:?}", tag),
-        }
+            Tag::BlockQuote => return Err(Error::NotSupported("block quote")),
+            Tag::FootnoteDefinition(_) => return Err(Error::NotSupported("footnote")),
+            Tag::Table(_) | Tag::TableHead | Tag::TableRow | Tag::TableCell => {
+                return Err(Error::NotSupported("table"))
+            }
+            Tag::Link(..) => return Err(Error::NotSupported("link")),
+            Tag::Image(..) => return Err(Error::NotSupported("image")),
+        })
     }
     // returns true if stack must be popped
     fn end_tag(&self, state: &mut State, tag: Tag) -> bool {

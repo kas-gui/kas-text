@@ -7,15 +7,15 @@
 
 use crate::fonts::FontId;
 #[allow(unused)]
-use crate::Text;
-use crate::{Effect, OwningVecIter}; // for doc-links
+use crate::Text; // for doc-links
+use crate::{Effect, OwningVecIter};
 
 mod plain;
 
 #[cfg(feature = "markdown")]
 mod markdown;
 #[cfg(feature = "markdown")]
-pub use markdown::Markdown;
+pub use markdown::{Error as MarkdownError, Markdown};
 
 /// Text, optionally with formatting data
 ///
@@ -194,7 +194,7 @@ pub trait EditableText: FormattableText {
     /// Replace text at `range` with `replace_with`
     ///
     /// Formatting is adjusted such that it still affects the same chars.
-    fn replace_range(&mut self, start: usize, end: usize, replace_with: &str);
+    fn replace_range(&mut self, range: std::ops::Range<usize>, replace_with: &str);
 }
 
 impl Clone for Box<dyn FormattableTextDyn> {
