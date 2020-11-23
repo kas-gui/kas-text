@@ -22,6 +22,12 @@
 //! // from now on, kas_text::fonts::FontId::default() identifies the default font
 //! ```
 //!
+//! (It is not technically necessary to lead the first font with
+//! [`FontLibrary::load_default`]; whichever font is loaded first has number 0.
+//! If doing this, `load_default` must not be called at all.
+//! It is harmless to attempt to load any font multiple times, whether with
+//! `load_default` or another method.)
+//!
 //! ### Font sizes
 //!
 //! Typically, font sizes are specified in "Points". Several other units and
@@ -29,8 +35,9 @@
 //! early printing press:
 //!
 //! -   1 *Point* = 1/72 inch (~0.35mm), by the usual DTP standard
-//! -   1 *Em* is the width of a capital `M` (inclusive of margin) in some font
+//! -   1 *Em* is the width of a capital `M` (inclusive of margin) in a font
 //! -   The *point size* of a font refers to the number of *points* per *em*
+//!     in this font
 //!
 //! Thus, with a "12 point font", one 'M' occupies 12/72 of an inch on paper.
 //!
@@ -53,7 +60,7 @@
 //!
 //! Finally, note that digital font files have an internally defined unit
 //! known as the *font unit*. This is not normally used directly but is used
-//! by the `DPU` type.
+//! internally (including by the `DPU` type).
 
 use crate::conv::{to_u32, to_usize, LineMetrics, DPU};
 use crate::GlyphId;
@@ -258,6 +265,9 @@ impl FontsData {
 }
 
 /// Library of loaded fonts
+///
+/// This is the type of the global singleton accessible via the [`fonts`]
+/// function. Thread-safety is handled via internal locks.
 pub struct FontLibrary {
     // Font files loaded into memory. Safety: we assume that existing entries
     // are never modified or removed (though the Vec is allowed to reallocate).
