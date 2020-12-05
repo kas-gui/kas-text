@@ -84,6 +84,9 @@ impl From<GlyphId> for ttf_parser::GlyphId {
 enum FontError {
     #[error("font load error")]
     TtfParser(#[from] ttf_parser::FaceParsingError),
+    #[cfg(feature = "rustybuzz")]
+    #[error("unknown font read error")]
+    UnknownLoadError,
     #[error("FontLibrary::load_default is not first font load")]
     NotDefault,
 }
@@ -229,6 +232,8 @@ struct FaceStore<'a> {
     face: Face<'a>,
     #[cfg(feature = "harfbuzz_rs")]
     harfbuzz: harfbuzz_rs::Shared<harfbuzz_rs::Face<'a>>,
+    #[cfg(all(not(feature = "harfbuzz_rs"), feature = "rustybuzz"))]
+    rustybuzz: rustybuzz::Face<'a>,
 }
 
 impl<'a> FaceStore<'a> {
@@ -242,6 +247,9 @@ impl<'a> FaceStore<'a> {
             face: Face::from_slice(data, index)?,
             #[cfg(feature = "harfbuzz_rs")]
             harfbuzz: harfbuzz_rs::Face::from_bytes(data, index).into(),
+            #[cfg(all(not(feature = "harfbuzz_rs"), feature = "rustybuzz"))]
+            rustybuzz: rustybuzz::Face::from_slice(data, index)
+                .ok_or(FontError::UnknownLoadError)?,
         })
     }
 }
@@ -309,6 +317,20 @@ impl FontLibrary {
             id
         );
         harfbuzz_rs::Font::new(fonts.fonts[id.get()].harfbuzz.clone())
+    }
+
+    /// Get a Rustybuzz font face
+    #[cfg(all(not(feature = "harfbuzz_rs"), feature = "rustybuzz"))]
+    pub(crate) fn get_rustybuzz(&self, id: FontId) -> &rustybuzz::Face<'static> {
+        let fonts = self.fonts.read().unwrap();
+        assert!(
+            id.get() < fonts.fonts.len(),
+            "FontLibrary: invalid {:?}!",
+            id
+        );
+        let face: &rustybuzz::Face<'static> = &fonts.fonts[id.get()].rustybuzz;
+        // Safety: elements of self.fonts are never dropped or modified
+        unsafe { extend_lifetime(face) }
     }
 
     /// Get the number of loaded font faces
