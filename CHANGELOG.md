@@ -2,6 +2,10 @@
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+-   Add `Option<Vec2>` return value to `TextDisplay::prepare` and `TextApi::prepare` (#41)
+
 ## [0.2.0] — 2020-11-23
 
 This release changes a *very large* part of the API. Both `prepared` and `rich`
