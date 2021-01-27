@@ -86,7 +86,8 @@ impl<T: FormattableText> Text<T> {
 
     /// Set the text
     ///
-    /// One must call [`Text::prepare`] afterwards.
+    /// One must call [`Text::prepare`] afterwards and may wish to inspect its
+    /// return value to check the size allocation meets requirements.
     pub fn set_text(&mut self, text: T) {
         /* TODO: enable if we have a way of testing equality (a hash?)
         if self.text == text {
@@ -142,8 +143,12 @@ pub trait TextApi {
 
     /// Prepare text for display
     ///
+    /// Returns the required size to display text (with wrapping based on the
+    /// bounds set in `env`), if any update occurred (see documentation of
+    /// [`TextDisplay::prepare`]).
+    ///
     /// Wraps [`TextDisplay::prepare`], passing through `env`.
-    fn prepare(&mut self);
+    fn prepare(&mut self) -> Option<Vec2>;
 
     /// Prepare text runs
     ///
@@ -206,8 +211,8 @@ impl<T: FormattableText> TextApi for Text<T> {
     }
 
     #[inline]
-    fn prepare(&mut self) {
-        self.display.prepare(&self.text, &self.env);
+    fn prepare(&mut self) -> Option<Vec2> {
+        self.display.prepare(&self.text, &self.env)
     }
 
     #[inline]

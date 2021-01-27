@@ -66,7 +66,6 @@ pub struct TextDisplay {
     /// Subsets of runs forming a line, with line direction
     line_runs: SmallVec<[LineRun; 1]>,
     pub(crate) action: Action,
-    required: Vec2,
     /// Contiguous runs, in logical order
     ///
     /// Within a line, runs may not be in visual order due to BIDI reversals.
@@ -84,7 +83,6 @@ impl Default for TextDisplay {
             runs: Default::default(),
             line_runs: Default::default(),
             action: Action::All, // highest value
-            required: Default::default(),
             wrapped_runs: Default::default(),
             lines: Default::default(),
             num_glyphs: 0,
@@ -120,10 +118,16 @@ impl TextDisplay {
     /// one should either call [`TextDisplay::require_action`] before this
     /// method or use the [`TextDisplay::prepare_runs`],
     /// [`TextDisplay::resize_runs`] and [`TextDisplay::prepare_lines`] methods.
-    pub fn prepare<F: FormattableText>(&mut self, text: &F, env: &Environment) {
+    ///
+    /// Returns new size requirements, if an update action occurred. Returns
+    /// `None` if no action was required (since requirements are computed as a
+    /// side-effect of line-wrapping, and presumably in this case the existing
+    /// allocation is sufficient). One may force calculation of this value by
+    /// calling `text.require_action(Action::Wrap)`.
+    pub fn prepare<F: FormattableText>(&mut self, text: &F, env: &Environment) -> Option<Vec2> {
         let action = self.action;
         if action == Action::None {
-            return;
+            return None;
         }
         self.action = Action::None;
 
@@ -136,7 +140,7 @@ impl TextDisplay {
         }
 
         let wrap = env.flags.contains(EnvFlags::WRAP);
-        self.prepare_lines(env.bounds, wrap, env.align);
+        Some(self.prepare_lines(env.bounds, wrap, env.align))
     }
 
     /// Get the number of lines
