@@ -367,7 +367,7 @@ impl StackItem {
                 match &mut self.list {
                     Some(x) => {
                         text.push_str(&format!("{}\t", x));
-                        *x = *x + 1;
+                        *x += 1;
                     }
                     None => text.push_str("•\t"),
                 }

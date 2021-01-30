@@ -251,7 +251,7 @@ impl TextDisplay {
             let height = run.height;
 
             for mut glyph in run.glyphs[run_part.glyph_range.to_std()].iter().cloned() {
-                glyph.position = glyph.position + run_part.offset;
+                glyph.position += run_part.offset;
                 f(font_id, dpu, height, glyph);
             }
         }
@@ -353,7 +353,7 @@ impl TextDisplay {
             }
 
             for mut glyph in run.glyphs[run_part.glyph_range.to_std()].iter().cloned() {
-                glyph.position = glyph.position + run_part.offset;
+                glyph.position += run_part.offset;
 
                 // If run is RTL, glyph index is decreasing
                 if (ltr && next_start <= glyph.index) || (!ltr && fmt.start > glyph.index) {
