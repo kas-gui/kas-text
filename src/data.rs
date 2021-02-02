@@ -7,7 +7,7 @@
 
 use crate::conv::{to_u32, to_usize};
 
-/// 2D size over `f32`
+/// 2D vector (position/size/offset) over `f32`
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Vec2(pub f32, pub f32);
 
@@ -45,6 +45,13 @@ impl std::ops::Add for Vec2 {
         Vec2(self.0 + other.0, self.1 + other.1)
     }
 }
+impl std::ops::AddAssign for Vec2 {
+    #[inline]
+    fn add_assign(&mut self, rhs: Self) {
+        self.0 += rhs.0;
+        self.1 += rhs.1;
+    }
+}
 
 impl std::ops::Sub for Vec2 {
     type Output = Self;
@@ -52,6 +59,13 @@ impl std::ops::Sub for Vec2 {
     #[inline]
     fn sub(self, other: Self) -> Self {
         Vec2(self.0 - other.0, self.1 - other.1)
+    }
+}
+impl std::ops::SubAssign for Vec2 {
+    #[inline]
+    fn sub_assign(&mut self, rhs: Self) {
+        self.0 -= rhs.0;
+        self.1 -= rhs.1;
     }
 }
 

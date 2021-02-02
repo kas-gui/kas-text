@@ -222,36 +222,33 @@ impl TextDisplay {
             last_is_htab = is_htab;
         }
 
-        // Finish: the loop above does not evaluate the last break.
+        // Conclude: add last run. This may be empty, but we want it anyway.
         if !last_is_control {
             non_control_end = text.str_len();
         }
-        if non_control_end > start || last_is_htab {
-            // Note: range can be empty if and only if text is empty. In this
-            // case we should add a run anyway.
-            let range = (start..non_control_end).into();
-            let special = match last_is_htab {
-                true => RunSpecial::HTab,
-                false => RunSpecial::None,
-            };
-            self.runs.push(shaper::shape(
-                text.as_str(),
-                range,
-                dpem,
-                font_id,
-                breaks,
-                special,
-                level,
-            ));
-        }
-        if line_start < self.runs.len() {
-            let range = Range::from(line_start..self.runs.len());
-            let rtl = self.runs[line_start].level.is_rtl();
-            self.line_runs.push(LineRun { range, rtl });
-        }
+        let range = (start..non_control_end).into();
+        let special = match last_is_htab {
+            true => RunSpecial::HTab,
+            false => RunSpecial::None,
+        };
+        self.runs.push(shaper::shape(
+            text.as_str(),
+            range,
+            dpem,
+            font_id,
+            breaks,
+            special,
+            level,
+        ));
+
+        debug_assert!(line_start < self.runs.len());
+        let range = Range::from(line_start..self.runs.len());
+        let rtl = self.runs[line_start].level.is_rtl();
+        self.line_runs.push(LineRun { range, rtl });
 
         // The LineBreakIterator finishes with a break (unless the string is empty).
-        // This is a hard break when the string finishes with an explicit line-break.
+        // This is a hard break when the string finishes with an explicit line-break,
+        // in which case we have an implied new line (empty).
         debug_assert_eq!(next_break.0, text.str_len());
         if next_break.1 {
             let text_len = text.str_len();
@@ -281,8 +278,8 @@ impl TextDisplay {
             for run in &self.runs[line.range.to_std()] {
                 let slice = &text.as_str()[run.range];
                 println!(
-                    "{:?}, text.as_str()[{}..{}]: '{}', breaks={:?}, no_break={}",
-                    run.level, run.range.start, run.range.end, slice, run.breaks, run.no_break,
+                    "\t{:?}, text.as_str()[{}..{}]: '{}', breaks={:?}",
+                    run.level, run.range.start, run.range.end, slice, run.breaks,
                 );
             }
         }
