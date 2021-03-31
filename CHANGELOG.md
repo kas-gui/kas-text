@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 -   Fix missing run for empty text lines
 -   Fix justified text layout (#44)
 -   Explicitly avoid justifying last line of justified text (#44)
+-   Update `smallvec` to 0.6.1
+-   Update `ttf-parser` to 0.12.0
 
 ## [0.2.0] — 2020-11-23
 
