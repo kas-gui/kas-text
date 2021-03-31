@@ -356,6 +356,10 @@ impl LineAdder {
             Align::TL => 0.0,
             Align::Centre => 0.5 * spare,
             Align::BR => spare,
+            Align::Stretch if !is_wrap => match line_is_rtl {
+                false => 0.0,
+                true => spare,
+            },
             Align::Stretch => {
                 let len = parts.len();
                 is_gap.resize(len, false);
@@ -441,6 +445,7 @@ impl LineAdder {
 
             if is_gap.len() > 0 && is_gap[i] {
                 caret += per_gap;
+                end_caret += per_gap;
             }
         }
 

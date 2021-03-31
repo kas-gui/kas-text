@@ -1,6 +1,6 @@
 [package]
 name = "kas-text"
-version = "0.3.0"
+version = "0.2.1"
 authors = ["Diggory Hardy <git@dhardy.name>"]
 edition = "2018"
 license = "Apache-2.0"
@@ -24,10 +24,10 @@ gat = []
 
 [dependencies]
 bitflags = "1.2.1"
-ttf-parser = "0.8.2"
+ttf-parser = "0.12.0"
 font-kit = "0.8.0"
 lazy_static = "1.4.0"
-smallvec = "1.5.0"
+smallvec = "1.6.1"
 xi-unicode = "0.3.0"
 unicode-bidi = "0.3.4"
 unicode-bidi-mirroring = "0.1.0"
