@@ -223,8 +223,10 @@ impl TextDisplay {
     /// Yield a sequence of positioned glyphs
     ///
     /// Glyphs are yielded in undefined order by a call to `f`. The number of
-    /// glyphs yielded will equal [`TextDisplay::num_glyphs`]. This may be used as
-    /// follows:
+    /// glyphs yielded will equal [`TextDisplay::num_glyphs`]. The closure `f`
+    /// receives parameters `font_id, dpu, height, glyph`.
+    ///
+    /// This may be used as follows:
     /// ```no_run
     /// # use kas_text::{Glyph, Text, Environment, TextApi, TextApiExt};
     /// # fn draw(_: Vec<(f32, Glyph)>) {}
@@ -259,7 +261,7 @@ impl TextDisplay {
 
     /// Like [`TextDisplay::glyphs`] but with added effects
     ///
-    /// If the list `effects` is empty or has have first entry with `start > 0`,
+    /// If the list `effects` is empty or has first entry with `start > 0`,
     /// a default-constructed `Effect<X>` token is used.
     /// The user payload `X` is simply passed
     /// through to `f` and `g` calls and may be useful for colour information.
