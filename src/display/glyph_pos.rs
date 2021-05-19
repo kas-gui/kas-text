@@ -11,7 +11,7 @@ use crate::fonts::{fonts, FontId, ScaledFaceRef};
 use crate::{Glyph, Vec2};
 
 /// Effect formatting marker
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Effect<X> {
     /// Index in text at which formatting becomes active
     ///
@@ -22,6 +22,17 @@ pub struct Effect<X> {
     pub flags: EffectFlags,
     /// User payload
     pub aux: X,
+}
+
+impl<X> Effect<X> {
+    /// Construct a "default" instance with the supplied `aux` value
+    pub fn default(aux: X) -> Self {
+        Effect {
+            start: 0,
+            flags: EffectFlags::empty(),
+            aux,
+        }
+    }
 }
 
 bitflags::bitflags! {
@@ -261,10 +272,10 @@ impl TextDisplay {
 
     /// Like [`TextDisplay::glyphs`] but with added effects
     ///
-    /// If the list `effects` is empty or has first entry with `start > 0`,
-    /// a default-constructed `Effect<X>` token is used.
-    /// The user payload `X` is simply passed
-    /// through to `f` and `g` calls and may be useful for colour information.
+    /// If the list `effects` is empty or has first entry with `start > 0`, the
+    /// result of `Effect::default(default_aux)` is used. The user payload of
+    /// type `X` is simply passed through to `f` and `g` calls and may be useful
+    /// for colour information.
     ///
     /// The callback `f` receives `font_id, dpu, height, glyph, i, aux` where
     /// `dpu` and `height` are both measures of the font size (pixels per font
@@ -281,9 +292,14 @@ impl TextDisplay {
     /// Note: this is significantly more computationally expensive than
     /// [`TextDisplay::glyphs`]. Optionally one may choose to cache the result,
     /// though this is not really necessary.
-    pub fn glyphs_with_effects<X, F, G>(&self, effects: &[Effect<X>], mut f: F, mut g: G)
-    where
-        X: Copy + Default,
+    pub fn glyphs_with_effects<X, F, G>(
+        &self,
+        effects: &[Effect<X>],
+        default_aux: X,
+        mut f: F,
+        mut g: G,
+    ) where
+        X: Copy,
         F: FnMut(FontId, f32, f32, Glyph, usize, X),
         G: FnMut(f32, f32, f32, f32, usize, X),
     {
@@ -330,7 +346,7 @@ impl TextDisplay {
             let mut fmt = effects
                 .get(effect_cur)
                 .cloned()
-                .unwrap_or(Default::default());
+                .unwrap_or(Effect::default(default_aux));
 
             if !fmt.flags.is_empty() {
                 let sf = fonts.get(run.font_id).scale_by_dpu(run.dpu);
@@ -387,7 +403,7 @@ impl TextDisplay {
                     fmt = effects
                         .get(effect_cur)
                         .cloned()
-                        .unwrap_or(Default::default());
+                        .unwrap_or(Effect::default(default_aux));
 
                     if underline.is_some() != fmt.flags.contains(EffectFlags::UNDERLINE) {
                         let sf = fonts.get(run.font_id).scale_by_dpu(run.dpu);

@@ -349,13 +349,14 @@ pub trait TextApiExt: TextApi {
     /// Like [`TextDisplay::glyphs`] but with added effects
     ///
     /// Wraps [`TextDisplay::glyphs_with_effects`].
-    fn glyphs_with_effects<X, F, G>(&self, effects: &[Effect<X>], f: F, g: G)
+    fn glyphs_with_effects<X, F, G>(&self, effects: &[Effect<X>], default_aux: X, f: F, g: G)
     where
-        X: Copy + Default,
+        X: Copy,
         F: FnMut(FontId, f32, f32, Glyph, usize, X),
         G: FnMut(f32, f32, f32, f32, usize, X),
     {
-        self.display().glyphs_with_effects(effects, f, g)
+        self.display()
+            .glyphs_with_effects(effects, default_aux, f, g)
     }
 
     /// Yield a sequence of rectangles to highlight a given range, by lines
