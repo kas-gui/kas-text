@@ -33,6 +33,7 @@ unicode-bidi = "0.3.4"
 unicode-bidi-mirroring = "0.1.0"
 thiserror = "1.0.20"
 pulldown-cmark = { version = "0.8.0", optional = true }
+log = "0.4"
 
 [dependencies.harfbuzz_rs]
 version = "1.1.2"

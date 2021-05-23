@@ -231,6 +231,7 @@ impl FontLibrary {
         let mut fonts = self.fonts.write().unwrap();
         let id = fonts.push(Box::new(store), sel_hash, path_hash);
 
+        log::debug!("Loaded: {:?} = {},{}", id, path.display(), index);
         Ok(id)
     }
 
