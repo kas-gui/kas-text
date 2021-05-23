@@ -7,7 +7,7 @@
 
 use super::{EditableText, FontToken, FormattableText};
 use crate::conv::to_u32;
-use crate::fonts::{self, FamilyName, FontId, FontSelector, Style, Weight};
+use crate::fonts::{self, Family, FontId, FontSelector, Style, Weight};
 #[cfg(not(feature = "gat"))]
 use crate::OwningVecIter;
 use crate::{Effect, EffectFlags};
@@ -41,7 +41,7 @@ pub struct FontTokenIter<'a> {
     fmt: &'a [Fmt],
     fonts: &'a fonts::FontLibrary,
     font_id: FontId,
-    font_sel: FontSelector,
+    font_sel: FontSelector<'static>,
     base_dpem: f32,
 }
 
@@ -210,7 +210,7 @@ fn parse(input: &str) -> Result<Markdown, Error> {
                 item.fmt.start = to_u32(text.len());
 
                 let mut item2 = item.clone();
-                item2.fmt.sel.set_families(vec![FamilyName::Monospace]);
+                item2.fmt.sel.set_families(vec![Family::Monospace]);
                 set_last(&item2.fmt);
 
                 text.push_str(&part);
@@ -291,7 +291,7 @@ impl State {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Fmt {
     start: u32,
-    sel: FontSelector,
+    sel: FontSelector<'static>,
     rel_size: f32,
     flags: EffectFlags,
 }
@@ -351,7 +351,7 @@ impl StackItem {
                 state.start_block(text);
                 self.fmt.start = to_u32(text.len());
                 with_clone(self, |item| {
-                    item.fmt.sel.set_families(vec![FamilyName::Monospace])
+                    item.fmt.sel.set_families(vec![Family::Monospace])
                 })
                 // TODO: within a code block, the last \n should be suppressed?
             }

@@ -21,6 +21,29 @@ pub struct FontSelector<'a> {
     style: Style,
 }
 
+impl<'a> PartialEq for FontSelector<'a> {
+    fn eq(&self, other: &Self) -> bool {
+        // This really should be derived...
+        fn family_eq((a, b): (&Family, &Family)) -> bool {
+            match (a, b) {
+                (Family::Name(a), Family::Name(b)) => a == b,
+                (Family::Serif, Family::Serif) => true,
+                (Family::SansSerif, Family::SansSerif) => true,
+                (Family::Cursive, Family::Cursive) => true,
+                (Family::Fantasy, Family::Fantasy) => true,
+                (Family::Monospace, Family::Monospace) => true,
+                _ => false,
+            }
+        }
+
+        self.names.len() == other.names.len()
+            && self.names.iter().zip(other.names.iter()).all(family_eq)
+            && self.weight == other.weight
+            && self.stretch == other.stretch
+            && self.style == other.style
+    }
+}
+
 impl<'a> FontSelector<'a> {
     /// Synonym for default
     ///
