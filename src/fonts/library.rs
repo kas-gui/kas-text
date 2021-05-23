@@ -5,7 +5,7 @@
 
 //! Font library
 
-use super::{FaceRef, FontSelector};
+use super::{families, FaceRef, FontSelector};
 use crate::conv::{to_u32, to_usize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -16,6 +16,8 @@ pub(crate) use ttf_parser::Face;
 /// Font loading errors
 #[derive(Error, Debug)]
 enum FontError {
+    #[error("no matching font found")]
+    NotFound,
     #[error("font load error")]
     TtfParser(#[from] ttf_parser::FaceParsingError),
     #[error("FontLibrary::load_default is not first font load")]
@@ -84,6 +86,7 @@ impl FontsData {
 /// This is the type of the global singleton accessible via the [`fonts`]
 /// function. Thread-safety is handled via internal locks.
 pub struct FontLibrary {
+    db: fontdb::Database,
     // Font files loaded into memory. Safety: we assume that existing entries
     // are never modified or removed (though the Vec is allowed to reallocate).
     // Note: using std::pin::Pin does not help since u8 impls Unpin.
@@ -175,8 +178,11 @@ impl FontLibrary {
         }
         drop(fonts);
 
-        let (path, index) = selector.select()?;
-        self.load_pathbuf(path, index, sel_hash)
+        let (source, index) = selector.select(&self.db).ok_or(FontError::NotFound)?;
+        match source {
+            fontdb::Source::Binary(_) => unimplemented!(),
+            fontdb::Source::File(path) => self.load_path(path, index, sel_hash),
+        }
     }
 
     /// Load a font by path
@@ -189,13 +195,13 @@ impl FontLibrary {
     ///
     /// `sel_hash` is the hash of the [`FontSelector`] used; if this is not
     /// used, pass 0.
-    pub fn load_pathbuf(
+    pub fn load_path(
         &self,
-        path: PathBuf,
+        path: &Path,
         index: u32,
         sel_hash: u64,
     ) -> Result<FontId, Box<dyn std::error::Error>> {
-        let path_hash = self.hash_path(&path, index);
+        let path_hash = self.hash_path(path, index);
 
         // 1st lock: early exit if we already have this font
         let fonts = self.fonts.read().unwrap();
@@ -208,20 +214,20 @@ impl FontLibrary {
 
         // 2nd lock: load and store file data / get reference
         let mut data = self.data.write().unwrap();
-        let slice = if let Some(entry) = data.get(&path) {
+        let slice = if let Some(entry) = data.get(path) {
             let slice: &[u8] = &entry[..];
             // Safety: slice is in self.data and will not be dropped or modified
             unsafe { extend_lifetime(slice) }
         } else {
-            let v = std::fs::read(&path)?.into_boxed_slice();
-            let slice = &data.entry(path.clone()).or_insert(v)[..];
+            let v = std::fs::read(path)?.into_boxed_slice();
+            let slice = &data.entry(path.to_owned()).or_insert(v)[..];
             // Safety: as above
             unsafe { extend_lifetime(slice) }
         };
         drop(data);
 
         // 3rd lock: insert into font list
-        let store = FaceStore::new(path, slice, index)?;
+        let store = FaceStore::new(path.to_owned(), slice, index)?;
         let mut fonts = self.fonts.write().unwrap();
         let id = fonts.push(Box::new(store), sel_hash, path_hash);
 
@@ -281,7 +287,12 @@ pub(crate) unsafe fn extend_lifetime<'b, T: ?Sized>(r: &'b T) -> &'static T {
 impl FontLibrary {
     // Private because: safety depends on instance(s) never being destructed.
     fn new() -> Self {
+        let mut db = fontdb::Database::new();
+        db.load_system_fonts();
+        families::set_defaults(&mut db);
+
         FontLibrary {
+            db,
             data: Default::default(),
             fonts: Default::default(),
         }
