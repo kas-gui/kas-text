@@ -3,85 +3,21 @@
 // You may obtain a copy of the License in the LICENSE-APACHE file or at:
 //     https://www.apache.org/licenses/LICENSE-2.0
 
-//! Font selection and loading
-//!
-//! Fonts are managed by the [`FontLibrary`], of which a static singleton
-//! exists and can be accessed via [`fonts`].
-//!
-//! ### FontId and the default font
-//!
-//! The [`FontId`] type is a numeric identifier for loaded fonts. It may be
-//! default-constructed to access the *default* font, with number 0.
-//!
-//! To make this work, the user of this library *must* load the default font
-//! before all other fonts and before any operation requiring font metrics:
-//! ```
-//! if let Err(e) = kas_text::fonts::fonts().load_default() {
-//!     panic!("Error loading font: {}", e);
-//! }
-//! // from now on, kas_text::fonts::FontId::default() identifies the default font
-//! ```
-//!
-//! (It is not technically necessary to lead the first font with
-//! [`FontLibrary::load_default`]; whichever font is loaded first has number 0.
-//! If doing this, `load_default` must not be called at all.
-//! It is harmless to attempt to load any font multiple times, whether with
-//! `load_default` or another method.)
-//!
-//! ### Font sizes
-//!
-//! Typically, font sizes are specified in "Points". Several other units and
-//! measures come into play here. Lets start with those dating back to the
-//! early printing press:
-//!
-//! -   1 *Point* = 1/72 inch (~0.35mm), by the usual DTP standard
-//! -   1 *Em* is the width of a capital `M` (inclusive of margin) in a font
-//! -   The *point size* of a font refers to the number of *points* per *em*
-//!     in this font
-//!
-//! Thus, with a "12 point font", one 'M' occupies 12/72 of an inch on paper.
-//!
-//! In digital typography, one must translate to/from pixel sizes. Here we have:
-//!
-//! -   DPI (Dots Per Inch) is the number of pixels per inch
-//! -   A *scale factor* is a measure of the number of pixels relative to a
-//!     standard DPI, usually 96
-//!
-//! We introduce two measures used by this library:
-//!
-//! -   DPP (Dots Per Point): `dpp = dpi / 72 = scale_factor × (96 / 72)`
-//! -   DPEM (Dots Per Em): `dpem = point_size × dpp`
-//!
-//! Warning: on MacOS and Apple systems, a *point* sometimes refers to a
-//! (virtual) pixel, yielding `dpp = 1` (or `dpp = 2` on Retina screens, or
-//! something else entirely on iPhones). On any system, DPI/DPP/scale factor
-//! values may be set according to the user's taste rather than physical
-//! measurements.
-//!
-//! Finally, note that digital font files have an internally defined unit
-//! known as the *font unit*. This is not normally used directly but is used
-//! internally (including by the `DPU` type).
+//! Font library
 
-use crate::conv::{to_u32, to_usize, LineMetrics, DPU};
-use crate::GlyphId;
+use super::{families, FaceRef, FontSelector};
+use crate::conv::{to_u32, to_usize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{RwLock, RwLockReadGuard};
 use thiserror::Error;
 pub(crate) use ttf_parser::Face;
 
-mod selector;
-pub use selector::*;
-
-impl From<GlyphId> for ttf_parser::GlyphId {
-    fn from(id: GlyphId) -> Self {
-        ttf_parser::GlyphId(id.0)
-    }
-}
-
 /// Font loading errors
 #[derive(Error, Debug)]
 enum FontError {
+    #[error("no matching font found")]
+    NotFound,
     #[error("font load error")]
     TtfParser(#[from] ttf_parser::FaceParsingError),
     #[error("FontLibrary::load_default is not first font load")]
@@ -101,125 +37,6 @@ pub struct FontId(pub u32);
 impl FontId {
     pub fn get(self) -> usize {
         to_usize(self.0)
-    }
-}
-
-/// Handle to a loaded font face
-#[derive(Copy, Clone, Debug)]
-pub struct FaceRef(&'static Face<'static>);
-
-impl FaceRef {
-    /// Convert `dpem` to `dpu`
-    ///
-    /// Output: a font-specific scale.
-    ///
-    /// Input: `dpem` is pixels/em
-    ///
-    /// ```none
-    /// dpem
-    ///   = pt_size × dpp
-    ///   = pt_size × dpi / 72
-    ///   = pt_size × scale_factor × (96 / 72)
-    /// ```
-    #[inline]
-    pub(crate) fn dpu(self, dpem: f32) -> DPU {
-        DPU(dpem / f32::from(self.0.units_per_em().unwrap()))
-    }
-
-    /// Get a scaled reference
-    ///
-    /// Units: `dpem` is dots (pixels) per Em (module documentation).
-    #[inline]
-    pub(crate) fn scale_by_dpem(self, dpem: f32) -> ScaledFaceRef {
-        ScaledFaceRef(self.0, self.dpu(dpem))
-    }
-
-    /// Get a scaled reference
-    ///
-    /// Units: `dpu` is dots (pixels) per font-unit (see module documentation).
-    #[inline]
-    pub(crate) fn scale_by_dpu(self, dpu: DPU) -> ScaledFaceRef {
-        ScaledFaceRef(self.0, dpu)
-    }
-
-    /// Get the height of horizontal text in pixels
-    ///
-    /// Units: `dpem` is dots (pixels) per Em (module documentation).
-    #[inline]
-    pub fn height(&self, dpem: f32) -> f32 {
-        self.scale_by_dpem(dpem).height()
-    }
-}
-
-/// Handle to a loaded font face
-#[derive(Copy, Clone, Debug)]
-pub(crate) struct ScaledFaceRef(&'static Face<'static>, DPU);
-impl ScaledFaceRef {
-    /// Unscaled face
-    #[inline]
-    #[allow(unused)] // built-in shaper only
-    pub fn face(&self) -> &Face<'static> {
-        self.0
-    }
-
-    #[inline]
-    #[allow(unused)] // built-in shaper only
-    pub fn dpu(&self) -> DPU {
-        self.1
-    }
-
-    #[inline]
-    #[allow(unused)] // built-in shaper only
-    pub(crate) fn glyph_id(&self, c: char) -> GlyphId {
-        // GlyphId 0 is required to be a special glyph representing a missing
-        // character (see cmap table / TrueType specification).
-        GlyphId(self.0.glyph_index(c).map(|id| id.0).unwrap_or(0))
-    }
-
-    #[inline]
-    pub fn h_advance(&self, id: GlyphId) -> f32 {
-        let x = self.0.glyph_hor_advance(id.into()).unwrap();
-        self.1.u16_to_px(x)
-    }
-
-    #[inline]
-    pub fn h_side_bearing(&self, id: GlyphId) -> f32 {
-        let x = self.0.glyph_hor_side_bearing(id.into()).unwrap();
-        self.1.i16_to_px(x)
-    }
-
-    #[inline]
-    pub fn ascent(&self) -> f32 {
-        self.1.i16_to_px(self.0.ascender())
-    }
-
-    #[inline]
-    pub fn descent(&self) -> f32 {
-        self.1.i16_to_px(self.0.descender())
-    }
-
-    #[inline]
-    pub fn line_gap(&self) -> f32 {
-        self.1.i16_to_px(self.0.line_gap())
-    }
-
-    #[inline]
-    pub fn height(&self) -> f32 {
-        self.1.i16_to_px(self.0.height())
-    }
-
-    #[inline]
-    pub fn underline_metrics(&self) -> Option<LineMetrics> {
-        self.0
-            .underline_metrics()
-            .map(|m| self.1.to_line_metrics(m))
-    }
-
-    #[inline]
-    pub fn strikethrough_metrics(&self) -> Option<LineMetrics> {
-        self.0
-            .strikeout_metrics()
-            .map(|m| self.1.to_line_metrics(m))
     }
 }
 
@@ -269,6 +86,7 @@ impl FontsData {
 /// This is the type of the global singleton accessible via the [`fonts`]
 /// function. Thread-safety is handled via internal locks.
 pub struct FontLibrary {
+    db: fontdb::Database,
     // Font files loaded into memory. Safety: we assume that existing entries
     // are never modified or removed (though the Vec is allowed to reallocate).
     // Note: using std::pin::Pin does not help since u8 impls Unpin.
@@ -360,8 +178,11 @@ impl FontLibrary {
         }
         drop(fonts);
 
-        let (path, index) = selector.select()?;
-        self.load_pathbuf(path, index, sel_hash)
+        let (source, index) = selector.select(&self.db).ok_or(FontError::NotFound)?;
+        match source {
+            fontdb::Source::Binary(_) => unimplemented!(),
+            fontdb::Source::File(path) => self.load_path(path, index, sel_hash),
+        }
     }
 
     /// Load a font by path
@@ -374,13 +195,13 @@ impl FontLibrary {
     ///
     /// `sel_hash` is the hash of the [`FontSelector`] used; if this is not
     /// used, pass 0.
-    pub fn load_pathbuf(
+    pub fn load_path(
         &self,
-        path: PathBuf,
+        path: &Path,
         index: u32,
         sel_hash: u64,
     ) -> Result<FontId, Box<dyn std::error::Error>> {
-        let path_hash = self.hash_path(&path, index);
+        let path_hash = self.hash_path(path, index);
 
         // 1st lock: early exit if we already have this font
         let fonts = self.fonts.read().unwrap();
@@ -393,23 +214,24 @@ impl FontLibrary {
 
         // 2nd lock: load and store file data / get reference
         let mut data = self.data.write().unwrap();
-        let slice = if let Some(entry) = data.get(&path) {
+        let slice = if let Some(entry) = data.get(path) {
             let slice: &[u8] = &entry[..];
             // Safety: slice is in self.data and will not be dropped or modified
             unsafe { extend_lifetime(slice) }
         } else {
-            let v = std::fs::read(&path)?.into_boxed_slice();
-            let slice = &data.entry(path.clone()).or_insert(v)[..];
+            let v = std::fs::read(path)?.into_boxed_slice();
+            let slice = &data.entry(path.to_owned()).or_insert(v)[..];
             // Safety: as above
             unsafe { extend_lifetime(slice) }
         };
         drop(data);
 
         // 3rd lock: insert into font list
-        let store = FaceStore::new(path, slice, index)?;
+        let store = FaceStore::new(path.to_owned(), slice, index)?;
         let mut fonts = self.fonts.write().unwrap();
         let id = fonts.push(Box::new(store), sel_hash, path_hash);
 
+        log::debug!("Loaded: {:?} = {},{}", id, path.display(), index);
         Ok(id)
     }
 
@@ -466,7 +288,12 @@ pub(crate) unsafe fn extend_lifetime<'b, T: ?Sized>(r: &'b T) -> &'static T {
 impl FontLibrary {
     // Private because: safety depends on instance(s) never being destructed.
     fn new() -> Self {
+        let mut db = fontdb::Database::new();
+        db.load_system_fonts();
+        families::set_defaults(&mut db);
+
         FontLibrary {
+            db,
             data: Default::default(),
             fonts: Default::default(),
         }

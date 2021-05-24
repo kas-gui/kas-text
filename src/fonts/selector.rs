@@ -7,24 +7,44 @@
 //!
 //! Many items are copied from font-kit to avoid any public dependency.
 
-use font_kit::error::SelectionError;
-use font_kit::family_name::FamilyName as fkFamilyName;
-use font_kit::handle::Handle;
-use font_kit::properties::{self, Properties, Style as fkStyle};
-use font_kit::source::SystemSource;
-use std::path::PathBuf;
+pub use fontdb::{Family, Stretch, Style, Weight};
 
 /// A font face selection tool
 ///
 /// This tool selects a font according to the given criteria from available
 /// system fonts. Selection criteria are based on CSS.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct FontSelector {
-    names: Vec<FamilyName>,
-    properties: Properties,
+#[derive(Clone, Debug, Default)]
+pub struct FontSelector<'a> {
+    names: Vec<Family<'a>>,
+    weight: Weight,
+    stretch: Stretch,
+    style: Style,
 }
 
-impl FontSelector {
+impl<'a> PartialEq for FontSelector<'a> {
+    fn eq(&self, other: &Self) -> bool {
+        // This really should be derived...
+        fn family_eq((a, b): (&Family, &Family)) -> bool {
+            match (a, b) {
+                (Family::Name(a), Family::Name(b)) => a == b,
+                (Family::Serif, Family::Serif) => true,
+                (Family::SansSerif, Family::SansSerif) => true,
+                (Family::Cursive, Family::Cursive) => true,
+                (Family::Fantasy, Family::Fantasy) => true,
+                (Family::Monospace, Family::Monospace) => true,
+                _ => false,
+            }
+        }
+
+        self.names.len() == other.names.len()
+            && self.names.iter().zip(other.names.iter()).all(family_eq)
+            && self.weight == other.weight
+            && self.stretch == other.stretch
+            && self.style == other.style
+    }
+}
+
+impl<'a> FontSelector<'a> {
     /// Synonym for default
     ///
     /// Without further parametrisation, this will select a generic sans-serif
@@ -41,7 +61,9 @@ impl FontSelector {
     pub fn assign(&mut self, rhs: &Self) {
         self.names.clear();
         self.names.extend_from_slice(&rhs.names);
-        self.properties = rhs.properties;
+        self.weight = rhs.weight;
+        self.stretch = rhs.stretch;
+        self.style = rhs.style;
     }
 
     /// Set family name(s)
@@ -49,27 +71,29 @@ impl FontSelector {
     /// If multiple names are passed, the first to successfully resolve a font
     /// is used. Glyph-level fallback (missing glyph substitution) is not
     /// currently supported.
+    ///
+    /// If an empty vec is passed, the default sans-serif font is used.
     #[inline]
-    pub fn set_families(&mut self, names: Vec<FamilyName>) {
+    pub fn set_families(&mut self, names: Vec<Family<'a>>) {
         self.names = names;
     }
 
     /// Set style
     #[inline]
     pub fn set_style(&mut self, style: Style) {
-        self.properties.style = style.into();
+        self.style = style;
     }
 
     /// Set weight
     #[inline]
     pub fn set_weight(&mut self, weight: Weight) {
-        self.properties.weight = properties::Weight(weight.0);
+        self.weight = weight;
     }
 
     /// Set stretch
     #[inline]
     pub fn set_stretch(&mut self, stretch: Stretch) {
-        self.properties.stretch = properties::Stretch(stretch.0);
+        self.stretch = stretch;
     }
 
     /// Hash self
@@ -82,169 +106,41 @@ impl FontSelector {
         use std::hash::{Hash, Hasher};
 
         let mut hasher = DefaultHasher::new();
-        self.names.hash(&mut hasher);
-        (self.properties.style as u32).hash(&mut hasher);
-        // Using to_bits() implies that NaN payloads affect results
-        // (perhaps surprising but not really of consequence to us).
-        self.properties.weight.0.to_bits().hash(&mut hasher);
-        self.properties.stretch.0.to_bits().hash(&mut hasher);
+        self.names.len().hash(&mut hasher);
+        for name in &self.names {
+            match name {
+                Family::Name(name) => {
+                    0u16.hash(&mut hasher);
+                    name.hash(&mut hasher);
+                }
+                Family::Serif => 1u16.hash(&mut hasher),
+                Family::SansSerif => 2u16.hash(&mut hasher),
+                Family::Cursive => 3u16.hash(&mut hasher),
+                Family::Fantasy => 4u16.hash(&mut hasher),
+                Family::Monospace => 5u16.hash(&mut hasher),
+            }
+        }
+        self.weight.0.hash(&mut hasher);
+        self.stretch.to_number().hash(&mut hasher);
+        (self.style as u16).hash(&mut hasher);
         hasher.finish()
     }
 
     /// Resolve a path and collection index from the given criteria
-    pub(crate) fn select(&self) -> Result<(PathBuf, u32), SelectionError> {
-        let mut families = &[fkFamilyName::SansSerif][..];
-        let names: Vec<fkFamilyName>;
+    pub(crate) fn select<'b>(&self, db: &'b fontdb::Database) -> Option<(&'b fontdb::Source, u32)> {
+        let mut families = &[fontdb::Family::SansSerif][..];
         if self.names.len() > 0 {
-            names = self.names.iter().map(|n| n.clone().into()).collect();
-            families = &names[..];
+            families = &self.names[..];
         }
-        let properties = self.properties;
 
-        let handle = SOURCE.with(|source| source.select_best_match(families, &properties))?;
-        Ok(match handle {
-            Handle::Path { path, font_index } => (path, font_index),
-            // Note: handling the following would require changes to data
-            // management and should not occur anyway:
-            Handle::Memory { .. } => panic!("Unexpected: font in memory"),
-        })
+        let query = fontdb::Query {
+            families,
+            weight: self.weight,
+            stretch: self.stretch,
+            style: self.style,
+        };
+        db.query(&query)
+            .and_then(|id| db.face(id))
+            .map(|face| (&*face.source, face.index))
     }
-}
-
-/// A possible value for the `font-family` CSS property.
-///
-/// These descriptions are taken from
-/// [CSS Fonts Level 3 § 3.1](https://drafts.csswg.org/css-fonts-3/#font-family-prop).
-#[derive(Clone, Debug, Hash, PartialEq)]
-pub enum FamilyName {
-    /// A specific font family, specified by name: e.g. "Arial", "times".
-    Title(String),
-    /// Serif fonts represent the formal text style for a script.
-    Serif,
-    /// Glyphs in sans-serif fonts, as the term is used in CSS, are generally low contrast
-    /// (vertical and horizontal stems have the close to the same thickness) and have stroke
-    /// endings that are plain — without any flaring, cross stroke, or other ornamentation.
-    SansSerif,
-    /// The sole criterion of a monospace font is that all glyphs have the same fixed width.
-    Monospace,
-    /// Glyphs in cursive fonts generally use a more informal script style, and the result looks
-    /// more like handwritten pen or brush writing than printed letterwork.
-    Cursive,
-    /// Fantasy fonts are primarily decorative or expressive fonts that contain decorative or
-    /// expressive representations of characters.
-    Fantasy,
-}
-
-impl From<FamilyName> for fkFamilyName {
-    fn from(name: FamilyName) -> Self {
-        match name {
-            FamilyName::Title(name) => fkFamilyName::Title(name),
-            FamilyName::Serif => fkFamilyName::Serif,
-            FamilyName::SansSerif => fkFamilyName::SansSerif,
-            FamilyName::Monospace => fkFamilyName::Monospace,
-            FamilyName::Cursive => fkFamilyName::Cursive,
-            FamilyName::Fantasy => fkFamilyName::Fantasy,
-        }
-    }
-}
-
-/// Allows italic or oblique faces to be selected
-#[derive(Clone, Copy, PartialEq, Debug)]
-pub enum Style {
-    /// A face that is neither italic not obliqued.
-    Normal,
-    /// A form that is generally cursive in nature.
-    Italic,
-    /// A typically-sloped version of the regular face.
-    Oblique,
-}
-
-impl Default for Style {
-    fn default() -> Style {
-        Style::Normal
-    }
-}
-
-impl From<Style> for fkStyle {
-    fn from(style: Style) -> Self {
-        match style {
-            Style::Normal => fkStyle::Normal,
-            Style::Italic => fkStyle::Italic,
-            Style::Oblique => fkStyle::Oblique,
-        }
-    }
-}
-
-/// The degree of blackness or stroke thickness of a font
-///
-/// This value ranges from 100.0 to 900.0. The default value is 400.0 "normal".
-#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
-pub struct Weight(pub f32);
-
-impl Default for Weight {
-    #[inline]
-    fn default() -> Weight {
-        Weight::NORMAL
-    }
-}
-
-impl Weight {
-    /// Thin weight (100), the thinnest value.
-    pub const THIN: Weight = Weight(100.0);
-    /// Extra light weight (200).
-    pub const EXTRA_LIGHT: Weight = Weight(200.0);
-    /// Light weight (300).
-    pub const LIGHT: Weight = Weight(300.0);
-    /// Normal (400).
-    pub const NORMAL: Weight = Weight(400.0);
-    /// Medium weight (500, higher than normal).
-    pub const MEDIUM: Weight = Weight(500.0);
-    /// Semibold weight (600).
-    pub const SEMIBOLD: Weight = Weight(600.0);
-    /// Bold weight (700).
-    pub const BOLD: Weight = Weight(700.0);
-    /// Extra-bold weight (800).
-    pub const EXTRA_BOLD: Weight = Weight(800.0);
-    /// Black weight (900), the thickest value.
-    pub const BLACK: Weight = Weight(900.0);
-}
-
-/// The width of a font as an approximate fraction of the normal width
-///
-/// Widths range from 0.5 to 2.0 inclusive, with 1.0 as the normal width.
-#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
-pub struct Stretch(pub f32);
-
-impl Default for Stretch {
-    #[inline]
-    fn default() -> Stretch {
-        Stretch::NORMAL
-    }
-}
-
-impl Stretch {
-    /// Ultra-condensed width (50%), the narrowest possible.
-    pub const ULTRA_CONDENSED: Stretch = Stretch(0.5);
-    /// Extra-condensed width (62.5%).
-    pub const EXTRA_CONDENSED: Stretch = Stretch(0.625);
-    /// Condensed width (75%).
-    pub const CONDENSED: Stretch = Stretch(0.75);
-    /// Semi-condensed width (87.5%).
-    pub const SEMI_CONDENSED: Stretch = Stretch(0.875);
-    /// Normal width (100%).
-    pub const NORMAL: Stretch = Stretch(1.0);
-    /// Semi-expanded width (112.5%).
-    pub const SEMI_EXPANDED: Stretch = Stretch(1.125);
-    /// Expanded width (125%).
-    pub const EXPANDED: Stretch = Stretch(1.25);
-    /// Extra-expanded width (150%).
-    pub const EXTRA_EXPANDED: Stretch = Stretch(1.5);
-    /// Ultra-expanded width (200%), the widest possible.
-    pub const ULTRA_EXPANDED: Stretch = Stretch(2.0);
-}
-
-thread_local! {
-    // This type is not Send, so we cannot store in a Mutex within lazy_static.
-    // TODO: avoid multiple instances, since initialisation may be slow.
-    static SOURCE: SystemSource = SystemSource::new();
 }
