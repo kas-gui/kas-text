@@ -5,7 +5,7 @@
 
 //! Font library
 
-use super::{families, FaceRef, FontSelector};
+use super::{FaceRef, FontSelector};
 use crate::conv::{to_u32, to_usize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -185,13 +185,19 @@ impl FontLibrary {
         }
         drop(fonts);
 
-        let (source, index) = selector.select(&self.db).ok_or(FontError::NotFound)?;
-        let face = match source {
-            fontdb::Source::Binary(_) => unimplemented!(),
-            fontdb::Source::File(path) => self.load_path(path, index),
-        }?;
+        let mut faces = Vec::new();
+        selector.select(&self.db, |source, index| {
+            Ok(faces.push(match source {
+                fontdb::Source::Binary(_) => unimplemented!(),
+                fontdb::Source::File(path) => self.load_path(path, index),
+            }?))
+        })?;
 
-        Ok(self.fonts.write().unwrap().push(vec![face], sel_hash))
+        if faces.is_empty() {
+            return Err(Box::new(FontError::NotFound));
+        }
+        let font = self.fonts.write().unwrap().push(faces, sel_hash);
+        Ok(font)
     }
 }
 
@@ -345,7 +351,6 @@ impl FontLibrary {
     fn new() -> Self {
         let mut db = fontdb::Database::new();
         db.load_system_fonts();
-        families::set_defaults(&mut db);
 
         FontLibrary {
             db,
