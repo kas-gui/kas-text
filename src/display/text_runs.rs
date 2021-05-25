@@ -120,8 +120,7 @@ impl TextDisplay {
         }
 
         let fonts = fonts();
-        // TODO: resolve face per character
-        let mut face_id = fonts.first_face_for(font_id);
+        let mut last_face_id = fonts.first_face_for(font_id);
 
         let bidi = bidi;
         let default_para_level = match dir {
@@ -172,7 +171,10 @@ impl TextDisplay {
                 .map(|fmt| to_usize(fmt.start) == pos)
                 .unwrap_or(false);
 
-            if hard_break || control_break || bidi_break || fmt_break {
+            let face_id = fonts.face_for_char_or_first(font_id, c);
+            let font_break = pos > 0 && face_id != last_face_id;
+
+            if hard_break || control_break || bidi_break || fmt_break || font_break {
                 let range = (start..non_control_end).into();
                 let special = match (last_is_htab, last_is_control || is_break) {
                     (true, _) => RunSpecial::HTab,
@@ -183,7 +185,7 @@ impl TextDisplay {
                     text.as_str(),
                     range,
                     dpem,
-                    face_id,
+                    last_face_id,
                     breaks,
                     special,
                     level,
@@ -196,7 +198,6 @@ impl TextDisplay {
                         next_fmt = font_tokens.next();
                     }
                 }
-                face_id = fonts.first_face_for(font_id);
 
                 if hard_break {
                     let range = Range::from(line_start..self.runs.len());
@@ -225,6 +226,7 @@ impl TextDisplay {
 
             last_is_control = is_control;
             last_is_htab = is_htab;
+            last_face_id = face_id;
         }
 
         // Conclude: add last run. This may be empty, but we want it anyway.
@@ -240,7 +242,7 @@ impl TextDisplay {
             text.as_str(),
             range,
             dpem,
-            face_id,
+            last_face_id,
             breaks,
             special,
             level,
@@ -265,7 +267,7 @@ impl TextDisplay {
                 text.as_str(),
                 range,
                 dpem,
-                face_id,
+                last_face_id,
                 breaks,
                 RunSpecial::None,
                 level,

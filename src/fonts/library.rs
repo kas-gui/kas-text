@@ -154,6 +154,38 @@ impl FontLibrary {
         self.get_face(face_id)
     }
 
+    /// Resolve the face for a character
+    ///
+    /// This selects the first face containing this glyph from the font list.
+    pub fn face_for_char(&self, font_id: FontId, c: char) -> Option<FaceId> {
+        let faces = self.faces.read().unwrap();
+        let fonts = self.fonts.read().unwrap();
+        let list = fonts
+            .fonts
+            .iter()
+            .find(|item| item.0 == font_id)
+            .map(|item| &item.1)
+            .expect("invalid FontId");
+        for face_id in list.iter() {
+            let face = &faces.faces[face_id.get()];
+            // TODO: should we only return faces with shaping data, somehow?
+            if face.face.glyph_index(c).is_some() {
+                return Some(*face_id);
+            }
+        }
+        None
+    }
+
+    /// Resolve the face for a character
+    ///
+    /// This selects the first face containing this glyph from the font list,
+    /// otherwise choosing the first face.
+    #[inline]
+    pub fn face_for_char_or_first(&self, font_id: FontId, c: char) -> FaceId {
+        self.face_for_char(font_id, c)
+            .unwrap_or_else(|| self.first_face_for(font_id))
+    }
+
     /// Select the default font
     ///
     /// This *must* be called (at least once) before any other font-loading
