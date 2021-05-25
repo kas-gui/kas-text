@@ -93,7 +93,7 @@ impl Environment {
     /// To use "the standard font", use `Default::default()`.
     pub fn height(&self, font_id: FontId) -> f32 {
         let dpem = self.pt_size * self.dpp;
-        fonts().get(font_id).height(dpem)
+        fonts().get_first_face(font_id).height(dpem)
     }
 }
 

@@ -7,7 +7,7 @@
 
 use super::TextDisplay;
 use crate::conv::{to_u32, to_usize};
-use crate::fonts::FontId;
+use crate::fonts::{fonts, FontId};
 use crate::format::FormattableText;
 use crate::{shaper, Action, Direction, Range};
 use unicode_bidi::{BidiInfo, Level, LTR_LEVEL, RTL_LEVEL};
@@ -72,7 +72,7 @@ impl TextDisplay {
                 text.as_str(),
                 run.range,
                 dpem,
-                run.font_id,
+                run.face_id,
                 breaks,
                 run.special,
                 run.level,
@@ -118,6 +118,10 @@ impl TextDisplay {
                 next_fmt = font_tokens.next();
             }
         }
+
+        let fonts = fonts();
+        // TODO: resolve face per character
+        let mut face_id = fonts.first_face_for(font_id);
 
         let bidi = bidi;
         let default_para_level = match dir {
@@ -179,7 +183,7 @@ impl TextDisplay {
                     text.as_str(),
                     range,
                     dpem,
-                    font_id,
+                    face_id,
                     breaks,
                     special,
                     level,
@@ -192,6 +196,7 @@ impl TextDisplay {
                         next_fmt = font_tokens.next();
                     }
                 }
+                face_id = fonts.first_face_for(font_id);
 
                 if hard_break {
                     let range = Range::from(line_start..self.runs.len());
@@ -235,7 +240,7 @@ impl TextDisplay {
             text.as_str(),
             range,
             dpem,
-            font_id,
+            face_id,
             breaks,
             special,
             level,
@@ -260,7 +265,7 @@ impl TextDisplay {
                 text.as_str(),
                 range,
                 dpem,
-                font_id,
+                face_id,
                 breaks,
                 RunSpecial::None,
                 level,

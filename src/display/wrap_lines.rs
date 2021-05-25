@@ -103,7 +103,7 @@ impl TextDisplay {
                         // re-ordering the line based on full line contents,
                         // then use a checkpoint reset if too long.
 
-                        let sf = fonts.get(run.font_id).scale_by_dpu(run.dpu);
+                        let sf = fonts.get_face(run.face_id).scale_by_dpu(run.dpu);
                         // TODO: custom tab sizes?
                         let tab_size = sf.h_advance(sf.glyph_id(' ')) * 8.0;
                         let stops = (caret / tab_size).floor() + 1.0;
@@ -229,7 +229,7 @@ impl LineAdder {
             last_run = part.run;
             let run = &runs[to_usize(last_run)];
 
-            let scale_font = fonts.get(run.font_id).scale_by_dpu(run.dpu);
+            let scale_font = fonts.get_face(run.face_id).scale_by_dpu(run.dpu);
             ascent = ascent.max(scale_font.ascent());
             descent = descent.min(scale_font.descent());
             line_gap = line_gap.max(scale_font.line_gap());

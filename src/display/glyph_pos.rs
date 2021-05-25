@@ -7,7 +7,7 @@
 
 use super::TextDisplay;
 use crate::conv::to_usize;
-use crate::fonts::{fonts, FontId, ScaledFaceRef};
+use crate::fonts::{fonts, FaceId, ScaledFaceRef};
 use crate::{Glyph, Vec2};
 
 /// Effect formatting marker
@@ -174,7 +174,9 @@ impl TextDisplay {
             }
 
             let glyph_run = &self.runs[to_usize(run_part.glyph_run)];
-            let sf = fonts().get(glyph_run.font_id).scale_by_dpu(glyph_run.dpu);
+            let sf = fonts()
+                .get_face(glyph_run.face_id)
+                .scale_by_dpu(glyph_run.dpu);
 
             // If index is at the end of a run, we potentially get two matches.
             if index == to_usize(run_part.text_end) {
@@ -235,7 +237,7 @@ impl TextDisplay {
     ///
     /// Glyphs are yielded in undefined order by a call to `f`. The number of
     /// glyphs yielded will equal [`TextDisplay::num_glyphs`]. The closure `f`
-    /// receives parameters `font_id, dpu, height, glyph`.
+    /// receives parameters `face_id, dpu, height, glyph`.
     ///
     /// This may be used as follows:
     /// ```no_run
@@ -253,19 +255,19 @@ impl TextDisplay {
     /// low overhead.
     ///
     /// One must call [`TextDisplay::prepare`] before this method.
-    pub fn glyphs<F: FnMut(FontId, f32, f32, Glyph)>(&self, mut f: F) {
+    pub fn glyphs<F: FnMut(FaceId, f32, f32, Glyph)>(&self, mut f: F) {
         assert!(self.action.is_ready(), "kas-text::TextDisplay: not ready");
 
         // self.wrapped_runs is in logical order
         for run_part in self.wrapped_runs.iter().cloned() {
             let run = &self.runs[to_usize(run_part.glyph_run)];
-            let font_id = run.font_id;
+            let face_id = run.face_id;
             let dpu = run.dpu.0;
             let height = run.height;
 
             for mut glyph in run.glyphs[run_part.glyph_range.to_std()].iter().cloned() {
                 glyph.position += run_part.offset;
-                f(font_id, dpu, height, glyph);
+                f(face_id, dpu, height, glyph);
             }
         }
     }
@@ -277,7 +279,7 @@ impl TextDisplay {
     /// type `X` is simply passed through to `f` and `g` calls and may be useful
     /// for colour information.
     ///
-    /// The callback `f` receives `font_id, dpu, height, glyph, i, aux` where
+    /// The callback `f` receives `face_id, dpu, height, glyph, i, aux` where
     /// `dpu` and `height` are both measures of the font size (pixels per font
     /// unit and pixels per height, respectively), and `i` is the index within
     /// `effects` (or `usize::MAX` when a default-constructed effect token is
@@ -300,7 +302,7 @@ impl TextDisplay {
         mut g: G,
     ) where
         X: Copy,
-        F: FnMut(FontId, f32, f32, Glyph, usize, X),
+        F: FnMut(FaceId, f32, f32, Glyph, usize, X),
         G: FnMut(f32, f32, f32, f32, usize, X),
     {
         assert!(self.action.is_ready(), "kas-text::TextDisplay: not ready");
@@ -320,7 +322,7 @@ impl TextDisplay {
             }
 
             let run = &self.runs[to_usize(run_part.glyph_run)];
-            let font_id = run.font_id;
+            let face_id = run.face_id;
             let dpu = run.dpu.0;
             let height = run.height;
 
@@ -349,7 +351,7 @@ impl TextDisplay {
                 .unwrap_or(Effect::default(default_aux));
 
             if !fmt.flags.is_empty() {
-                let sf = fonts.get(run.font_id).scale_by_dpu(run.dpu);
+                let sf = fonts.get_face(run.face_id).scale_by_dpu(run.dpu);
                 let glyph = &run.glyphs[run_part.glyph_range.start()];
                 let position = glyph.position + run_part.offset;
                 if fmt.flags.contains(EffectFlags::UNDERLINE) {
@@ -406,7 +408,7 @@ impl TextDisplay {
                         .unwrap_or(Effect::default(default_aux));
 
                     if underline.is_some() != fmt.flags.contains(EffectFlags::UNDERLINE) {
-                        let sf = fonts.get(run.font_id).scale_by_dpu(run.dpu);
+                        let sf = fonts.get_face(run.face_id).scale_by_dpu(run.dpu);
                         if let Some((x1, y_top, h, aux)) = underline {
                             let x2 = glyph.position.0;
                             g(x1, x2, y_top, h, effect_cur, aux);
@@ -419,7 +421,7 @@ impl TextDisplay {
                         }
                     }
                     if strikethrough.is_some() != fmt.flags.contains(EffectFlags::STRIKETHROUGH) {
-                        let sf = fonts.get(run.font_id).scale_by_dpu(run.dpu);
+                        let sf = fonts.get_face(run.face_id).scale_by_dpu(run.dpu);
                         if let Some((x1, y_top, h, aux)) = strikethrough {
                             let x2 = glyph.position.0;
                             g(x1, x2, y_top, h, effect_cur, aux);
@@ -433,7 +435,7 @@ impl TextDisplay {
                     }
                 }
 
-                f(font_id, dpu, height, glyph, effect_cur, fmt.aux);
+                f(face_id, dpu, height, glyph, effect_cur, fmt.aux);
             }
 
             // In case of RTL, we need to correct the value for the next run
@@ -586,6 +588,8 @@ impl TextDisplay {
         run_range: std::ops::Range<usize>,
         rects: &mut Vec<(Vec2, Vec2)>,
     ) {
+        let fonts = fonts();
+
         let mut push_rect = |mut a: Vec2, mut b: Vec2, sf: ScaledFaceRef| {
             a.1 -= sf.ascent();
             b.1 -= sf.descent();
@@ -605,7 +609,9 @@ impl TextDisplay {
             }
 
             let glyph_run = &self.runs[to_usize(run_part.glyph_run)];
-            let sf = fonts().get(glyph_run.font_id).scale_by_dpu(glyph_run.dpu);
+            let sf = fonts
+                .get_face(glyph_run.face_id)
+                .scale_by_dpu(glyph_run.dpu);
 
             // else: range.start < to_usize(run_part.text_end)
             if glyph_run.level.is_ltr() {
@@ -634,7 +640,9 @@ impl TextDisplay {
             let run_part = &self.wrapped_runs[i];
             let offset = run_part.offset;
             let glyph_run = &self.runs[to_usize(run_part.glyph_run)];
-            let sf = fonts().get(glyph_run.font_id).scale_by_dpu(glyph_run.dpu);
+            let sf = fonts
+                .get_face(glyph_run.face_id)
+                .scale_by_dpu(glyph_run.dpu);
 
             if !first {
                 a = if glyph_run.level.is_ltr() {

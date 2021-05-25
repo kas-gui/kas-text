@@ -19,7 +19,7 @@
 
 use crate::conv::{to_u32, to_usize, DPU};
 use crate::display::RunSpecial;
-use crate::fonts::{fonts, FontId};
+use crate::fonts::{fonts, FaceId};
 use crate::{Range, Vec2};
 use smallvec::SmallVec;
 use unicode_bidi::Level;
@@ -79,8 +79,8 @@ pub(crate) struct GlyphRun {
     pub range: Range,
     /// Font size (pixels/em)
     pub dpem: f32,
-    /// Font identifier
-    pub font_id: FontId,
+    /// Font face identifier
+    pub face_id: FaceId,
     /// Tab or no-break property
     pub special: RunSpecial,
     /// BIDI level
@@ -220,7 +220,7 @@ pub(crate) fn shape(
     text: &str,   // contiguous text
     range: Range, // range in text
     dpem: f32,
-    font_id: FontId,
+    face_id: FaceId,
     // All soft-break locations within this run, excluding the end
     mut breaks: SmallVec<[GlyphBreak; 5]>,
     special: RunSpecial,
@@ -244,13 +244,13 @@ pub(crate) fn shape(
     let mut no_space_end = 0.0;
     let mut caret = 0.0;
 
-    let face = fonts().get(font_id);
+    let face = fonts().get_face(face_id);
     let dpu = face.dpu(dpem);
     let sf = face.scale_by_dpu(dpu);
 
     if dpem >= 0.0 {
         #[cfg(feature = "harfbuzz_rs")]
-        let r = shape_harfbuzz(text, range, dpem, font_id, level, &mut breaks);
+        let r = shape_harfbuzz(text, range, dpem, face_id, level, &mut breaks);
 
         #[cfg(not(feature = "harfbuzz_rs"))]
         let r = shape_simple(sf, text, range, level, &mut breaks);
@@ -289,7 +289,7 @@ pub(crate) fn shape(
     GlyphRun {
         range,
         dpem,
-        font_id,
+        face_id,
         special,
         level,
 
@@ -308,12 +308,12 @@ fn shape_harfbuzz(
     text: &str,
     range: Range,
     dpem: f32,
-    font_id: FontId,
+    face_id: FaceId,
     level: Level,
     breaks: &mut [GlyphBreak],
 ) -> (Vec<Glyph>, f32, f32) {
     let dpem = dpem;
-    let mut font = fonts().get_harfbuzz(font_id);
+    let mut font = fonts().get_harfbuzz(face_id);
 
     // ppem affects hinting but does not scale layout, so this has little effect:
     font.set_ppem(dpem as u32, dpem as u32);
