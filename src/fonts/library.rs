@@ -208,7 +208,7 @@ impl FontLibrary {
         &self,
         selector: &FontSelector,
     ) -> Result<FontId, Box<dyn std::error::Error>> {
-        let sel_hash = selector.hash();
+        let sel_hash = calculate_hash(&selector);
         let fonts = self.fonts.read().unwrap();
         for (h, id) in &fonts.sel_hash {
             if *h == sel_hash {
@@ -400,4 +400,13 @@ lazy_static::lazy_static! {
 /// Access the [`FontLibrary`] singleton
 pub fn fonts() -> &'static FontLibrary {
     &*LIBRARY
+}
+
+fn calculate_hash<T: std::hash::Hash>(t: &T) -> u64 {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::Hasher;
+
+    let mut s = DefaultHasher::new();
+    t.hash(&mut s);
+    s.finish()
 }

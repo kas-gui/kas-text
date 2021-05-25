@@ -15,35 +15,12 @@ pub use fontdb::{Family, Stretch, Style, Weight};
 ///
 /// This tool selects a font according to the given criteria from available
 /// system fonts. Selection criteria are based on CSS.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Hash)]
 pub struct FontSelector<'a> {
     names: Vec<Family<'a>>,
     weight: Weight,
     stretch: Stretch,
     style: Style,
-}
-
-impl<'a> PartialEq for FontSelector<'a> {
-    fn eq(&self, other: &Self) -> bool {
-        // This really should be derived...
-        fn family_eq((a, b): (&Family, &Family)) -> bool {
-            match (a, b) {
-                (Family::Name(a), Family::Name(b)) => a == b,
-                (Family::Serif, Family::Serif) => true,
-                (Family::SansSerif, Family::SansSerif) => true,
-                (Family::Cursive, Family::Cursive) => true,
-                (Family::Fantasy, Family::Fantasy) => true,
-                (Family::Monospace, Family::Monospace) => true,
-                _ => false,
-            }
-        }
-
-        self.names.len() == other.names.len()
-            && self.names.iter().zip(other.names.iter()).all(family_eq)
-            && self.weight == other.weight
-            && self.stretch == other.stretch
-            && self.style == other.style
-    }
 }
 
 impl<'a> FontSelector<'a> {
@@ -96,36 +73,6 @@ impl<'a> FontSelector<'a> {
     #[inline]
     pub fn set_stretch(&mut self, stretch: Stretch) {
         self.stretch = stretch;
-    }
-
-    /// Hash self
-    ///
-    /// This struct does not implement `Hash` since it doesn't precisely match
-    /// the expected semantics: values may compare equal despite having
-    /// different hashes. For our purposes this is acceptable.
-    pub fn hash(&self) -> u64 {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
-
-        let mut hasher = DefaultHasher::new();
-        self.names.len().hash(&mut hasher);
-        for name in &self.names {
-            match name {
-                Family::Name(name) => {
-                    0u16.hash(&mut hasher);
-                    name.hash(&mut hasher);
-                }
-                Family::Serif => 1u16.hash(&mut hasher),
-                Family::SansSerif => 2u16.hash(&mut hasher),
-                Family::Cursive => 3u16.hash(&mut hasher),
-                Family::Fantasy => 4u16.hash(&mut hasher),
-                Family::Monospace => 5u16.hash(&mut hasher),
-            }
-        }
-        self.weight.0.hash(&mut hasher);
-        self.stretch.to_number().hash(&mut hasher);
-        (self.style as u16).hash(&mut hasher);
-        hasher.finish()
     }
 
     /// Resolve font faces for each matching font
