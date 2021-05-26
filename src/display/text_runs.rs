@@ -171,7 +171,7 @@ impl TextDisplay {
                 .map(|fmt| to_usize(fmt.start) == pos)
                 .unwrap_or(false);
 
-            let face_id = fonts.face_for_char_or_first(font_id, c);
+            let mut face_id = fonts.face_for_char_or_first(font_id, c);
             let font_break = pos > 0 && face_id != last_face_id;
 
             if hard_break || control_break || bidi_break || fmt_break || font_break {
@@ -197,6 +197,7 @@ impl TextDisplay {
                         dpem = fmt.dpem;
                         next_fmt = font_tokens.next();
                     }
+                    face_id = fonts.face_for_char_or_first(font_id, c);
                 }
 
                 if hard_break {
