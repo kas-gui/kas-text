@@ -10,13 +10,13 @@
 //!
 //! ### FontId and the default font
 //!
-//! The [`FontId`] type is a numeric identifier for loaded fonts. It may be
+//! The [`FontId`] type is a numeric identifier for a selected font. It may be
 //! default-constructed to access the *default* font, with number 0.
 //!
 //! To make this work, the user of this library *must* load the default font
 //! before all other fonts and before any operation requiring font metrics:
 //! ```
-//! if let Err(e) = kas_text::fonts::fonts().load_default() {
+//! if let Err(e) = kas_text::fonts::fonts().select_default() {
 //!     panic!("Error loading font: {}", e);
 //! }
 //! // from now on, kas_text::fonts::FontId::default() identifies the default font
@@ -27,6 +27,13 @@
 //! If doing this, `load_default` must not be called at all.
 //! It is harmless to attempt to load any font multiple times, whether with
 //! `load_default` or another method.)
+//!
+//! ### FaceId vs FontId
+//!
+//! Why do both [`FaceId`] and [`FontId`] exist? Font fallbacks. A [`FontId`]
+//! identifies a list of font faces; when selecting glyphs the first face which
+//! includes that glyph is selected. Thus, when iterating over glyphs for
+//! rendering purposes, each has an associated [`FaceId`].
 //!
 //! ### Font sizes
 //!
@@ -71,7 +78,7 @@ mod selector;
 
 pub use face::FaceRef;
 pub(crate) use face::ScaledFaceRef;
-pub use library::{fonts, FontData, FontId, FontLibrary};
+pub use library::{fonts, FaceData, FaceId, FontId, FontLibrary};
 pub use selector::*;
 
 impl From<GlyphId> for ttf_parser::GlyphId {

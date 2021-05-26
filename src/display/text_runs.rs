@@ -7,7 +7,7 @@
 
 use super::TextDisplay;
 use crate::conv::{to_u32, to_usize};
-use crate::fonts::FontId;
+use crate::fonts::{fonts, FontId};
 use crate::format::FormattableText;
 use crate::{shaper, Action, Direction, Range};
 use unicode_bidi::{BidiInfo, Level, LTR_LEVEL, RTL_LEVEL};
@@ -72,7 +72,7 @@ impl TextDisplay {
                 text.as_str(),
                 run.range,
                 dpem,
-                run.font_id,
+                run.face_id,
                 breaks,
                 run.special,
                 run.level,
@@ -118,6 +118,9 @@ impl TextDisplay {
                 next_fmt = font_tokens.next();
             }
         }
+
+        let fonts = fonts();
+        let mut last_face_id = fonts.first_face_for(font_id);
 
         let bidi = bidi;
         let default_para_level = match dir {
@@ -168,7 +171,10 @@ impl TextDisplay {
                 .map(|fmt| to_usize(fmt.start) == pos)
                 .unwrap_or(false);
 
-            if hard_break || control_break || bidi_break || fmt_break {
+            let face_id = fonts.face_for_char_or_first(font_id, c);
+            let font_break = pos > 0 && face_id != last_face_id;
+
+            if hard_break || control_break || bidi_break || fmt_break || font_break {
                 let range = (start..non_control_end).into();
                 let special = match (last_is_htab, last_is_control || is_break) {
                     (true, _) => RunSpecial::HTab,
@@ -179,7 +185,7 @@ impl TextDisplay {
                     text.as_str(),
                     range,
                     dpem,
-                    font_id,
+                    last_face_id,
                     breaks,
                     special,
                     level,
@@ -220,6 +226,7 @@ impl TextDisplay {
 
             last_is_control = is_control;
             last_is_htab = is_htab;
+            last_face_id = face_id;
         }
 
         // Conclude: add last run. This may be empty, but we want it anyway.
@@ -235,7 +242,7 @@ impl TextDisplay {
             text.as_str(),
             range,
             dpem,
-            font_id,
+            last_face_id,
             breaks,
             special,
             level,
@@ -260,7 +267,7 @@ impl TextDisplay {
                 text.as_str(),
                 range,
                 dpem,
-                font_id,
+                last_face_id,
                 breaks,
                 RunSpecial::None,
                 level,

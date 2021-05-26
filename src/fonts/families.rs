@@ -22,7 +22,7 @@
 //!
 //! Font family ordering indicates usage preference.
 
-const DEFAULT_SERIF: [&'static str; 12] = [
+pub const DEFAULT_SERIF: [&'static str; 12] = [
     "serif",
     "Palatino Linotype",
     "Palatino",
@@ -37,7 +37,7 @@ const DEFAULT_SERIF: [&'static str; 12] = [
     "Liberation Serif",
 ];
 
-const DEFAULT_SANS_SERIF: [&'static str; 16] = [
+pub const DEFAULT_SANS_SERIF: [&'static str; 16] = [
     "sans-serif",
     "Tahoma",
     "Noto Sans",
@@ -56,7 +56,7 @@ const DEFAULT_SANS_SERIF: [&'static str; 16] = [
     "Lucida Sans Unicode",
 ];
 
-const DEFAULT_MONOSPACE: [&'static str; 18] = [
+pub const DEFAULT_MONOSPACE: [&'static str; 18] = [
     "monospace",
     "Consolas",
     "Droid Sans Mono",
@@ -77,7 +77,7 @@ const DEFAULT_MONOSPACE: [&'static str; 18] = [
     "Courier",
 ];
 
-const DEFAULT_CURSIVE: [&'static str; 5] = [
+pub const DEFAULT_CURSIVE: [&'static str; 5] = [
     "cursive",
     "Gabriola",
     "Segoe Script",
@@ -85,32 +85,10 @@ const DEFAULT_CURSIVE: [&'static str; 5] = [
     "Comic Sans MS",
 ];
 
-const DEFAULT_FANTASY: [&'static str; 5] = [
+pub const DEFAULT_FANTASY: [&'static str; 5] = [
     "fantasy",
     "Segoe Print",
     "Impact",
     "Apple Chancery",
     "Papyrus",
 ];
-
-/// Use this to set default font families after loading fonts
-pub fn set_defaults(db: &mut fontdb::Database) {
-    // fontdb does not set a default font for each category, so we should do that now.
-    macro_rules! set_family {
-        ($lt:tt, $FAMILY:ident, $set_fn:ident) => {
-            $lt: for name in $FAMILY.iter().cloned() {
-                for face in db.faces() {
-                    if name == face.family {
-                        db.$set_fn(name);
-                        break $lt;
-                    }
-                }
-            }
-        }
-    }
-    set_family!('a, DEFAULT_SERIF, set_serif_family);
-    set_family!('b, DEFAULT_SANS_SERIF, set_sans_serif_family);
-    set_family!('c, DEFAULT_MONOSPACE, set_monospace_family);
-    set_family!('d, DEFAULT_CURSIVE, set_cursive_family);
-    set_family!('e, DEFAULT_FANTASY, set_fantasy_family);
-}

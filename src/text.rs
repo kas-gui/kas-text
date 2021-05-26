@@ -8,7 +8,7 @@
 use std::convert::{AsMut, AsRef};
 
 use crate::display::{Effect, MarkerPosIter, TextDisplay};
-use crate::fonts::FontId;
+use crate::fonts::FaceId;
 use crate::format::{EditableText, FormattableText};
 use crate::{Action, Glyph, Vec2};
 use crate::{EnvFlags, Environment, UpdateEnv};
@@ -342,7 +342,7 @@ pub trait TextApiExt: TextApi {
     /// Yield a sequence of positioned glyphs
     ///
     /// Wraps [`TextDisplay::glyphs`].
-    fn glyphs<F: FnMut(FontId, f32, f32, Glyph)>(&self, f: F) {
+    fn glyphs<F: FnMut(FaceId, f32, f32, Glyph)>(&self, f: F) {
         self.display().glyphs(f)
     }
 
@@ -352,7 +352,7 @@ pub trait TextApiExt: TextApi {
     fn glyphs_with_effects<X, F, G>(&self, effects: &[Effect<X>], default_aux: X, f: F, g: G)
     where
         X: Copy,
-        F: FnMut(FontId, f32, f32, Glyph, usize, X),
+        F: FnMut(FaceId, f32, f32, Glyph, usize, X),
         G: FnMut(f32, f32, f32, f32, usize, X),
     {
         self.display()

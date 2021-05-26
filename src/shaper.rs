@@ -19,7 +19,7 @@
 
 use crate::conv::{to_u32, to_usize, DPU};
 use crate::display::RunSpecial;
-use crate::fonts::{fonts, FontId};
+use crate::fonts::{fonts, FaceId};
 use crate::{Range, Vec2};
 use smallvec::SmallVec;
 use unicode_bidi::Level;
@@ -79,8 +79,8 @@ pub(crate) struct GlyphRun {
     pub range: Range,
     /// Font size (pixels/em)
     pub dpem: f32,
-    /// Font identifier
-    pub font_id: FontId,
+    /// Font face identifier
+    pub face_id: FaceId,
     /// Tab or no-break property
     pub special: RunSpecial,
     /// BIDI level
@@ -220,7 +220,7 @@ pub(crate) fn shape(
     text: &str,   // contiguous text
     range: Range, // range in text
     dpem: f32,
-    font_id: FontId,
+    face_id: FaceId,
     // All soft-break locations within this run, excluding the end
     mut breaks: SmallVec<[GlyphBreak; 5]>,
     special: RunSpecial,
@@ -244,15 +244,18 @@ pub(crate) fn shape(
     let mut no_space_end = 0.0;
     let mut caret = 0.0;
 
-    let face = fonts().get(font_id);
+    let face = fonts().get_face(face_id);
     let dpu = face.dpu(dpem);
     let sf = face.scale_by_dpu(dpu);
 
     if dpem >= 0.0 {
         #[cfg(feature = "harfbuzz_rs")]
-        let r = shape_harfbuzz(text, range, dpem, font_id, level, &mut breaks);
+        let r = shape_harfbuzz(text, range, dpem, face_id, level, &mut breaks);
 
-        #[cfg(not(feature = "harfbuzz_rs"))]
+        #[cfg(all(not(feature = "harfbuzz_rs"), feature = "rustybuzz"))]
+        let r = shape_rustybuzz(text, range, dpem, face_id, level, &mut breaks);
+
+        #[cfg(all(not(feature = "harfbuzz_rs"), not(feature = "rustybuzz")))]
         let r = shape_simple(sf, text, range, level, &mut breaks);
 
         glyphs = r.0;
@@ -289,7 +292,7 @@ pub(crate) fn shape(
     GlyphRun {
         range,
         dpem,
-        font_id,
+        face_id,
         special,
         level,
 
@@ -308,12 +311,12 @@ fn shape_harfbuzz(
     text: &str,
     range: Range,
     dpem: f32,
-    font_id: FontId,
+    face_id: FaceId,
     level: Level,
     breaks: &mut [GlyphBreak],
 ) -> (Vec<Glyph>, f32, f32) {
     let dpem = dpem;
-    let mut font = fonts().get_harfbuzz(font_id);
+    let mut font = fonts().get_harfbuzz(face_id);
 
     // ppem affects hinting but does not scale layout, so this has little effect:
     font.set_ppem(dpem as u32, dpem as u32);
@@ -390,8 +393,93 @@ fn shape_harfbuzz(
     (glyphs, no_space_end, caret)
 }
 
+// Use Rustybuzz lib
+#[cfg(all(not(feature = "harfbuzz_rs"), feature = "rustybuzz"))]
+fn shape_rustybuzz(
+    text: &str,
+    range: Range,
+    dpem: f32,
+    face_id: FaceId,
+    level: Level,
+    breaks: &mut [GlyphBreak],
+) -> (Vec<Glyph>, f32, f32) {
+    let dpem = dpem;
+    let fonts = fonts();
+    let dpu = fonts.get_face(face_id).dpu(dpem);
+    let face = fonts.get_rustybuzz(face_id);
+
+    // ppem affects hinting but does not scale layout, so this has little effect:
+    // face.set_pixels_per_em(Some((dpem as u16, dpem as u16)));
+
+    let slice = &text[range];
+    let idx_offset = range.start;
+    let rtl = level.is_rtl();
+
+    // TODO: cache the buffer for reuse later?
+    let mut buffer = rustybuzz::UnicodeBuffer::new();
+    buffer.set_direction(match rtl {
+        false => rustybuzz::Direction::LeftToRight,
+        true => rustybuzz::Direction::RightToLeft,
+    });
+    buffer.push_str(slice);
+    let features = [];
+
+    let output = rustybuzz::shape(&face, &features, buffer);
+
+    let mut caret = 0.0;
+    let mut no_space_end = caret;
+    let mut break_i = 0;
+
+    let mut glyphs = Vec::with_capacity(output.len());
+
+    for (info, pos) in output
+        .glyph_infos()
+        .iter()
+        .zip(output.glyph_positions().iter())
+    {
+        let index = idx_offset + info.cluster;
+        assert!(info.codepoint <= u16::MAX as u32, "failed to map glyph id");
+        let id = GlyphId(info.codepoint as u16);
+
+        if breaks
+            .get(break_i)
+            .map(|b| b.index == index)
+            .unwrap_or(false)
+        {
+            breaks[break_i].pos = to_u32(glyphs.len());
+            breaks[break_i].no_space_end = no_space_end;
+            break_i += 1;
+        }
+
+        let position = Vec2(
+            caret + dpu.i32_to_px(pos.x_offset),
+            dpu.i32_to_px(pos.y_offset),
+        );
+        glyphs.push(Glyph {
+            index,
+            id,
+            position,
+        });
+
+        // IIRC this is only applicable to vertical text, which we don't
+        // currently support:
+        debug_assert_eq!(pos.y_advance, 0);
+        caret += dpu.i32_to_px(pos.x_advance);
+        if text[to_usize(index)..]
+            .chars()
+            .next()
+            .map(|c| !c.is_whitespace())
+            .unwrap()
+        {
+            no_space_end = caret;
+        }
+    }
+
+    (glyphs, no_space_end, caret)
+}
+
 // Simple implementation (kerning but no shaping)
-#[cfg(not(feature = "harfbuzz_rs"))]
+#[cfg(all(not(feature = "harfbuzz_rs"), not(feature = "rustybuzz")))]
 fn shape_simple(
     sf: crate::fonts::ScaledFaceRef,
     text: &str,
