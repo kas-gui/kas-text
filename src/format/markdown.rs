@@ -39,9 +39,6 @@ impl Markdown {
 pub struct FontTokenIter<'a> {
     index: usize,
     fmt: &'a [Fmt],
-    fonts: &'a fonts::FontLibrary,
-    font_id: FontId,
-    font_sel: FontSelector<'static>,
     base_dpem: f32,
 }
 
@@ -50,9 +47,6 @@ impl<'a> FontTokenIter<'a> {
         FontTokenIter {
             index: 0,
             fmt,
-            fonts: fonts::fonts(),
-            font_id: FontId::default(),
-            font_sel: FontSelector::default(),
             base_dpem,
         }
     }
@@ -64,14 +58,10 @@ impl<'a> Iterator for FontTokenIter<'a> {
     fn next(&mut self) -> Option<FontToken> {
         if self.index < self.fmt.len() {
             let fmt = &self.fmt[self.index];
-            if self.font_sel != fmt.sel {
-                self.font_id = self.fonts.select_font(&fmt.sel).unwrap();
-                self.font_sel.assign(&fmt.sel);
-            }
             self.index += 1;
             Some(FontToken {
                 start: fmt.start,
-                font_id: self.font_id,
+                font_id: fmt.font_id,
                 dpem: self.base_dpem * fmt.rel_size,
             })
         } else {
@@ -168,14 +158,16 @@ impl EditableText for Markdown {
 fn parse(input: &str) -> Result<Markdown, Error> {
     let mut text = String::with_capacity(input.len());
     let mut fmt: Vec<Fmt> = Vec::new();
-    let mut set_last = |item: &Fmt| {
+    let fonts = fonts::fonts();
+    let mut set_last = |item: &StackItem| {
+        let f = Fmt::new(&fonts, item);
         if let Some(last) = fmt.last_mut() {
             if last.start >= item.start {
-                *last = item.clone();
+                *last = f;
                 return;
             }
         }
-        fmt.push(item.clone());
+        fmt.push(f);
     };
 
     let mut state = State::None;
@@ -187,18 +179,18 @@ fn parse(input: &str) -> Result<Markdown, Error> {
     while let Some(ev) = parser.next() {
         match ev {
             Event::Start(tag) => {
-                item.fmt.start = to_u32(text.len());
+                item.start = to_u32(text.len());
                 if let Some(clone) = item.start_tag(&mut text, &mut state, tag)? {
                     stack.push(item);
                     item = clone;
-                    set_last(&item.fmt);
+                    set_last(&item);
                 }
             }
             Event::End(tag) => {
                 if item.end_tag(&mut state, tag) {
                     item = stack.pop().unwrap();
-                    item.fmt.start = to_u32(text.len());
-                    set_last(&item.fmt);
+                    item.start = to_u32(text.len());
+                    set_last(&item);
                 }
             }
             Event::Text(part) => {
@@ -207,16 +199,16 @@ fn parse(input: &str) -> Result<Markdown, Error> {
             }
             Event::Code(part) => {
                 state.part(&mut text);
-                item.fmt.start = to_u32(text.len());
+                item.start = to_u32(text.len());
 
                 let mut item2 = item.clone();
-                item2.fmt.sel.set_families(vec![Family::Monospace]);
-                set_last(&item2.fmt);
+                item2.sel.set_families(vec![Family::Monospace]);
+                set_last(&item2);
 
                 text.push_str(&part);
 
-                item.fmt.start = to_u32(text.len());
-                set_last(&item.fmt);
+                item.start = to_u32(text.len());
+                set_last(&item);
             }
             Event::Html(_) => return Err(Error::NotSupported("embedded HTML")),
             Event::FootnoteReference(_) => return Err(Error::NotSupported("footnote")),
@@ -291,26 +283,41 @@ impl State {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Fmt {
     start: u32,
+    font_id: FontId,
+    rel_size: f32,
+    flags: EffectFlags,
+}
+
+impl Fmt {
+    fn new(fonts: &fonts::FontLibrary, item: &StackItem) -> Self {
+        Fmt {
+            start: item.start,
+            font_id: fonts.select_font(&item.sel).unwrap(),
+            rel_size: item.rel_size,
+            flags: item.flags,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+struct StackItem {
+    list: Option<u64>,
+    start: u32,
     sel: FontSelector<'static>,
     rel_size: f32,
     flags: EffectFlags,
 }
 
-impl Default for Fmt {
+impl Default for StackItem {
     fn default() -> Self {
-        Fmt {
+        StackItem {
+            list: None,
             start: 0,
-            sel: FontSelector::default(),
+            sel: Default::default(),
             rel_size: 1.0,
             flags: EffectFlags::empty(),
         }
     }
-}
-
-#[derive(Clone, Debug, Default)]
-struct StackItem {
-    list: Option<u64>,
-    fmt: Fmt,
 }
 
 impl StackItem {
@@ -334,9 +341,9 @@ impl StackItem {
             }
             Tag::Heading(level) => {
                 state.start_block(text);
-                self.fmt.start = to_u32(text.len());
+                self.start = to_u32(text.len());
                 with_clone(self, |item| {
-                    item.fmt.rel_size = match level {
+                    item.rel_size = match level {
                         1 => 2.0,
                         2 => 1.75,
                         3 => 1.5,
@@ -349,10 +356,8 @@ impl StackItem {
             }
             Tag::CodeBlock(_) => {
                 state.start_block(text);
-                self.fmt.start = to_u32(text.len());
-                with_clone(self, |item| {
-                    item.fmt.sel.set_families(vec![Family::Monospace])
-                })
+                self.start = to_u32(text.len());
+                with_clone(self, |item| item.sel.set_families(vec![Family::Monospace]))
                 // TODO: within a code block, the last \n should be suppressed?
             }
             Tag::List(start) => {
@@ -373,10 +378,10 @@ impl StackItem {
                 }
                 None
             }
-            Tag::Emphasis => with_clone(self, |item| item.fmt.sel.set_style(Style::Italic)),
-            Tag::Strong => with_clone(self, |item| item.fmt.sel.set_weight(Weight::BOLD)),
+            Tag::Emphasis => with_clone(self, |item| item.sel.set_style(Style::Italic)),
+            Tag::Strong => with_clone(self, |item| item.sel.set_weight(Weight::BOLD)),
             Tag::Strikethrough => with_clone(self, |item| {
-                item.fmt.flags.set(EffectFlags::STRIKETHROUGH, true)
+                item.flags.set(EffectFlags::STRIKETHROUGH, true)
             }),
             Tag::BlockQuote => return Err(Error::NotSupported("block quote")),
             Tag::FootnoteDefinition(_) => return Err(Error::NotSupported("footnote")),
