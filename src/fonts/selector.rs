@@ -120,12 +120,9 @@ impl<'a> FontSelector<'a> {
                 Family::Monospace => &families::DEFAULT_MONOSPACE,
             };
 
-            // Step 3: find any matching font faces, case-insensitively, including localised
-            // variants (starts_with may be overly permissive here).
+            // Step 3: find any matching font faces, case-insensitively
             for name in names.iter() {
                 for (upper_name, face) in faces.iter() {
-                    // TODO: exact match only or starting-with?
-                    // if upper_name.starts_with(&name.to_uppercase()) {
                     if *upper_name == name.to_uppercase() {
                         candidates.push(*face);
                     }
