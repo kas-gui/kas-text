@@ -8,8 +8,28 @@
 //! Many items are copied from font-kit to avoid any public dependency.
 
 use super::families;
-use fontdb::{Database, FaceInfo, Source};
+use fontdb::{FaceInfo, Source};
 pub use fontdb::{Family, Stretch, Style, Weight};
+
+pub(crate) struct Database {
+    db: fontdb::Database,
+    family_upper: Vec<String>,
+}
+
+impl Database {
+    pub(crate) fn new() -> Self {
+        let mut db = fontdb::Database::new();
+        db.load_system_fonts();
+
+        let family_upper = db
+            .faces()
+            .iter()
+            .map(|face| face.family.to_uppercase())
+            .collect();
+
+        Database { db, family_upper }
+    }
+}
 
 /// A font face selection tool
 ///
@@ -91,12 +111,6 @@ impl<'a> FontSelector<'a> {
     where
         F: FnMut(&'b Source, u32) -> Result<(), Box<dyn std::error::Error>>,
     {
-        let faces: Vec<(String, &FaceInfo)> = db
-            .faces()
-            .iter()
-            .map(|face| (face.family.to_uppercase(), face))
-            .collect();
-
         // We allow an empty family list to resolve to SansSerif.
         let mut families = &[Family::SansSerif][..];
         if self.names.len() > 0 {
@@ -122,9 +136,9 @@ impl<'a> FontSelector<'a> {
 
             // Step 3: find any matching font faces, case-insensitively
             for name in names.iter() {
-                for (upper_name, face) in faces.iter() {
+                for (i, upper_name) in db.family_upper.iter().enumerate() {
                     if *upper_name == name.to_uppercase() {
-                        candidates.push(*face);
+                        candidates.push(&db.db.faces()[i]);
                     }
                 }
 

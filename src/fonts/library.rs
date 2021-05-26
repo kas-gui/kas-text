@@ -5,7 +5,7 @@
 
 //! Font library
 
-use super::{FaceRef, FontSelector};
+use super::{selector, FaceRef, FontSelector};
 use crate::conv::{to_u32, to_usize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -122,7 +122,7 @@ impl FontList {
 /// This is the type of the global singleton accessible via the [`fonts`]
 /// function. Thread-safety is handled via internal locks.
 pub struct FontLibrary {
-    db: fontdb::Database,
+    db: selector::Database,
     // Font files loaded into memory. Safety: we assume that existing entries
     // are never modified or removed (though the Vec is allowed to reallocate).
     // Note: using std::pin::Pin does not help since u8 impls Unpin.
@@ -404,11 +404,8 @@ pub(crate) unsafe fn extend_lifetime<'b, T: ?Sized>(r: &'b T) -> &'static T {
 impl FontLibrary {
     // Private because: safety depends on instance(s) never being destructed.
     fn new() -> Self {
-        let mut db = fontdb::Database::new();
-        db.load_system_fonts();
-
         FontLibrary {
-            db,
+            db: selector::Database::new(),
             data: Default::default(),
             faces: Default::default(),
             fonts: Default::default(),
