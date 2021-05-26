@@ -48,6 +48,10 @@ pub fn to_usize(x: u32) -> usize {
 pub(crate) struct DPU(pub(crate) f32);
 
 impl DPU {
+    #[cfg(feature = "rustybuzz")]
+    pub(crate) fn i32_to_px(self, x: i32) -> f32 {
+        x as f32 * self.0
+    }
     pub(crate) fn i16_to_px(self, x: i16) -> f32 {
         f32::from(x) * self.0
     }
