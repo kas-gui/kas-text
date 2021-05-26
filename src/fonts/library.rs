@@ -23,8 +23,6 @@ enum FontError {
     #[cfg(feature = "rustybuzz")]
     #[error("unknown font read error")]
     UnknownLoadError,
-    #[error("FontLibrary::load_default is not first font load")]
-    NotDefault,
 }
 
 /// Font face identifier
@@ -196,16 +194,19 @@ impl FontLibrary {
 
     /// Select the default font
     ///
+    /// If `FontId(0)` has not been defined yet, this sets the default font,
+    /// otherwise it does nothing.
+    ///
     /// This *must* be called (at least once) before any other font-loading
     /// method, and before querying any font-derived properties (such as text
     /// dimensions).
     #[inline]
-    pub fn select_default(&self) -> Result<FontId, Box<dyn std::error::Error>> {
-        let id = self.select_font(&FontSelector::default())?;
-        if id != FontId::default() {
-            return Err(Box::new(FontError::NotDefault));
+    pub fn select_default(&self) -> Result<(), Box<dyn std::error::Error>> {
+        if self.fonts.read().unwrap().fonts.is_empty() {
+            let id = self.select_font(&FontSelector::default())?;
+            debug_assert!(id == FontId::default());
         }
-        Ok(id)
+        Ok(())
     }
 
     /// Select a font
