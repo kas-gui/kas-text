@@ -221,6 +221,7 @@ impl<T: FormattableText> TextApi for Text<T> {
             &self.text,
             self.env.flags.contains(EnvFlags::BIDI),
             self.env.dir,
+            self.env.font_id,
             self.env.dpp,
             self.env.pt_size,
         );

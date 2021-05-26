@@ -93,6 +93,7 @@ impl TextDisplay {
         text: &F,
         bidi: bool,
         dir: Direction,
+        mut font_id: FontId,
         dpp: f32,
         pt_size: f32,
     ) {
@@ -106,7 +107,6 @@ impl TextDisplay {
         self.line_runs.clear();
         self.action = Action::Wrap;
 
-        let mut font_id = FontId::default();
         let mut dpem = dpp * pt_size;
 
         let mut font_tokens = text.font_tokens(dpp, pt_size);

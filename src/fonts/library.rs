@@ -32,7 +32,7 @@ enum FontError {
 /// Internally this uses a numeric identifier, which is always less than
 /// [`FontLibrary::num_faces`], assuming that at least one font has been loaded.
 /// [`FontLibrary::face_data`] may be used to retrieve the matching font.
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct FaceId(pub u32);
 impl FaceId {
     /// Get as `usize`

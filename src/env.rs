@@ -42,6 +42,11 @@ pub struct Environment {
     /// If `bidi == false` this directly sets the line direction, unless
     /// `dir == Auto`, in which case direction is auto-detected.
     pub dir: Direction,
+    /// Default font
+    ///
+    /// This font is used unless a formatting token (see [`crate::format`])
+    /// is used.
+    pub font_id: FontId,
     /// Pixels-per-point
     ///
     /// This is a scaling factor used to convert font sizes (in points) to a
@@ -77,6 +82,7 @@ impl Default for Environment {
         Environment {
             flags: Default::default(),
             dir: Direction::default(),
+            font_id: Default::default(),
             dpp: 96.0 / 72.0,
             pt_size: 11.0,
             bounds: Vec2::INFINITY,
@@ -256,5 +262,5 @@ impl Default for Direction {
 
 #[test]
 fn size() {
-    assert_eq!(std::mem::size_of::<Environment>(), 20);
+    assert_eq!(std::mem::size_of::<Environment>(), 24);
 }

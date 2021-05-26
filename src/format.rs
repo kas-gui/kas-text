@@ -204,7 +204,7 @@ impl Clone for Box<dyn FormattableTextDyn> {
 }
 
 /// Font formatting token
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct FontToken {
     /// Index in text at which formatting becomes active
     ///
