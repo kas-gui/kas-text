@@ -20,7 +20,7 @@ enum FontError {
     NotFound,
     #[error("font load error")]
     TtfParser(#[from] ttf_parser::FaceParsingError),
-    #[cfg(feature = "rustybuzz")]
+    #[cfg(all(not(feature = "harfbuzz_rs"), feature = "rustybuzz"))]
     #[error("unknown font read error")]
     UnknownLoadError,
 }
