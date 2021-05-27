@@ -11,9 +11,17 @@ use super::families;
 use fontdb::{FaceInfo, Source};
 pub use fontdb::{Family, Stretch, Style, Weight};
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::hash_map::{Entry, HashMap};
 
-pub(crate) struct Database {
+/// How to add new aliases when others exist
+pub enum AddMode {
+    Prepend,
+    Append,
+    Replace,
+}
+
+/// Manages the list of available fonts and font selection
+pub struct Database {
     db: fontdb::Database,
     family_upper: Vec<String>,
     aliases: HashMap<Cow<'static, str>, Vec<Cow<'static, str>>>,
@@ -71,6 +79,37 @@ impl Database {
             db,
             family_upper,
             aliases,
+        }
+    }
+
+    /// Add font aliases for family
+    ///
+    /// When searching for `family`, all `aliases` will be searched too.
+    pub fn add_aliases(
+        &mut self,
+        family: Cow<'static, str>,
+        mut aliases: Vec<Cow<'static, str>>,
+        mode: AddMode,
+    ) {
+        match self.aliases.entry(family) {
+            Entry::Occupied(mut entry) => {
+                let existing = entry.get_mut();
+                match mode {
+                    AddMode::Prepend => {
+                        aliases.extend(existing.drain(..));
+                        *existing = aliases;
+                    }
+                    AddMode::Append => {
+                        existing.extend(aliases.drain(..));
+                    }
+                    AddMode::Replace => {
+                        *existing = aliases;
+                    }
+                }
+            }
+            Entry::Vacant(entry) => {
+                entry.insert(aliases);
+            }
         }
     }
 }
