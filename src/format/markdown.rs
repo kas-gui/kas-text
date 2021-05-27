@@ -7,7 +7,7 @@
 
 use super::{EditableText, FontToken, FormattableText};
 use crate::conv::to_u32;
-use crate::fonts::{self, Family, FontId, FontSelector, Style, Weight};
+use crate::fonts::{self, FontId, FontSelector, Style, Weight};
 #[cfg(not(feature = "gat"))]
 use crate::OwningVecIter;
 use crate::{Effect, EffectFlags};
@@ -202,7 +202,7 @@ fn parse(input: &str) -> Result<Markdown, Error> {
                 item.start = to_u32(text.len());
 
                 let mut item2 = item.clone();
-                item2.sel.set_families(vec![Family::Monospace]);
+                item2.sel.set_families(vec!["monospace".into()]);
                 set_last(&item2);
 
                 text.push_str(&part);
@@ -357,7 +357,7 @@ impl StackItem {
             Tag::CodeBlock(_) => {
                 state.start_block(text);
                 self.start = to_u32(text.len());
-                with_clone(self, |item| item.sel.set_families(vec![Family::Monospace]))
+                with_clone(self, |item| item.sel.set_families(vec!["monospace".into()]))
                 // TODO: within a code block, the last \n should be suppressed?
             }
             Tag::List(start) => {
