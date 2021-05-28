@@ -87,30 +87,28 @@ impl Database {
     /// Add font aliases for family
     ///
     /// When searching for `family`, all `aliases` will be searched too.
-    pub fn add_aliases(
-        &mut self,
-        family: Cow<'static, str>,
-        mut aliases: Vec<Cow<'static, str>>,
-        mode: AddMode,
-    ) {
+    pub fn add_aliases<I>(&mut self, family: Cow<'static, str>, aliases: I, mode: AddMode)
+    where
+        I: Iterator<Item = Cow<'static, str>>,
+    {
         match self.aliases.entry(family) {
             Entry::Occupied(mut entry) => {
                 let existing = entry.get_mut();
                 match mode {
                     AddMode::Prepend => {
-                        aliases.extend(existing.drain(..));
-                        *existing = aliases;
+                        existing.splice(0..0, aliases);
                     }
                     AddMode::Append => {
-                        existing.extend(aliases.drain(..));
+                        existing.extend(aliases);
                     }
                     AddMode::Replace => {
-                        *existing = aliases;
+                        existing.clear();
+                        existing.extend(aliases);
                     }
                 }
             }
             Entry::Vacant(entry) => {
-                entry.insert(aliases);
+                entry.insert(aliases.collect());
             }
         }
     }
