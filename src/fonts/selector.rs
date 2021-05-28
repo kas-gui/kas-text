@@ -213,9 +213,11 @@ impl<'a> FontSelector<'a> {
         let mut i = 0;
         while i < families.len() {
             if let Some(aliases) = db.aliases.get(&families[i]) {
+                let mut j = i + 1;
                 for alias in aliases {
                     if !families.contains(alias) {
-                        families.push(alias.clone());
+                        families.insert(j, alias.clone());
+                        j += 1;
                     }
                 }
             }
