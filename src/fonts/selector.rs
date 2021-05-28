@@ -9,11 +9,12 @@
 
 use super::families;
 use fontdb::{FaceInfo, Source};
-pub use fontdb::{Family, Stretch, Style, Weight};
+pub use fontdb::{Stretch, Style, Weight};
 use std::borrow::Cow;
 use std::collections::hash_map::{Entry, HashMap};
 
 /// How to add new aliases when others exist
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum AddMode {
     Prepend,
     Append,
