@@ -199,6 +199,7 @@ bitflags::bitflags! {
     /// Environment flags
     ///
     /// By default, all flags are enabled
+    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
     pub struct EnvFlags: u8 {
         /// Enable bidirectional text support
         const BIDI = 1 << 0;
@@ -217,6 +218,7 @@ impl Default for EnvFlags {
 ///
 /// Note that alignment information is often passed as a `(horiz, vert)` pair.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Ord, PartialOrd, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Align {
     /// Default alignment
     ///
@@ -245,6 +247,7 @@ impl Default for Align {
 ///
 /// This can be used to force the text direction.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Ord, PartialOrd, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Direction {
     /// Auto-detect (default)
     Auto,

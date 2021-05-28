@@ -12,6 +12,7 @@ use crate::{Glyph, Vec2};
 
 /// Effect formatting marker
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Effect<X> {
     /// Index in text at which formatting becomes active
     ///
@@ -38,6 +39,7 @@ impl<X> Effect<X> {
 bitflags::bitflags! {
     /// Text effects
     #[derive(Default)]
+    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
     pub struct EffectFlags: u32 {
         /// Glyph is underlined
         const UNDERLINE = 1 << 0;
