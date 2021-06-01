@@ -93,6 +93,7 @@ impl TextDisplay {
         text: &F,
         bidi: bool,
         dir: Direction,
+        mut font_id: FontId,
         dpp: f32,
         pt_size: f32,
     ) {
@@ -106,7 +107,6 @@ impl TextDisplay {
         self.line_runs.clear();
         self.action = Action::Wrap;
 
-        let mut font_id = FontId::default();
         let mut dpem = dpp * pt_size;
 
         let mut font_tokens = text.font_tokens(dpp, pt_size);
@@ -171,7 +171,7 @@ impl TextDisplay {
                 .map(|fmt| to_usize(fmt.start) == pos)
                 .unwrap_or(false);
 
-            let face_id = fonts.face_for_char_or_first(font_id, c);
+            let mut face_id = fonts.face_for_char_or_first(font_id, c);
             let font_break = pos > 0 && face_id != last_face_id;
 
             if hard_break || control_break || bidi_break || fmt_break || font_break {
@@ -197,6 +197,7 @@ impl TextDisplay {
                         dpem = fmt.dpem;
                         next_fmt = font_tokens.next();
                     }
+                    face_id = fonts.face_for_char_or_first(font_id, c);
                 }
 
                 if hard_break {

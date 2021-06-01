@@ -5,7 +5,7 @@
 
 //! Font library
 
-use super::{FaceRef, FontSelector};
+use super::{selector::Database, FaceRef, FontSelector};
 use crate::conv::{to_u32, to_usize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -20,11 +20,9 @@ enum FontError {
     NotFound,
     #[error("font load error")]
     TtfParser(#[from] ttf_parser::FaceParsingError),
-    #[cfg(feature = "rustybuzz")]
+    #[cfg(all(not(feature = "harfbuzz_rs"), feature = "rustybuzz"))]
     #[error("unknown font read error")]
     UnknownLoadError,
-    #[error("FontLibrary::load_default is not first font load")]
-    NotDefault,
 }
 
 /// Font face identifier
@@ -34,7 +32,7 @@ enum FontError {
 /// Internally this uses a numeric identifier, which is always less than
 /// [`FontLibrary::num_faces`], assuming that at least one font has been loaded.
 /// [`FontLibrary::face_data`] may be used to retrieve the matching font.
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct FaceId(pub u32);
 impl FaceId {
     /// Get as `usize`
@@ -124,7 +122,7 @@ impl FontList {
 /// This is the type of the global singleton accessible via the [`fonts`]
 /// function. Thread-safety is handled via internal locks.
 pub struct FontLibrary {
-    db: fontdb::Database,
+    db: RwLock<Database>,
     // Font files loaded into memory. Safety: we assume that existing entries
     // are never modified or removed (though the Vec is allowed to reallocate).
     // Note: using std::pin::Pin does not help since u8 impls Unpin.
@@ -137,6 +135,18 @@ pub struct FontLibrary {
 
 /// Font management
 impl FontLibrary {
+    /// Get mutable access to the font database
+    ///
+    /// This can be used to adjust font selection. Note that any changes only
+    /// affect *new* font selections, thus it is recommended only to adjust the
+    /// database before *any* fonts have been selected. No existing [`FaceId`]
+    /// or [`FontId`] will be affected by this; additionally any
+    /// [`FontSelector`] which has already been selected will continue to
+    /// resolve the existing [`FontId`] via the cache.
+    pub fn update_db<F: FnOnce(&mut Database) -> T, T>(&self, f: F) -> T {
+        f(&mut self.db.write().unwrap())
+    }
+
     /// Get the first face for a font
     ///
     /// Assumes that `font_id` is valid; if not the method will panic.
@@ -196,16 +206,19 @@ impl FontLibrary {
 
     /// Select the default font
     ///
+    /// If `FontId(0)` has not been defined yet, this sets the default font,
+    /// otherwise it does nothing.
+    ///
     /// This *must* be called (at least once) before any other font-loading
     /// method, and before querying any font-derived properties (such as text
     /// dimensions).
     #[inline]
-    pub fn select_default(&self) -> Result<FontId, Box<dyn std::error::Error>> {
-        let id = self.select_font(&FontSelector::default())?;
-        if id != FontId::default() {
-            return Err(Box::new(FontError::NotDefault));
+    pub fn select_default(&self) -> Result<(), Box<dyn std::error::Error>> {
+        if self.fonts.read().unwrap().fonts.is_empty() {
+            let id = self.select_font(&FontSelector::default())?;
+            debug_assert!(id == FontId::default());
         }
-        Ok(id)
+        Ok(())
     }
 
     /// Select a font
@@ -226,7 +239,7 @@ impl FontLibrary {
         drop(fonts);
 
         let mut faces = Vec::new();
-        selector.select(&self.db, |source, index| {
+        selector.select(&self.db.read().unwrap(), |source, index| {
             Ok(faces.push(match source {
                 fontdb::Source::Binary(_) => unimplemented!(),
                 fontdb::Source::File(path) => self.load_path(path, index),
@@ -403,11 +416,8 @@ pub(crate) unsafe fn extend_lifetime<'b, T: ?Sized>(r: &'b T) -> &'static T {
 impl FontLibrary {
     // Private because: safety depends on instance(s) never being destructed.
     fn new() -> Self {
-        let mut db = fontdb::Database::new();
-        db.load_system_fonts();
-
         FontLibrary {
-            db,
+            db: RwLock::new(Database::new()),
             data: Default::default(),
             faces: Default::default(),
             fonts: Default::default(),

@@ -9,6 +9,7 @@ use crate::conv::{to_u32, to_usize};
 
 /// 2D vector (position/size/offset) over `f32`
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Vec2(pub f32, pub f32);
 
 impl Vec2 {
@@ -84,6 +85,7 @@ impl From<Vec2> for (f32, f32) {
 /// and the library is too complex to be useful on 16-bit CPUs, so using `u32`
 /// makes more sense than `usize`.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Range {
     pub start: u32,
     pub end: u32,

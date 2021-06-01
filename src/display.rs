@@ -133,7 +133,7 @@ impl TextDisplay {
 
         if action >= Action::All {
             let bidi = env.flags.contains(EnvFlags::BIDI);
-            self.prepare_runs(text, bidi, env.dir, env.dpp, env.pt_size);
+            self.prepare_runs(text, bidi, env.dir, env.font_id, env.dpp, env.pt_size);
         } else if action == Action::Resize {
             // Note: this is only needed if we didn't just call prepare_runs()
             self.resize_runs(text, env.dpp, env.pt_size);

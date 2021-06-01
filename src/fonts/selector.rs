@@ -8,8 +8,111 @@
 //! Many items are copied from font-kit to avoid any public dependency.
 
 use super::families;
-use fontdb::{Database, FaceInfo, Source};
-pub use fontdb::{Family, Stretch, Style, Weight};
+use fontdb::{FaceInfo, Source};
+pub use fontdb::{Stretch, Style, Weight};
+use std::borrow::Cow;
+use std::collections::hash_map::{Entry, HashMap};
+
+/// How to add new aliases when others exist
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum AddMode {
+    Prepend,
+    Append,
+    Replace,
+}
+
+/// Manages the list of available fonts and font selection
+pub struct Database {
+    db: fontdb::Database,
+    family_upper: Vec<String>,
+    aliases: HashMap<Cow<'static, str>, Vec<Cow<'static, str>>>,
+}
+
+impl Database {
+    pub(crate) fn new() -> Self {
+        let mut db = fontdb::Database::new();
+        db.load_system_fonts();
+
+        let family_upper = db
+            .faces()
+            .iter()
+            .map(|face| face.family.to_uppercase())
+            .collect();
+
+        let mut aliases = HashMap::new();
+        aliases.insert(
+            "serif".into(),
+            families::DEFAULT_SERIF
+                .iter()
+                .map(|s| (*s).into())
+                .collect(),
+        );
+        aliases.insert(
+            "sans-serif".into(),
+            families::DEFAULT_SANS_SERIF
+                .iter()
+                .map(|s| (*s).into())
+                .collect(),
+        );
+        aliases.insert(
+            "monospace".into(),
+            families::DEFAULT_MONOSPACE
+                .iter()
+                .map(|s| (*s).into())
+                .collect(),
+        );
+        aliases.insert(
+            "cursive".into(),
+            families::DEFAULT_CURSIVE
+                .iter()
+                .map(|s| (*s).into())
+                .collect(),
+        );
+        aliases.insert(
+            "fantasy".into(),
+            families::DEFAULT_FANTASY
+                .iter()
+                .map(|s| (*s).into())
+                .collect(),
+        );
+
+        Database {
+            db,
+            family_upper,
+            aliases,
+        }
+    }
+
+    /// Add font aliases for family
+    ///
+    /// When searching for `family`, all `aliases` will be searched too.
+    pub fn add_aliases<I>(&mut self, family: Cow<'static, str>, aliases: I, mode: AddMode)
+    where
+        I: Iterator<Item = Cow<'static, str>>,
+    {
+        match self.aliases.entry(family) {
+            Entry::Occupied(mut entry) => {
+                let existing = entry.get_mut();
+                match mode {
+                    AddMode::Prepend => {
+                        existing.splice(0..0, aliases);
+                    }
+                    AddMode::Append => {
+                        existing.extend(aliases);
+                    }
+                    AddMode::Replace => {
+                        existing.clear();
+                        existing.extend(aliases);
+                    }
+                }
+            }
+            Entry::Vacant(entry) => {
+                entry.insert(aliases.collect());
+            }
+        }
+    }
+}
 
 /// A font face selection tool
 ///
@@ -17,7 +120,7 @@ pub use fontdb::{Family, Stretch, Style, Weight};
 /// system fonts. Selection criteria are based on CSS.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Hash)]
 pub struct FontSelector<'a> {
-    names: Vec<Family<'a>>,
+    families: Vec<Cow<'a, str>>,
     weight: Weight,
     stretch: Stretch,
     style: Style,
@@ -38,8 +141,8 @@ impl<'a> FontSelector<'a> {
     /// This may save a reallocation over direct assignment.
     #[inline]
     pub fn assign(&mut self, rhs: &Self) {
-        self.names.clear();
-        self.names.extend_from_slice(&rhs.names);
+        self.families.clear();
+        self.families.extend_from_slice(&rhs.families);
         self.weight = rhs.weight;
         self.stretch = rhs.stretch;
         self.style = rhs.style;
@@ -47,14 +150,20 @@ impl<'a> FontSelector<'a> {
 
     /// Set family name(s)
     ///
+    /// This supports generic names `serif`, `sans-serif`, `monospace`,
+    /// `cursive` and `fantasy`. It also allows specific family names, though
+    /// does not currently define compatibility aliases for these (e.g. `arial`
+    /// will match the Arial font if found, but should not currently be expected
+    /// to resolve other, compatible, fonts).
+    ///
     /// If multiple names are passed, the first to successfully resolve a font
     /// is used. Glyph-level fallback (missing glyph substitution) is not
     /// currently supported.
     ///
-    /// If an empty vec is passed, the default sans-serif font is used.
+    /// If an empty vec is passed, the default "sans-serif" font is used.
     #[inline]
-    pub fn set_families(&mut self, names: Vec<Family<'a>>) {
-        self.names = names;
+    pub fn set_families(&mut self, names: Vec<Cow<'a, str>>) {
+        self.families = names;
     }
 
     /// Set style
@@ -91,51 +200,46 @@ impl<'a> FontSelector<'a> {
     where
         F: FnMut(&'b Source, u32) -> Result<(), Box<dyn std::error::Error>>,
     {
-        let faces: Vec<(String, &FaceInfo)> = db
-            .faces()
-            .iter()
-            .map(|face| (face.family.to_uppercase(), face))
-            .collect();
+        // TODO(opt): improve, perhaps moving some computation earlier (e.g.
+        // culling aliases which do not resolve fonts), and use faster alias expansion.
+        let mut families: Vec<Cow<'b, str>> = self.families.clone();
+        if families.is_empty() {
+            // We allow an empty family list to resolve to SansSerif.
+            families.push("sans-serif".into());
+        }
 
-        // We allow an empty family list to resolve to SansSerif.
-        let mut families = &[Family::SansSerif][..];
-        if self.names.len() > 0 {
-            families = &self.names[..];
+        // Append aliases
+        // This is vaguely step 2, but allows generic names to resolve to multiple targets.
+        let mut i = 0;
+        while i < families.len() {
+            if let Some(aliases) = db.aliases.get(&families[i]) {
+                let mut j = i + 1;
+                for alias in aliases {
+                    if !families.contains(alias) {
+                        families.insert(j, alias.clone());
+                        j += 1;
+                    }
+                }
+            }
+            i += 1;
         }
 
         let mut candidates = Vec::new();
+        // Step 3: find any matching font faces, case-insensitively
         for family in families {
-            // Resolve implied family name(s).
-            // This is vaguely step 2, but allows generic names to resolve to multiple targets.
-            let mut name_arr = [""];
-            let names: &[&str] = match family {
-                Family::Name(name) => {
-                    name_arr[0] = name;
-                    &name_arr
+            for (i, upper_name) in db.family_upper.iter().enumerate() {
+                if *upper_name == family.to_uppercase() {
+                    candidates.push(&db.db.faces()[i]);
                 }
-                Family::Serif => &families::DEFAULT_SERIF,
-                Family::SansSerif => &families::DEFAULT_SANS_SERIF,
-                Family::Cursive => &families::DEFAULT_CURSIVE,
-                Family::Fantasy => &families::DEFAULT_FANTASY,
-                Family::Monospace => &families::DEFAULT_MONOSPACE,
-            };
+            }
 
-            // Step 3: find any matching font faces, case-insensitively
-            for name in names.iter() {
-                for (upper_name, face) in faces.iter() {
-                    if *upper_name == name.to_uppercase() {
-                        candidates.push(*face);
-                    }
+            // Step 4: if any match from a family, narrow to a single face.
+            if !candidates.is_empty() {
+                if let Some(index) = self.find_best_match(&candidates) {
+                    let candidate = candidates[index];
+                    add_face(&candidate.source, candidate.index)?;
                 }
-
-                // Step 4: if any match from a family, narrow to a single face.
-                if !candidates.is_empty() {
-                    if let Some(index) = self.find_best_match(&candidates) {
-                        let candidate = candidates[index];
-                        add_face(&candidate.source, candidate.index)?;
-                    }
-                    candidates.clear();
-                }
+                candidates.clear();
             }
         }
 
