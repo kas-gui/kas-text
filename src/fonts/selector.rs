@@ -10,12 +10,14 @@
 use super::families;
 use fontdb::{FaceInfo, Source};
 pub use fontdb::{Stretch, Style, Weight};
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::collections::hash_map::{Entry, HashMap};
 
 /// How to add new aliases when others exist
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum AddMode {
     Prepend,
     Append,
@@ -119,10 +121,14 @@ impl Database {
 /// This tool selects a font according to the given criteria from available
 /// system fonts. Selection criteria are based on CSS.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct FontSelector<'a> {
     families: Vec<Cow<'a, str>>,
+    #[cfg_attr(feature = "serde", serde(default, with = "remote::Weight"))]
     weight: Weight,
+    #[cfg_attr(feature = "serde", serde(default, with = "remote::Stretch"))]
     stretch: Stretch,
+    #[cfg_attr(feature = "serde", serde(default, with = "remote::Style"))]
     style: Style,
 }
 
@@ -381,5 +387,40 @@ impl<'a> FontSelector<'a> {
 
         // Return the result.
         matching_set.into_iter().next()
+    }
+}
+
+// See: https://serde.rs/remote-derive.html
+#[cfg(feature = "serde")]
+mod remote {
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Debug, Hash, Serialize, Deserialize)]
+    #[serde(remote = "fontdb::Weight")]
+    pub struct Weight(pub u16);
+
+    #[derive(Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Debug, Hash, Serialize, Deserialize)]
+    #[serde(remote = "fontdb::Stretch")]
+    pub enum Stretch {
+        UltraCondensed,
+        ExtraCondensed,
+        Condensed,
+        SemiCondensed,
+        Normal,
+        SemiExpanded,
+        Expanded,
+        ExtraExpanded,
+        UltraExpanded,
+    }
+
+    #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, Serialize, Deserialize)]
+    #[serde(remote = "fontdb::Style")]
+    pub enum Style {
+        /// A face that is neither italic not obliqued.
+        Normal,
+        /// A form that is generally cursive in nature.
+        Italic,
+        /// A typically-sloped version of the regular face.
+        Oblique,
     }
 }
