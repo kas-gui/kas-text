@@ -125,6 +125,14 @@ impl<'a> UpdateEnv<'a> {
         self.env
     }
 
+    /// Set font
+    pub fn set_font_id(&mut self, font_id: FontId) {
+        if font_id != self.env.font_id {
+            self.env.font_id = font_id;
+            self.action = Action::All;
+        }
+    }
+
     /// Set DPP
     ///
     /// Units are pixels/point (see [`Environment::dpp`]).
