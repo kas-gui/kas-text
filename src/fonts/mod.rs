@@ -66,8 +66,9 @@
 //! measurements.
 //!
 //! Finally, note that digital font files have an internally defined unit
-//! known as the *font unit*. This is not normally used directly but is used
-//! internally (including by the `DPU` type).
+//! known as the *font unit*. We introduce one final unit:
+//!
+//! -   [`crate::conv::DPU`]: pixels per font unit
 
 use crate::GlyphId;
 
@@ -76,8 +77,7 @@ mod families;
 mod library;
 mod selector;
 
-pub use face::FaceRef;
-pub(crate) use face::ScaledFaceRef;
+pub use face::{FaceRef, ScaledFaceRef};
 pub use library::{fonts, FaceData, FaceId, FontId, FontLibrary};
 pub use selector::*;
 

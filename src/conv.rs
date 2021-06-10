@@ -45,7 +45,7 @@ pub fn to_usize(x: u32) -> usize {
 
 /// Scale factor: pixels per font unit
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub(crate) struct DPU(pub(crate) f32);
+pub struct DPU(pub f32);
 
 impl DPU {
     #[cfg(all(not(feature = "harfbuzz_rs"), feature = "rustybuzz"))]
@@ -66,8 +66,9 @@ impl DPU {
     }
 }
 
+/// Metrics for line marks
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub(crate) struct LineMetrics {
+pub struct LineMetrics {
     pub position: f32,
     pub thickness: f32,
 }
