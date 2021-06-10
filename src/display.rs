@@ -139,8 +139,7 @@ impl TextDisplay {
             self.resize_runs(text, env.dpp, env.pt_size);
         }
 
-        let wrap = env.flags.contains(EnvFlags::WRAP);
-        Some(self.prepare_lines(env.bounds, wrap, env.align))
+        Some(self.prepare_lines(env.bounds, env.flags, env.align))
     }
 
     /// Get the number of lines

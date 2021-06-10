@@ -213,6 +213,11 @@ bitflags::bitflags! {
         const BIDI = 1 << 0;
         /// Enable line wrapping
         const WRAP = 1 << 1;
+        /// Vertically align to the nearest pixel
+        ///
+        /// This is highly recommended to avoid rendering artifacts at small
+        /// pixel sizes. Affect on layout is negligable.
+        const PX_VALIGN = 1 << 2;
     }
 }
 

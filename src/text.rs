@@ -236,9 +236,8 @@ impl<T: FormattableText> TextApi for Text<T> {
 
     #[inline]
     fn prepare_lines(&mut self) -> Vec2 {
-        let wrap = self.env.flags.contains(EnvFlags::WRAP);
         self.display
-            .prepare_lines(self.env.bounds, wrap, self.env.align)
+            .prepare_lines(self.env.bounds, self.env.flags, self.env.align)
     }
 
     #[inline]
