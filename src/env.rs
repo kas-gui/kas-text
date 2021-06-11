@@ -125,6 +125,14 @@ impl<'a> UpdateEnv<'a> {
         self.env
     }
 
+    /// Set font
+    pub fn set_font_id(&mut self, font_id: FontId) {
+        if font_id != self.env.font_id {
+            self.env.font_id = font_id;
+            self.action = Action::All;
+        }
+    }
+
     /// Set DPP
     ///
     /// Units are pixels/point (see [`Environment::dpp`]).
@@ -205,6 +213,11 @@ bitflags::bitflags! {
         const BIDI = 1 << 0;
         /// Enable line wrapping
         const WRAP = 1 << 1;
+        /// Vertically align to the nearest pixel
+        ///
+        /// This is highly recommended to avoid rendering artifacts at small
+        /// pixel sizes. Affect on layout is negligable.
+        const PX_VALIGN = 1 << 2;
     }
 }
 

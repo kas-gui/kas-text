@@ -7,6 +7,7 @@
 
 use std::convert::{AsMut, AsRef};
 
+use crate::conv::DPU;
 use crate::display::{Effect, MarkerPosIter, TextDisplay};
 use crate::fonts::FaceId;
 use crate::format::{EditableText, FormattableText};
@@ -235,9 +236,8 @@ impl<T: FormattableText> TextApi for Text<T> {
 
     #[inline]
     fn prepare_lines(&mut self) -> Vec2 {
-        let wrap = self.env.flags.contains(EnvFlags::WRAP);
         self.display
-            .prepare_lines(self.env.bounds, wrap, self.env.align)
+            .prepare_lines(self.env.bounds, self.env.flags, self.env.align)
     }
 
     #[inline]
@@ -343,7 +343,7 @@ pub trait TextApiExt: TextApi {
     /// Yield a sequence of positioned glyphs
     ///
     /// Wraps [`TextDisplay::glyphs`].
-    fn glyphs<F: FnMut(FaceId, f32, f32, Glyph)>(&self, f: F) {
+    fn glyphs<F: FnMut(FaceId, DPU, f32, Glyph)>(&self, f: F) {
         self.display().glyphs(f)
     }
 
@@ -353,7 +353,7 @@ pub trait TextApiExt: TextApi {
     fn glyphs_with_effects<X, F, G>(&self, effects: &[Effect<X>], default_aux: X, f: F, g: G)
     where
         X: Copy,
-        F: FnMut(FaceId, f32, f32, Glyph, usize, X),
+        F: FnMut(FaceId, DPU, f32, Glyph, usize, X),
         G: FnMut(f32, f32, f32, f32, usize, X),
     {
         self.display()

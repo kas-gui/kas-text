@@ -6,7 +6,7 @@
 //! Methods using positioned glyphs
 
 use super::TextDisplay;
-use crate::conv::to_usize;
+use crate::conv::{to_usize, DPU};
 use crate::fonts::{fonts, FaceId, ScaledFaceRef};
 use crate::{Glyph, Vec2};
 
@@ -257,14 +257,14 @@ impl TextDisplay {
     /// low overhead.
     ///
     /// One must call [`TextDisplay::prepare`] before this method.
-    pub fn glyphs<F: FnMut(FaceId, f32, f32, Glyph)>(&self, mut f: F) {
+    pub fn glyphs<F: FnMut(FaceId, DPU, f32, Glyph)>(&self, mut f: F) {
         assert!(self.action.is_ready(), "kas-text::TextDisplay: not ready");
 
         // self.wrapped_runs is in logical order
         for run_part in self.wrapped_runs.iter().cloned() {
             let run = &self.runs[to_usize(run_part.glyph_run)];
             let face_id = run.face_id;
-            let dpu = run.dpu.0;
+            let dpu = run.dpu;
             let height = run.height;
 
             for mut glyph in run.glyphs[run_part.glyph_range.to_std()].iter().cloned() {
@@ -304,7 +304,7 @@ impl TextDisplay {
         mut g: G,
     ) where
         X: Copy,
-        F: FnMut(FaceId, f32, f32, Glyph, usize, X),
+        F: FnMut(FaceId, DPU, f32, Glyph, usize, X),
         G: FnMut(f32, f32, f32, f32, usize, X),
     {
         assert!(self.action.is_ready(), "kas-text::TextDisplay: not ready");
@@ -325,7 +325,7 @@ impl TextDisplay {
 
             let run = &self.runs[to_usize(run_part.glyph_run)];
             let face_id = run.face_id;
-            let dpu = run.dpu.0;
+            let dpu = run.dpu;
             let height = run.height;
 
             let mut underline = None;

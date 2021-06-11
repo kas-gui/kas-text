@@ -9,7 +9,7 @@ use super::{RunSpecial, TextDisplay};
 use crate::conv::{to_u32, to_usize};
 use crate::fonts::{fonts, FontLibrary};
 use crate::shaper::GlyphRun;
-use crate::{Action, Align, Range, Vec2};
+use crate::{Action, Align, EnvFlags, Range, Vec2};
 use smallvec::SmallVec;
 use unicode_bidi::Level;
 
@@ -48,12 +48,15 @@ impl TextDisplay {
     /// Post-requirements: none (`Action::None`).  
     /// Parameters: see [`crate::Environment`] documentation.  
     /// Returns: required size, in pixels.
-    pub fn prepare_lines(&mut self, bounds: Vec2, wrap: bool, align: (Align, Align)) -> Vec2 {
+    pub fn prepare_lines(&mut self, bounds: Vec2, flags: EnvFlags, align: (Align, Align)) -> Vec2 {
         assert!(
             self.action <= Action::Wrap,
             "kas-text::TextDisplay: runs not prepared"
         );
         self.action = Action::None;
+
+        let wrap = flags.contains(EnvFlags::WRAP);
+        let px_valign = flags.contains(EnvFlags::PX_VALIGN);
 
         let fonts = fonts();
         let capacity = 0; // TODO(opt): estimate like self.text_len() / 16 ?
@@ -105,7 +108,7 @@ impl TextDisplay {
 
                         let sf = fonts.get_face(run.face_id).scale_by_dpu(run.dpu);
                         // TODO: custom tab sizes?
-                        let tab_size = sf.h_advance(sf.glyph_id(' ')) * 8.0;
+                        let tab_size = sf.h_advance(sf.face().glyph_index(' ')) * 8.0;
                         let stops = (caret / tab_size).floor() + 1.0;
                         part_len = tab_size * stops - caret;
                     }
@@ -114,7 +117,7 @@ impl TextDisplay {
                     if wrap && line_len > width_bound && end.2 > 0 {
                         // Add up to last valid break point then wrap and reset
                         let slice = &mut parts[0..end.2];
-                        adder.add_line(fonts, level, &self.runs, slice, true);
+                        adder.add_line(fonts, level, &self.runs, slice, true, px_valign);
 
                         end.2 = 0;
                         start = end;
@@ -171,7 +174,7 @@ impl TextDisplay {
             if parts.len() > 0 {
                 // It should not be possible for a line to end with a no-break, so:
                 debug_assert_eq!(parts.len(), end.2);
-                adder.add_line(fonts, level, &self.runs, &mut parts, false);
+                adder.add_line(fonts, level, &self.runs, &mut parts, false, px_valign);
             }
         }
 
@@ -213,6 +216,7 @@ impl LineAdder {
         runs: &[GlyphRun],
         parts: &mut [PartInfo],
         is_wrap: bool,
+        px_valign: bool,
     ) {
         assert!(parts.len() > 0);
         let line_start = self.runs.len();
@@ -456,6 +460,9 @@ impl LineAdder {
 
         let top = self.vcaret - ascent;
         self.vcaret -= descent;
+        if px_valign {
+            self.vcaret = self.vcaret.round();
+        }
         self.longest = self.longest.max(line_len);
         self.lines.push(Line {
             text_range: Range::from(line_text_start..line_text_end),

@@ -512,7 +512,7 @@ fn shape_simple(
                 c = m;
             }
         }
-        let id = sf.glyph_id(c);
+        let id = sf.face().glyph_index(c);
 
         if breaks
             .get(break_i)
@@ -526,8 +526,7 @@ fn shape_simple(
         }
 
         if let Some(prev) = prev_glyph_id {
-            if let Some(adv) = sf
-                .face()
+            if let Some(adv) = (sf.face().0)
                 .kerning_subtables()
                 .filter(|st| st.is_horizontal() && !st.is_variable())
                 .find_map(|st| st.glyphs_kerning(prev.into(), id.into()))
