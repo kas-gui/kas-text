@@ -19,7 +19,7 @@
 mod env;
 pub use env::*;
 
-pub mod conv;
+mod conv;
 
 mod data;
 pub use data::{Range, Vec2};
