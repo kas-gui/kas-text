@@ -10,7 +10,7 @@
 //! and our text representations are not intended to scale anywhere close to
 //! `u32::MAX` bytes of text, so `u32` is always an appropriate index type).
 
-use std::mem::size_of;
+use easy_cast::Cast;
 
 /// Convert `usize` → `u32`
 ///
@@ -18,19 +18,7 @@ use std::mem::size_of;
 /// input value may be represented correctly by `u32`.
 #[inline]
 pub fn to_u32(x: usize) -> u32 {
-    debug_assert!(x <= to_usize(u32::MAX));
-    x as u32
-}
-
-// Borrowed from static_assertions:
-macro_rules! const_assert {
-    ($x:expr $(,)?) => {
-        #[allow(unknown_lints, eq_op)]
-        const _: [(); 0 - !{
-            const ASSERT: bool = $x;
-            ASSERT
-        } as usize] = [];
-    };
+    x.cast()
 }
 
 /// Convert `u32` → `usize`
@@ -39,8 +27,7 @@ macro_rules! const_assert {
 /// zero-extension.
 #[inline]
 pub fn to_usize(x: u32) -> usize {
-    const_assert!(size_of::<usize>() >= size_of::<u32>());
-    x as usize
+    x.cast()
 }
 
 /// Scale factor: pixels per font unit

@@ -28,6 +28,7 @@ gat = []
 # serde: enable (de)serialization for a few types
 
 [dependencies]
+easy-cast = "0.4.2"
 bitflags = "1.2.1"
 fontdb = "0.5.4"
 ttf-parser = "0.12.0"
