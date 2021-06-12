@@ -6,7 +6,7 @@
 //! Methods using positioned glyphs
 
 use super::TextDisplay;
-use crate::conv::{to_usize, DPU};
+use crate::conv::to_usize;
 use crate::fonts::{fonts, FaceId, ScaledFaceRef};
 use crate::{Glyph, Vec2};
 
@@ -239,7 +239,7 @@ impl TextDisplay {
     ///
     /// Glyphs are yielded in undefined order by a call to `f`. The number of
     /// glyphs yielded will equal [`TextDisplay::num_glyphs`]. The closure `f`
-    /// receives parameters `face_id, dpu, height, glyph`.
+    /// receives parameters `face_id, dpem, glyph`.
     ///
     /// This may be used as follows:
     /// ```no_run
@@ -249,7 +249,7 @@ impl TextDisplay {
     /// text.prepare();
     ///
     /// let mut glyphs = Vec::with_capacity(text.num_glyphs());
-    /// text.glyphs(|_, _, height, glyph| glyphs.push((height, glyph)));
+    /// text.glyphs(|_, dpem, glyph| glyphs.push((dpem, glyph)));
     /// draw(glyphs);
     /// ```
     ///
@@ -257,19 +257,18 @@ impl TextDisplay {
     /// low overhead.
     ///
     /// One must call [`TextDisplay::prepare`] before this method.
-    pub fn glyphs<F: FnMut(FaceId, DPU, f32, Glyph)>(&self, mut f: F) {
+    pub fn glyphs<F: FnMut(FaceId, f32, Glyph)>(&self, mut f: F) {
         assert!(self.action.is_ready(), "kas-text::TextDisplay: not ready");
 
         // self.wrapped_runs is in logical order
         for run_part in self.wrapped_runs.iter().cloned() {
             let run = &self.runs[to_usize(run_part.glyph_run)];
             let face_id = run.face_id;
-            let dpu = run.dpu;
-            let height = run.height;
+            let dpem = run.dpem;
 
             for mut glyph in run.glyphs[run_part.glyph_range.to_std()].iter().cloned() {
                 glyph.position += run_part.offset;
-                f(face_id, dpu, height, glyph);
+                f(face_id, dpem, glyph);
             }
         }
     }
@@ -281,7 +280,7 @@ impl TextDisplay {
     /// type `X` is simply passed through to `f` and `g` calls and may be useful
     /// for colour information.
     ///
-    /// The callback `f` receives `face_id, dpu, height, glyph, i, aux` where
+    /// The callback `f` receives `face_id, dpem, glyph, i, aux` where
     /// `dpu` and `height` are both measures of the font size (pixels per font
     /// unit and pixels per height, respectively), and `i` is the index within
     /// `effects` (or `usize::MAX` when a default-constructed effect token is
@@ -304,7 +303,7 @@ impl TextDisplay {
         mut g: G,
     ) where
         X: Copy,
-        F: FnMut(FaceId, DPU, f32, Glyph, usize, X),
+        F: FnMut(FaceId, f32, Glyph, usize, X),
         G: FnMut(f32, f32, f32, f32, usize, X),
     {
         assert!(self.action.is_ready(), "kas-text::TextDisplay: not ready");
@@ -325,8 +324,7 @@ impl TextDisplay {
 
             let run = &self.runs[to_usize(run_part.glyph_run)];
             let face_id = run.face_id;
-            let dpu = run.dpu;
-            let height = run.height;
+            let dpem = run.dpem;
 
             let mut underline = None;
             let mut strikethrough = None;
@@ -437,7 +435,7 @@ impl TextDisplay {
                     }
                 }
 
-                f(face_id, dpu, height, glyph, effect_cur, fmt.aux);
+                f(face_id, dpem, glyph, effect_cur, fmt.aux);
             }
 
             // In case of RTL, we need to correct the value for the next run
