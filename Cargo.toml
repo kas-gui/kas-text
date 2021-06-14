@@ -1,6 +1,6 @@
 [package]
 name = "kas-text"
-version = "0.2.1"
+version = "0.3.0"
 authors = ["Diggory Hardy <git@dhardy.name>"]
 edition = "2018"
 license = "Apache-2.0"
@@ -27,7 +27,9 @@ gat = []
 # Serialization is optionally supported for some types:
 # serde
 
-# Glyph rastering is optionally supported (requires at least one of the following):
+# Glyph rastering is optionally supported; "raster" uses the default backend
+# or a backend may be specified directly:
+raster = ["ab_glyph"]
 # ab_glyph
 # fontdue
 
