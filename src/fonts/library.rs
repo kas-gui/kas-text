@@ -23,6 +23,19 @@ enum FontError {
     #[cfg(all(not(feature = "harfbuzz_rs"), feature = "rustybuzz"))]
     #[error("unknown font read error")]
     UnknownLoadError,
+    #[cfg(feature = "ab_glyph")]
+    #[error("font load error")]
+    AbGlyphFontError(#[from] ab_glyph::InvalidFont),
+    #[cfg(feature = "fontdue")]
+    #[error("font load error")]
+    StrError(&'static str),
+}
+
+#[cfg(feature = "fontdue")]
+impl From<&'static str> for FontError {
+    fn from(msg: &'static str) -> Self {
+        FontError::StrError(msg)
+    }
 }
 
 /// Font face identifier
@@ -58,14 +71,18 @@ impl FontId {
     }
 }
 
-struct FaceStore<'a> {
+pub(crate) struct FaceStore<'a> {
     path: PathBuf,
     index: u32,
-    face: Face<'a>,
+    pub(crate) face: Face<'a>,
     #[cfg(feature = "harfbuzz_rs")]
-    harfbuzz: harfbuzz_rs::Shared<harfbuzz_rs::Face<'a>>,
+    pub(crate) harfbuzz: harfbuzz_rs::Shared<harfbuzz_rs::Face<'a>>,
     #[cfg(all(not(feature = "harfbuzz_rs"), feature = "rustybuzz"))]
-    rustybuzz: rustybuzz::Face<'a>,
+    pub(crate) rustybuzz: rustybuzz::Face<'a>,
+    #[cfg(feature = "ab_glyph")]
+    pub(crate) ab_glyph: ab_glyph::FontRef<'a>,
+    #[cfg(feature = "fontdue")]
+    pub(crate) fontdue: fontdue::Font,
 }
 
 impl<'a> FaceStore<'a> {
@@ -82,6 +99,16 @@ impl<'a> FaceStore<'a> {
             #[cfg(all(not(feature = "harfbuzz_rs"), feature = "rustybuzz"))]
             rustybuzz: rustybuzz::Face::from_slice(data, index)
                 .ok_or(FontError::UnknownLoadError)?,
+            #[cfg(feature = "ab_glyph")]
+            ab_glyph: ab_glyph::FontRef::try_from_slice_and_index(data, index)?,
+            #[cfg(feature = "fontdue")]
+            fontdue: {
+                let settings = fontdue::FontSettings {
+                    collection_index: index,
+                    scale: 40.0, // TODO: max expected font size in dpem
+                };
+                fontdue::Font::from_bytes(data, settings)?
+            },
         })
     }
 }
@@ -270,6 +297,20 @@ impl FontLibrary {
         // Safety: elements of self.faces are never dropped or modified
         let face = unsafe { extend_lifetime(face) };
         FaceRef(face)
+    }
+
+    /// Get access to the [`FaceStore`]
+    #[cfg(any(feature = "ab_glyph", feature = "fontdue"))]
+    pub(crate) fn get_face_store(&self, id: FaceId) -> &'static FaceStore {
+        let faces = self.faces.read().unwrap();
+        assert!(
+            id.get() < faces.faces.len(),
+            "FontLibrary: invalid {:?}!",
+            id
+        );
+        let faces: &FaceStore = &faces.faces[id.get()];
+        // Safety: elements of self.faces are never dropped or modified
+        unsafe { extend_lifetime(faces) }
     }
 
     /// Get a HarfBuzz font face

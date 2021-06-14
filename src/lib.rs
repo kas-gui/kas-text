@@ -6,17 +6,10 @@
 //! KAS-text: text layout library
 //!
 //! KAS-text supports plain text input, custom formatted text objects (see the
-//! [`format`] module) and a subset of Markdown ([`format::Markdown`]).
+//! [`format`] module) and a subset of Markdown ([`format::Markdown`],
+//! feature-gated).
 //!
-//! This library supports the following feature flags:
-//!
-//! -   `shaping`: enable complex text shaping via the Harfbuzz library (this is
-//!     optional since the built-in alternative works sufficiently well for most
-//!     languages)
-//! -   `markdown`: enable Markdown parsing via `pulldown-cmark`
-//! -   `gat`: experimental API improvements using Generic Associated Types;
-//!     since Rust's support for this is incomplete, it should be considered no
-//!     more than an API preview and usage is not recommended in practice
+//! The library also supports glyph rastering (depending on feature flags).
 //!
 //! [`format`]: mod@format
 
@@ -26,7 +19,7 @@
 mod env;
 pub use env::*;
 
-pub mod conv;
+mod conv;
 
 mod data;
 pub use data::{Range, Vec2};
@@ -36,6 +29,9 @@ pub use display::*;
 
 pub mod fonts;
 pub mod format;
+
+#[cfg(any(feature = "ab_glyph", feature = "fontdue"))]
+pub mod raster;
 
 mod text;
 pub use text::*;

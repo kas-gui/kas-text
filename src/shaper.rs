@@ -79,6 +79,7 @@ pub(crate) struct GlyphRun {
     pub range: Range,
     /// Font size (pixels/em)
     pub dpem: f32,
+    pub dpu: DPU,
     /// Font face identifier
     pub face_id: FaceId,
     /// Tab or no-break property
@@ -93,10 +94,6 @@ pub(crate) struct GlyphRun {
     /// Note: it would be equivalent to use a separate `Run` for each sub-range
     /// in the text instead of tracking breaks via this field.
     pub breaks: SmallVec<[GlyphBreak; 5]>,
-
-    pub dpu: DPU,
-    /// Text height in pixels (stored for compat with glyph_brush downstream)
-    pub height: f32,
 
     /// End position, excluding whitespace
     ///
@@ -292,14 +289,13 @@ pub(crate) fn shape(
     GlyphRun {
         range,
         dpem,
+        dpu,
         face_id,
         special,
         level,
 
         glyphs,
         breaks,
-        dpu,
-        height: sf.height(),
         no_space_end,
         caret,
     }
