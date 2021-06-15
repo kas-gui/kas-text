@@ -2,6 +2,23 @@
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] — 2021-06-15
+
+This release replaces all non-Rust dependencies allowing easier build/deployment
+(though HarfBuzz is kept as an optional dependency). There is also direct
+support for glyph rastering and some tweaks to improve raster quality making
+even very small font sizes quite legible.
+
+-   Add `Effect::default` method and `default_aux` param to `glyphs_with_effects` (#45)
+-   Replace `font-kit` dependency with the pure-Rust `fontdb` using custom font-family lists (#46),
+    with support for run-time configuration (#48)
+-   Support font fallbacks (#47)
+-   Support [rustybuzz](https://github.com/RazrFalcon/rustybuzz) for pure-Rust shaping (#47)
+-   Vertical pixel alignment (#49)
+-   Extend public API relating to fonts (#49)
+-   Add (glyph) `raster` module with `Config` struct and `SpriteDescriptor` cache key (#50)
+-   Use pixels-per-Em (dpem) for most glyph sizing, not pixels-per-font-unit (DPU) or height (#50)
+
 ## [0.2.1] — 2021-03-31
 
 -   Add `Option<Vec2>` return value to `TextDisplay::prepare` and `TextApi::prepare` (#41)
