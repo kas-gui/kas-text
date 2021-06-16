@@ -7,7 +7,7 @@
 
 use super::{selector::Database, FaceRef, FontSelector};
 use crate::conv::{to_u32, to_usize};
-use std::collections::HashMap;
+use std::collections::hash_map::{Entry, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::{RwLock, RwLockReadGuard};
 use thiserror::Error;
@@ -131,14 +131,15 @@ impl FaceList {
 
 #[derive(Default)]
 struct FontList {
-    fonts: Vec<(FontId, Vec<FaceId>)>,
+    // A "font" is a list of faces (primary + fallbacks); we cache glyph-lookups per char
+    fonts: Vec<(FontId, Vec<FaceId>, HashMap<char, Option<FaceId>>)>,
     sel_hash: Vec<(u64, FontId)>,
 }
 
 impl FontList {
     fn push(&mut self, list: Vec<FaceId>, sel_hash: u64) -> FontId {
         let id = FontId(to_u32(self.fonts.len()));
-        self.fonts.push((id, list));
+        self.fonts.push((id, list, HashMap::new()));
         self.sel_hash.push((sel_hash, id));
         id
     }
@@ -182,7 +183,7 @@ impl FontLibrary {
     /// (default) one.
     pub fn first_face_for(&self, font_id: FontId) -> FaceId {
         let fonts = self.fonts.read().unwrap();
-        for (id, list) in &fonts.fonts {
+        for (id, list, _) in &fonts.fonts {
             if *id == font_id {
                 return *list.first().unwrap();
             }
@@ -203,22 +204,35 @@ impl FontLibrary {
     ///
     /// This selects the first face containing this glyph from the font list.
     pub fn face_for_char(&self, font_id: FontId, c: char) -> Option<FaceId> {
-        let faces = self.faces.read().unwrap();
-        let fonts = self.fonts.read().unwrap();
-        let list = fonts
+        // TODO: `face.glyph_index` is a bit slow to use like this where several
+        // faces may return no result before we find a match. Caching results
+        // in a HashMap helps. Perhaps better would be to (somehow) determine
+        // the script/language in use and check whether the font face supports
+        // that, perhaps also checking it has shaping support.
+        let mut fonts = self.fonts.write().unwrap();
+        let font = fonts
             .fonts
-            .iter()
+            .iter_mut()
             .find(|item| item.0 == font_id)
-            .map(|item| &item.1)
             .expect("invalid FontId");
-        for face_id in list.iter() {
-            let face = &faces.faces[face_id.get()];
-            // TODO: should we only return faces with shaping data, somehow?
-            if face.face.glyph_index(c).is_some() {
-                return Some(*face_id);
+
+        match font.2.entry(c) {
+            Entry::Occupied(entry) => *entry.get(),
+            Entry::Vacant(entry) => {
+                let faces = self.faces.read().unwrap();
+                let list = &font.1;
+                let mut id: Option<FaceId> = None;
+                for face_id in list.iter() {
+                    let face = &faces.faces[face_id.get()];
+                    if face.face.glyph_index(c).is_some() {
+                        id = Some(*face_id);
+                        break;
+                    }
+                }
+                entry.insert(id);
+                id
             }
         }
-        None
     }
 
     /// Resolve the face for a character
