@@ -2,6 +2,10 @@
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] — unreleased
+
+-   Make all families fall back to "sans-serif" fonts.
+
 ## [0.3.0] — 2021-06-15
 
 This release replaces all non-Rust dependencies allowing easier build/deployment
