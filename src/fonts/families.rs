@@ -22,7 +22,7 @@
 //!
 //! Font family ordering indicates usage preference.
 
-pub const DEFAULT_SERIF: [&'static str; 12] = [
+pub const DEFAULT_SERIF: &[&'static str] = &[
     "serif",
     "Palatino Linotype",
     "Palatino",
@@ -33,11 +33,10 @@ pub const DEFAULT_SERIF: [&'static str; 12] = [
     "Times",
     "Times CY",
     "DejaVu Serif",
-    "Jomolhari",
     "Liberation Serif",
 ];
 
-pub const DEFAULT_SANS_SERIF: [&'static str; 16] = [
+pub const DEFAULT_SANS_SERIF: &[&'static str] = &[
     "sans-serif",
     "Tahoma",
     "Noto Sans",
@@ -47,7 +46,6 @@ pub const DEFAULT_SANS_SERIF: [&'static str; 16] = [
     "Arial",
     "Arial Hebrew",
     "Verdana",
-    "Cantarell",
     "Vera Sans",
     "Roboto",
     "Lato",
@@ -56,7 +54,7 @@ pub const DEFAULT_SANS_SERIF: [&'static str; 16] = [
     "Lucida Sans Unicode",
 ];
 
-pub const DEFAULT_MONOSPACE: [&'static str; 18] = [
+pub const DEFAULT_MONOSPACE: &[&'static str] = &[
     "monospace",
     "Consolas",
     "Droid Sans Mono",
@@ -77,7 +75,7 @@ pub const DEFAULT_MONOSPACE: [&'static str; 18] = [
     "Courier",
 ];
 
-pub const DEFAULT_CURSIVE: [&'static str; 5] = [
+pub const DEFAULT_CURSIVE: &[&'static str] = &[
     "cursive",
     "Gabriola",
     "Segoe Script",
@@ -85,7 +83,7 @@ pub const DEFAULT_CURSIVE: [&'static str; 5] = [
     "Comic Sans MS",
 ];
 
-pub const DEFAULT_FANTASY: [&'static str; 5] = [
+pub const DEFAULT_FANTASY: &[&'static str] = &[
     "fantasy",
     "Segoe Print",
     "Impact",

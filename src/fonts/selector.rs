@@ -209,9 +209,10 @@ impl<'a> FontSelector<'a> {
         // TODO(opt): improve, perhaps moving some computation earlier (e.g.
         // culling aliases which do not resolve fonts), and use faster alias expansion.
         let mut families: Vec<Cow<'b, str>> = self.families.clone();
-        if families.is_empty() {
-            // We allow an empty family list to resolve to SansSerif.
-            families.push("sans-serif".into());
+        let sans_serif = Cow::<'static, str>::from("sans-serif");
+        if !families.contains(&sans_serif) {
+            // All families fall back to sans-serif, ensuring we almost always have a usable font
+            families.push(sans_serif);
         }
 
         // Append aliases
