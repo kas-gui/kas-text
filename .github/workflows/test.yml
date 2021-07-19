@@ -43,6 +43,6 @@ jobs:
             toolchain: nightly
             override: true
       - name: test
-        run: cargo test --features markdown,shaping
+        run: cargo test --features markdown,shaping,raster
       - name: test (gat)
         run: cargo test --all-features
