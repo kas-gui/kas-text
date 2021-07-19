@@ -12,6 +12,12 @@ categories = ["text-processing"]
 repository = "https://github.com/kas-gui/kas-text"
 exclude = ["design"]
 
+[package.metadata.docs.rs]
+# To build locally:
+# RUSTDOCFLAGS="--cfg doc_cfg" cargo +nightly doc --features markdown,raster --no-deps --open
+features = ["markdown", "raster"]
+rustdoc-args = ["--cfg", "doc_cfg"]
+
 [features]
 # Enable shaping with the default dependency.
 shaping = ["rustybuzz"]
@@ -58,9 +64,3 @@ optional = true
 [dependencies.harfbuzz_rs]
 version = "1.1.2"
 optional = true
-
-[package.metadata.docs.rs]
-# To build locally:
-# RUSTDOCFLAGS="--cfg doc_cfg" cargo +nightly doc --features markdown --no-deps --open
-features = ["markdown"]
-rustdoc-args = ["--cfg", "doc_cfg"]
