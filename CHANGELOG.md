@@ -2,6 +2,12 @@
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.3] — 2021-07-19
+
+-   Document `raster` module and `Markdown` formatter (#56)
+-   Export `DPU` (#56)
+-   `Default`, `Debug` and `PartialEq` impls for some `raster` types (#56)
+
 ## [0.3.2] — 2021-06-30
 
 -   Minor optimisations to `SpriteDescriptor::new` (#53)

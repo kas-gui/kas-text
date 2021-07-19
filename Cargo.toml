@@ -1,6 +1,6 @@
 [package]
 name = "kas-text"
-version = "0.3.2"
+version = "0.3.3"
 authors = ["Diggory Hardy <git@dhardy.name>"]
 edition = "2018"
 license = "Apache-2.0"
@@ -11,6 +11,12 @@ keywords = ["text", "bidi", "shaping"]
 categories = ["text-processing"]
 repository = "https://github.com/kas-gui/kas-text"
 exclude = ["design"]
+
+[package.metadata.docs.rs]
+# To build locally:
+# RUSTDOCFLAGS="--cfg doc_cfg" cargo +nightly doc --features markdown,raster --no-deps --open
+features = ["markdown", "raster"]
+rustdoc-args = ["--cfg", "doc_cfg"]
 
 [features]
 # Enable shaping with the default dependency.
@@ -58,9 +64,3 @@ optional = true
 [dependencies.harfbuzz_rs]
 version = "1.1.2"
 optional = true
-
-[package.metadata.docs.rs]
-# To build locally:
-# RUSTDOCFLAGS="--cfg doc_cfg" cargo +nightly doc --features markdown --no-deps --open
-features = ["markdown"]
-rustdoc-args = ["--cfg", "doc_cfg"]

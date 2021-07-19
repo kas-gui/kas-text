@@ -23,10 +23,10 @@
 //! ```
 //!
 //! (It is not technically necessary to lead the first font with
-//! [`FontLibrary::load_default`]; whichever font is loaded first has number 0.
-//! If doing this, `load_default` must not be called at all.
+//! [`FontLibrary::select_default`]; whichever font is loaded first has number 0.
+//! If doing this, `select_default` must not be called at all.
 //! It is harmless to attempt to load any font multiple times, whether with
-//! `load_default` or another method.)
+//! `select_default` or another method.)
 //!
 //! ### FaceId vs FontId
 //!
@@ -68,7 +68,7 @@
 //! Finally, note that digital font files have an internally defined unit
 //! known as the *font unit*. We introduce one final unit:
 //!
-//! -   [`crate::conv::DPU`]: pixels per font unit
+//! -   [`crate::DPU`]: pixels per font unit
 
 use crate::GlyphId;
 

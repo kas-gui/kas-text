@@ -7,12 +7,58 @@
 //!
 //! This module is only available if `ab_glyph`, `fontdue` or both features are
 //! enabled.
+//!
+//! # Example
+//!
+//! [`TextDisplay::glyphs`] and [`TextDisplay::glyphs_with_effects`] yield a sequence of glyphs
+//! which may be drawn roughly as follows:
+//!
+//! ```
+//! use std::collections::HashMap;
+//! use kas_text::{Glyph, Vec2, TextDisplay};
+//! use kas_text::fonts::{FaceId};
+//! use kas_text::raster::{Config, raster, SpriteDescriptor, Sprite};
+//!
+//! #[derive(Default)]
+//! struct DrawText {
+//!     config: Config,
+//!     cache: HashMap::<SpriteDescriptor, Option<Sprite>>,
+//! }
+//!
+//! impl DrawText {
+//!     fn text(&mut self, pos: Vec2, text: &TextDisplay) {
+//!         let config = &self.config;
+//!         let cache = &mut self.cache;
+//!         let for_glyph = |face: FaceId, dpem: f32, glyph: Glyph| {
+//!             let desc = SpriteDescriptor::new(config, face, glyph, dpem);
+//!             let opt_sprite = cache.entry(desc).or_insert_with(|| {
+//!                 let opt_sprite = raster(config, desc);
+//!                 if let Some(ref sprite) = opt_sprite {
+//!                     // upload sprite to GPU here ...
+//!                 }
+//!                 opt_sprite
+//!             });
+//!             if let Some(sprite) = opt_sprite {
+//!                 let offset = Vec2(sprite.offset.0 as f32, sprite.offset.1 as f32);
+//!                 let a = pos + glyph.position + offset;
+//!                 let b = a + Vec2(sprite.size.0 as f32, sprite.size.1 as f32);
+//!                 // draw rect from a to b
+//!             }
+//!         };
+//!         text.glyphs(for_glyph);
+//!     }
+//! }
+//! ```
 
 use crate::fonts::{fonts, FaceId};
 use crate::{Glyph, GlyphId};
 use easy_cast::*;
 
+#[allow(unused)]
+use crate::TextDisplay;
+
 /// Raster configuration
+#[derive(Debug, PartialEq)]
 pub struct Config {
     #[allow(unused)]
     sb_align: bool,
@@ -24,6 +70,27 @@ pub struct Config {
 }
 
 impl Config {
+    /// Construct configuration
+    ///
+    /// For large glyphs the effects of configuration will be mostly unnoticable
+    /// but for small glyphs effects are more significant. The defaults will
+    /// usually be a good choice. Results may depend on the font used.
+    ///
+    /// The `mode` parameter selects rendering mode (though depending on crate
+    /// features, not all renderers will be available):
+    ///
+    /// -   `mode == 0` (default): use `ab_glyph` for rastering
+    /// -   `mode == 1`: use `ab_glyph` and align glyphs to side bearings
+    /// -   `mode == 2`: use `fontdue` for rastering
+    ///
+    /// Fonts sizes, in pixels per Em, are rounded to a multiple of `1 / scale_steps`.
+    /// The default is `scale_steps == 4`.
+    ///
+    /// For font sizes (in pixels per Em) less than `subpixel_threshold`, subpixel positioning is
+    /// enabled with `subpixel_steps` (supporting between 1 and 16 steps). Subpixel positioning
+    /// potentially allows better glyph spacing for small fonts, but tends to reduce rendering
+    /// quality. By default `subpixel_threshold == 0` (disabling the feature) and
+    /// `subpixel_steps == 5`. Odd values of `subpixel_steps` appear to produce better results.
     pub fn new(mode: u8, scale_steps: u8, subpixel_threshold: u8, subpixel_steps: u8) -> Self {
         Config {
             sb_align: mode == 1,
@@ -35,10 +102,20 @@ impl Config {
     }
 }
 
+impl Default for Config {
+    fn default() -> Self {
+        Config::new(0, 4, 0, 5)
+    }
+}
+
 /// A rastered sprite
+#[derive(Debug, PartialEq)]
 pub struct Sprite {
+    /// Offset to be added to the glyph position
     pub offset: (i32, i32),
+    /// Size of the sprite in pixels
     pub size: (u32, u32),
+    /// Grayscale image, row major order, length `size.0 * size.1`
     pub data: Vec<u8>,
 }
 
@@ -63,6 +140,8 @@ impl SpriteDescriptor {
     }
 
     /// Construct
+    ///
+    /// Most parameters come from [`TextDisplay::glyphs`] output. See also [`raster`].
     pub fn new(config: &Config, face: FaceId, glyph: Glyph, dpem: f32) -> Self {
         let face: u16 = face.get().cast();
         let glyph_id: u16 = glyph.id.0;
@@ -178,10 +257,8 @@ fn raster_fontdue(config: &Config, desc: SpriteDescriptor) -> Option<Sprite> {
 
 /// Raster a glyph
 ///
-/// Attempts to raster a glyph. Can fail, in which case `None` is returned.
-///
-/// On success, returns the glyph offset (to be added to the sprite position
-/// when rendering), the glyph size, and the rastered glyph (row-major order).
+/// Attempts to raster a glyph. Can fail (if the glyph in the given font face is not
+/// rasterable), in which case `None` is returned.
 pub fn raster(config: &Config, desc: SpriteDescriptor) -> Option<Sprite> {
     cfg_if::cfg_if! {
         if #[cfg(all(feature = "fontdue", feature = "ab_glyph"))] {

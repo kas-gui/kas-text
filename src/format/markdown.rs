@@ -22,6 +22,30 @@ pub enum Error {
     NotSupported(&'static str),
 }
 
+/// Basic Markdown formatter
+///
+/// Currently this misses several important Markdown features, but may still
+/// prove a convenient way of constructing formatted texts.
+///
+/// Supported:
+///
+/// -   Text paragraphs
+/// -   Code (embedded and blocks); caveat: extra line after code blocks
+/// -   Explicit line breaks
+/// -   Headings
+/// -   Lists (numerated and bulleted); caveat: indentation after first line
+/// -   Bold, italic (emphasis), strikethrough
+///
+/// Not supported:
+///
+/// -   Block quotes
+/// -   Footnotes
+/// -   HTML
+/// -   Horizontal rules
+/// -   Images
+/// -   Links
+/// -   Tables
+/// -   Task lists
 #[derive(Clone, Debug, PartialEq)]
 pub struct Markdown {
     text: String,
@@ -30,6 +54,7 @@ pub struct Markdown {
 }
 
 impl Markdown {
+    /// Parse the input as Markdown
     #[inline]
     pub fn new(input: &str) -> Result<Self, Error> {
         parse(input)
