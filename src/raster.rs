@@ -28,7 +28,7 @@
 //! impl DrawText {
 //!     fn text(&mut self, pos: Vec2, text: &TextDisplay) {
 //!         // Ensure input position is not fractional:
-//!         let pos = pos.round();
+//!         let pos = Vec2(pos.0.round(), pos.1.round());
 //!
 //!         let config = &self.config;
 //!         let cache = &mut self.cache;
@@ -45,7 +45,8 @@
 //!             if let Some(sprite) = opt_sprite {
 //!                 let offset = Vec2(sprite.offset.0 as f32, sprite.offset.1 as f32);
 //!                 // Here we must discard sub-pixel position with floor:
-//!                 let a = pos + glyph.position.floor() + offset;
+//!                 let glyph_pos = Vec2(glyph.position.0.floor(), glyph.position.1.floor());
+//!                 let a = pos + glyph_pos + offset;
 //!                 let b = a + Vec2(sprite.size.0 as f32, sprite.size.1 as f32);
 //!                 // draw rect from a to b
 //!             }
