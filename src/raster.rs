@@ -27,8 +27,12 @@
 //!
 //! impl DrawText {
 //!     fn text(&mut self, pos: Vec2, text: &TextDisplay) {
+//!         // Ensure input position is not fractional:
+//!         let pos = pos.round();
+//!
 //!         let config = &self.config;
 //!         let cache = &mut self.cache;
+//!
 //!         let for_glyph = |face: FaceId, dpem: f32, glyph: Glyph| {
 //!             let desc = SpriteDescriptor::new(config, face, glyph, dpem);
 //!             let opt_sprite = cache.entry(desc).or_insert_with(|| {
@@ -40,11 +44,13 @@
 //!             });
 //!             if let Some(sprite) = opt_sprite {
 //!                 let offset = Vec2(sprite.offset.0 as f32, sprite.offset.1 as f32);
-//!                 let a = pos + glyph.position + offset;
+//!                 // Here we must discard sub-pixel position with floor:
+//!                 let a = pos + glyph.position.floor() + offset;
 //!                 let b = a + Vec2(sprite.size.0 as f32, sprite.size.1 as f32);
 //!                 // draw rect from a to b
 //!             }
 //!         };
+//!
 //!         text.glyphs(for_glyph);
 //!     }
 //! }
@@ -161,10 +167,9 @@ impl SpriteDescriptor {
         let glyph_id: u16 = glyph.id.0;
         let steps = Self::sub_pixel_from_dpem(config, dpem);
         let mult = f32::conv(steps);
-        let mult2 = 0.5 * mult;
         let dpem = u32::conv_trunc(dpem * config.scale_steps + 0.5);
-        let x_off = u8::conv_trunc(glyph.position.0.fract() * mult + mult2) % steps;
-        let y_off = u8::conv_trunc(glyph.position.1.fract() * mult + mult2) % steps;
+        let x_off = u8::conv_trunc(glyph.position.0.fract() * mult) % steps;
+        let y_off = u8::conv_trunc(glyph.position.1.fract() * mult) % steps;
         assert!(dpem & 0xFF00_0000 == 0 && x_off & 0xF0 == 0 && y_off & 0xF0 == 0);
         let packed = face as u64
             | ((glyph_id as u64) << 16)
@@ -216,7 +221,6 @@ fn raster_ab(config: &Config, desc: SpriteDescriptor) -> Option<Sprite> {
     let dpem = desc.dpem(config);
 
     let (mut x, y) = desc.fractional_position(config);
-    let glyph_off = (x.round(), y.round());
     if config.sb_align && desc.dpem(config) >= config.subpixel_threshold {
         let sf = FaceRef(&face_store.face).scale_by_dpem(dpem);
         x -= sf.h_side_bearing(id);
@@ -232,8 +236,7 @@ fn raster_ab(config: &Config, desc: SpriteDescriptor) -> Option<Sprite> {
     let outline = font.outline_glyph(glyph)?;
 
     let bounds = outline.px_bounds();
-    let offset = (bounds.min.x - glyph_off.0, bounds.min.y - glyph_off.1);
-    let offset = (offset.0.cast_trunc(), offset.1.cast_trunc());
+    let offset = (bounds.min.x.cast_trunc(), bounds.min.y.cast_trunc());
     let size = bounds.max - bounds.min;
     let size = (u32::conv_trunc(size.x), u32::conv_trunc(size.y));
     if size.0 == 0 || size.1 == 0 {
