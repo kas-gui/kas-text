@@ -27,8 +27,12 @@
 //!
 //! impl DrawText {
 //!     fn text(&mut self, pos: Vec2, text: &TextDisplay) {
+//!         // Ensure input position is not fractional:
+//!         let pos = Vec2(pos.0.round(), pos.1.round());
+//!
 //!         let config = &self.config;
 //!         let cache = &mut self.cache;
+//!
 //!         let for_glyph = |face: FaceId, dpem: f32, glyph: Glyph| {
 //!             let desc = SpriteDescriptor::new(config, face, glyph, dpem);
 //!             let opt_sprite = cache.entry(desc).or_insert_with(|| {
@@ -40,11 +44,14 @@
 //!             });
 //!             if let Some(sprite) = opt_sprite {
 //!                 let offset = Vec2(sprite.offset.0 as f32, sprite.offset.1 as f32);
-//!                 let a = pos + glyph.position + offset;
+//!                 // Here we must discard sub-pixel position with floor:
+//!                 let glyph_pos = Vec2(glyph.position.0.floor(), glyph.position.1.floor());
+//!                 let a = pos + glyph_pos + offset;
 //!                 let b = a + Vec2(sprite.size.0 as f32, sprite.size.1 as f32);
 //!                 // draw rect from a to b
 //!             }
 //!         };
+//!
 //!         text.glyphs(for_glyph);
 //!     }
 //! }
@@ -88,9 +95,12 @@ impl Config {
     ///
     /// For font sizes (in pixels per Em) less than `subpixel_threshold`, subpixel positioning is
     /// enabled with `subpixel_steps` (supporting between 1 and 16 steps). Subpixel positioning
-    /// potentially allows better glyph spacing for small fonts, but tends to reduce rendering
-    /// quality. By default `subpixel_threshold == 0` (disabling the feature) and
-    /// `subpixel_steps == 5`. Odd values of `subpixel_steps` appear to produce better results.
+    /// allows better glyph spacing for small fonts potentially at the cost of minor blurring
+    /// (though blurring may be present in any case), and makes words drawn with very small font
+    /// sizes more faithfully represent scaled versions drawn with larger fonts.
+    ///
+    /// Subjectively, readability and apparent quality is better up to around `dpem=18` (~13.5pt),
+    /// thus we recommend `subpixel_threshold == 18` and `subpixel_steps == 5`.
     pub fn new(mode: u8, scale_steps: u8, subpixel_threshold: u8, subpixel_steps: u8) -> Self {
         Config {
             sb_align: mode == 1,
@@ -104,7 +114,7 @@ impl Config {
 
 impl Default for Config {
     fn default() -> Self {
-        Config::new(0, 4, 0, 5)
+        Config::new(0, 4, 18, 5)
     }
 }
 
@@ -124,8 +134,22 @@ pub struct Sprite {
 /// This descriptor includes all important properties of a rastered glyph in a
 /// small, easily hashable value. It is thus ideal for caching rastered glyphs
 /// in a `HashMap`.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Eq, PartialEq, Hash)]
 pub struct SpriteDescriptor(u64);
+
+impl std::fmt::Debug for SpriteDescriptor {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let dpem_steps = ((self.0 & 0x00FF_FFFF_0000_0000) >> 32) as u32;
+        let x_steps = ((self.0 & 0x0F00_0000_0000_0000) >> 56) as u8;
+        let y_steps = ((self.0 & 0xF000_0000_0000_0000) >> 60) as u8;
+        f.debug_struct("SpriteDescriptor")
+            .field("face", &self.face())
+            .field("glyph", &self.glyph())
+            .field("dpem_steps", &dpem_steps)
+            .field("offset_steps", &(x_steps, y_steps))
+            .finish()
+    }
+}
 
 impl SpriteDescriptor {
     /// Choose a sub-pixel precision multiplier based on scale (pixels per Em)
@@ -147,10 +171,9 @@ impl SpriteDescriptor {
         let glyph_id: u16 = glyph.id.0;
         let steps = Self::sub_pixel_from_dpem(config, dpem);
         let mult = f32::conv(steps);
-        let mult2 = 0.5 * mult;
         let dpem = u32::conv_trunc(dpem * config.scale_steps + 0.5);
-        let x_off = u8::conv_trunc(glyph.position.0.fract() * mult + mult2) % steps;
-        let y_off = u8::conv_trunc(glyph.position.1.fract() * mult + mult2) % steps;
+        let x_off = u8::conv_trunc(glyph.position.0.fract() * mult) % steps;
+        let y_off = u8::conv_trunc(glyph.position.1.fract() * mult) % steps;
         assert!(dpem & 0xFF00_0000 == 0 && x_off & 0xF0 == 0 && y_off & 0xF0 == 0);
         let packed = face as u64
             | ((glyph_id as u64) << 16)
@@ -172,8 +195,8 @@ impl SpriteDescriptor {
 
     /// Get scale (pixels per Em)
     pub fn dpem(self, config: &Config) -> f32 {
-        let dpem = ((self.0 & 0x00FF_FFFF_0000_0000) >> 32) as u32;
-        f32::conv(dpem) / config.scale_steps
+        let dpem_steps = ((self.0 & 0x00FF_FFFF_0000_0000) >> 32) as u32;
+        f32::conv(dpem_steps) / config.scale_steps
     }
 
     /// Get fractional position
@@ -183,10 +206,10 @@ impl SpriteDescriptor {
     /// `0.0 ≤ x < 1.0` (and the same for `y`).
     pub fn fractional_position(self, config: &Config) -> (f32, f32) {
         let mult = 1.0 / f32::conv(Self::sub_pixel_from_dpem(config, self.dpem(config)));
-        let x = ((self.0 & 0x0F00_0000_0000_0000) >> 56) as u8;
-        let y = ((self.0 & 0xF000_0000_0000_0000) >> 60) as u8;
-        let x = f32::conv(x) * mult;
-        let y = f32::conv(y) * mult;
+        let x_steps = ((self.0 & 0x0F00_0000_0000_0000) >> 56) as u8;
+        let y_steps = ((self.0 & 0xF000_0000_0000_0000) >> 60) as u8;
+        let x = f32::conv(x_steps) * mult;
+        let y = f32::conv(y_steps) * mult;
         (x, y)
     }
 }
@@ -202,7 +225,6 @@ fn raster_ab(config: &Config, desc: SpriteDescriptor) -> Option<Sprite> {
     let dpem = desc.dpem(config);
 
     let (mut x, y) = desc.fractional_position(config);
-    let glyph_off = (x.round(), y.round());
     if config.sb_align && desc.dpem(config) >= config.subpixel_threshold {
         let sf = FaceRef(&face_store.face).scale_by_dpem(dpem);
         x -= sf.h_side_bearing(id);
@@ -218,8 +240,7 @@ fn raster_ab(config: &Config, desc: SpriteDescriptor) -> Option<Sprite> {
     let outline = font.outline_glyph(glyph)?;
 
     let bounds = outline.px_bounds();
-    let offset = (bounds.min.x - glyph_off.0, bounds.min.y - glyph_off.1);
-    let offset = (offset.0.cast_trunc(), offset.1.cast_trunc());
+    let offset = (bounds.min.x.cast_trunc(), bounds.min.y.cast_trunc());
     let size = bounds.max - bounds.min;
     let size = (u32::conv_trunc(size.x), u32::conv_trunc(size.y));
     if size.0 == 0 || size.1 == 0 {
