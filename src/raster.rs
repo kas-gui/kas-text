@@ -124,8 +124,22 @@ pub struct Sprite {
 /// This descriptor includes all important properties of a rastered glyph in a
 /// small, easily hashable value. It is thus ideal for caching rastered glyphs
 /// in a `HashMap`.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Eq, PartialEq, Hash)]
 pub struct SpriteDescriptor(u64);
+
+impl std::fmt::Debug for SpriteDescriptor {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let dpem_steps = ((self.0 & 0x00FF_FFFF_0000_0000) >> 32) as u32;
+        let x_steps = ((self.0 & 0x0F00_0000_0000_0000) >> 56) as u8;
+        let y_steps = ((self.0 & 0xF000_0000_0000_0000) >> 60) as u8;
+        f.debug_struct("SpriteDescriptor")
+            .field("face", &self.face())
+            .field("glyph", &self.glyph())
+            .field("dpem_steps", &dpem_steps)
+            .field("offset_steps", &(x_steps, y_steps))
+            .finish()
+    }
+}
 
 impl SpriteDescriptor {
     /// Choose a sub-pixel precision multiplier based on scale (pixels per Em)
@@ -172,8 +186,8 @@ impl SpriteDescriptor {
 
     /// Get scale (pixels per Em)
     pub fn dpem(self, config: &Config) -> f32 {
-        let dpem = ((self.0 & 0x00FF_FFFF_0000_0000) >> 32) as u32;
-        f32::conv(dpem) / config.scale_steps
+        let dpem_steps = ((self.0 & 0x00FF_FFFF_0000_0000) >> 32) as u32;
+        f32::conv(dpem_steps) / config.scale_steps
     }
 
     /// Get fractional position
@@ -183,10 +197,10 @@ impl SpriteDescriptor {
     /// `0.0 ≤ x < 1.0` (and the same for `y`).
     pub fn fractional_position(self, config: &Config) -> (f32, f32) {
         let mult = 1.0 / f32::conv(Self::sub_pixel_from_dpem(config, self.dpem(config)));
-        let x = ((self.0 & 0x0F00_0000_0000_0000) >> 56) as u8;
-        let y = ((self.0 & 0xF000_0000_0000_0000) >> 60) as u8;
-        let x = f32::conv(x) * mult;
-        let y = f32::conv(y) * mult;
+        let x_steps = ((self.0 & 0x0F00_0000_0000_0000) >> 56) as u8;
+        let y_steps = ((self.0 & 0xF000_0000_0000_0000) >> 60) as u8;
+        let x = f32::conv(x_steps) * mult;
+        let y = f32::conv(y_steps) * mult;
         (x, y)
     }
 }
