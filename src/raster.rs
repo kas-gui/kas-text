@@ -94,9 +94,12 @@ impl Config {
     ///
     /// For font sizes (in pixels per Em) less than `subpixel_threshold`, subpixel positioning is
     /// enabled with `subpixel_steps` (supporting between 1 and 16 steps). Subpixel positioning
-    /// potentially allows better glyph spacing for small fonts, but tends to reduce rendering
-    /// quality. By default `subpixel_threshold == 0` (disabling the feature) and
-    /// `subpixel_steps == 5`. Odd values of `subpixel_steps` appear to produce better results.
+    /// allows better glyph spacing for small fonts potentially at the cost of minor blurring
+    /// (though blurring may be present in any case), and makes words drawn with very small font
+    /// sizes more faithfully represent scaled versions drawn with larger fonts.
+    ///
+    /// Subjectively, readability and apparent quality is better up to around `dpem=18` (~13.5pt),
+    /// thus we recommend `subpixel_threshold == 18` and `subpixel_steps == 5`.
     pub fn new(mode: u8, scale_steps: u8, subpixel_threshold: u8, subpixel_steps: u8) -> Self {
         Config {
             sb_align: mode == 1,
@@ -110,7 +113,7 @@ impl Config {
 
 impl Default for Config {
     fn default() -> Self {
-        Config::new(0, 4, 0, 5)
+        Config::new(0, 4, 18, 5)
     }
 }
 
