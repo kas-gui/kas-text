@@ -10,6 +10,7 @@
 use super::families;
 use fontdb::{FaceInfo, Source};
 pub use fontdb::{Stretch, Style, Weight};
+use log::warn;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
@@ -25,8 +26,26 @@ pub enum AddMode {
     Replace,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum State {
+    /// Newly created. If the boolean is true, system fonts will be loaded at
+    /// init time.
+    New(bool),
+    Ready,
+}
+
 /// Manages the list of available fonts and font selection
+///
+/// This database exists as a singleton, accessible through the [`fonts`]
+/// function.
+///
+/// After initialisation font loading and alias adjustment is disabled. The
+/// reason for this is that font selection uses multiple caches and
+/// there is no mechanism for forcing fresh lookups everywhere.
+///
+/// [`fonts`]: super::fonts
 pub struct Database {
+    state: State,
     db: fontdb::Database,
     family_upper: Vec<String>,
     aliases: HashMap<Cow<'static, str>, Vec<Cow<'static, str>>>,
@@ -34,15 +53,6 @@ pub struct Database {
 
 impl Database {
     pub(crate) fn new() -> Self {
-        let mut db = fontdb::Database::new();
-        db.load_system_fonts();
-
-        let family_upper = db
-            .faces()
-            .iter()
-            .map(|face| face.family.to_uppercase())
-            .collect();
-
         let mut aliases = HashMap::new();
         aliases.insert(
             "serif".into(),
@@ -81,8 +91,9 @@ impl Database {
         );
 
         Database {
-            db,
-            family_upper,
+            state: State::New(true),
+            db: fontdb::Database::new(),
+            family_upper: Vec::new(),
             aliases,
         }
     }
@@ -114,10 +125,18 @@ impl Database {
     /// Add font aliases for family
     ///
     /// When searching for `family`, all `aliases` will be searched too.
+    ///
+    /// This method may only be used before init; if used afterwards, only a
+    /// warning will be issued.
     pub fn add_aliases<I>(&mut self, family: Cow<'static, str>, aliases: I, mode: AddMode)
     where
         I: Iterator<Item = Cow<'static, str>>,
     {
+        if &self.state == &State::Ready {
+            warn!("unable to add aliases after font DB init");
+            return;
+        }
+
         match self.aliases.entry(family) {
             Entry::Occupied(mut entry) => {
                 let existing = entry.get_mut();
@@ -140,13 +159,26 @@ impl Database {
         }
     }
 
+    /// Control whether system fonts will be loaded on init
+    ///
+    /// Default value: true
+    pub fn set_load_system_fonts(&mut self, load: bool) {
+        if let State::New(l) = &mut self.state {
+            *l = load;
+        }
+    }
+
     /// Loads a font data into the `Database`.
     ///
     /// Will load all font faces in case of a font collection.
     ///
-    /// Note: system fonts are loaded by default; this only augments the loaded
-    /// font collection.
+    /// This method may only be used before init; if used afterwards, only a
+    /// warning will be issued. By default, system fonts are loaded on init.
     pub fn load_font_data(&mut self, data: Vec<u8>) {
+        if &self.state == &State::Ready {
+            warn!("unable to load fonts after font DB init");
+            return;
+        }
         self.db.load_font_data(data);
     }
 
@@ -154,9 +186,13 @@ impl Database {
     ///
     /// Will load all font faces in case of a font collection.
     ///
-    /// Note: system fonts are loaded by default; this only augments the loaded
-    /// font collection.
+    /// This method may only be used before init; if used afterwards, only a
+    /// warning will be issued. By default, system fonts are loaded on init.
     pub fn load_font_file<P: AsRef<Path>>(&mut self, path: P) -> Result<(), std::io::Error> {
+        if &self.state == &State::Ready {
+            warn!("unable to load fonts after font DB init");
+            return Ok(());
+        }
         self.db.load_font_file(path)
     }
 
@@ -169,10 +205,31 @@ impl Database {
     /// Unlike other `load_*` methods, this one doesn't return an error.
     /// It will simply skip malformed fonts and will print a warning into the log for each of them.
     ///
-    /// Note: system fonts are loaded by default; this only augments the loaded
-    /// font collection.
+    /// This method may only be used before init; if used afterwards, only a
+    /// warning will be issued. By default, system fonts are loaded on init.
     pub fn load_fonts_dir<P: AsRef<Path>>(&mut self, dir: P) {
+        if &self.state == &State::Ready {
+            warn!("unable to load fonts after font DB init");
+            return;
+        }
         self.db.load_fonts_dir(dir);
+    }
+
+    pub(crate) fn init(&mut self) {
+        if let State::New(load) = self.state {
+            if load {
+                self.db.load_system_fonts();
+            }
+
+            self.family_upper = self
+                .db
+                .faces()
+                .iter()
+                .map(|face| face.family.to_uppercase())
+                .collect();
+
+            self.state = State::Ready;
+        }
     }
 }
 

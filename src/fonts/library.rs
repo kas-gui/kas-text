@@ -254,14 +254,16 @@ impl FontLibrary {
 
     /// Select the default font
     ///
-    /// If `FontId(0)` has not been defined yet, this sets the default font,
-    /// otherwise it does nothing.
+    /// If the font database has not yet been initialised, it is initialised.
+    ///
+    /// If `FontId(0)` has not been defined yet, this sets the default font.
     ///
     /// This *must* be called (at least once) before any other font-loading
     /// method, and before querying any font-derived properties (such as text
     /// dimensions).
     #[inline]
     pub fn select_default(&self) -> Result<(), Box<dyn std::error::Error>> {
+        self.db.write().unwrap().init();
         if self.fonts.read().unwrap().fonts.is_empty() {
             let id = self.select_font(&FontSelector::default())?;
             debug_assert!(id == FontId::default());
