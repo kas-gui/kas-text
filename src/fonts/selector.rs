@@ -14,6 +14,7 @@ pub use fontdb::{Stretch, Style, Weight};
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::collections::hash_map::{Entry, HashMap};
+use std::path::Path;
 
 /// How to add new aliases when others exist
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -137,6 +138,41 @@ impl Database {
                 entry.insert(aliases.collect());
             }
         }
+    }
+
+    /// Loads a font data into the `Database`.
+    ///
+    /// Will load all font faces in case of a font collection.
+    ///
+    /// Note: system fonts are loaded by default; this only augments the loaded
+    /// font collection.
+    pub fn load_font_data(&mut self, data: Vec<u8>) {
+        self.db.load_font_data(data);
+    }
+
+    /// Loads a font file into the `Database`.
+    ///
+    /// Will load all font faces in case of a font collection.
+    ///
+    /// Note: system fonts are loaded by default; this only augments the loaded
+    /// font collection.
+    pub fn load_font_file<P: AsRef<Path>>(&mut self, path: P) -> Result<(), std::io::Error> {
+        self.db.load_font_file(path)
+    }
+
+    /// Loads font files from the selected directory into the `Database`.
+    ///
+    /// This method will scan directories recursively.
+    ///
+    /// Will load `ttf`, `otf`, `ttc` and `otc` fonts.
+    ///
+    /// Unlike other `load_*` methods, this one doesn't return an error.
+    /// It will simply skip malformed fonts and will print a warning into the log for each of them.
+    ///
+    /// Note: system fonts are loaded by default; this only augments the loaded
+    /// font collection.
+    pub fn load_fonts_dir<P: AsRef<Path>>(&mut self, dir: P) {
+        self.db.load_fonts_dir(dir);
     }
 }
 
