@@ -34,6 +34,13 @@ enum State {
     Ready,
 }
 
+fn to_uppercase<'a>(c: Cow<'a, str>) -> Cow<'a, str> {
+    match c {
+        Cow::Borrowed(b) if !b.chars().any(|c| c.is_lowercase()) => Cow::Borrowed(b),
+        c @ _ => Cow::Owned(c.to_owned().to_uppercase()),
+    }
+}
+
 /// Manages the list of available fonts and font selection
 ///
 /// This database exists as a singleton, accessible through the [`fonts`]
@@ -48,45 +55,47 @@ pub struct Database {
     state: State,
     db: fontdb::Database,
     family_upper: Vec<String>,
+    // contract: all keys and values are uppercase
     aliases: HashMap<Cow<'static, str>, Vec<Cow<'static, str>>>,
 }
 
 impl Database {
     pub(crate) fn new() -> Self {
         let mut aliases = HashMap::new();
+        // TODO: update families instead of mapping to uppercase here
         aliases.insert(
-            "serif".into(),
+            "SERIF".into(),
             families::DEFAULT_SERIF
                 .iter()
-                .map(|s| (*s).into())
+                .map(|s| to_uppercase((*s).into()))
                 .collect(),
         );
         aliases.insert(
-            "sans-serif".into(),
+            "SANS-SERIF".into(),
             families::DEFAULT_SANS_SERIF
                 .iter()
-                .map(|s| (*s).into())
+                .map(|s| to_uppercase((*s).into()))
                 .collect(),
         );
         aliases.insert(
-            "monospace".into(),
+            "MONOSPACE".into(),
             families::DEFAULT_MONOSPACE
                 .iter()
-                .map(|s| (*s).into())
+                .map(|s| to_uppercase((*s).into()))
                 .collect(),
         );
         aliases.insert(
-            "cursive".into(),
+            "CURSIVE".into(),
             families::DEFAULT_CURSIVE
                 .iter()
-                .map(|s| (*s).into())
+                .map(|s| to_uppercase((*s).into()))
                 .collect(),
         );
         aliases.insert(
-            "fantasy".into(),
+            "FANTASY".into(),
             families::DEFAULT_FANTASY
                 .iter()
-                .map(|s| (*s).into())
+                .map(|s| to_uppercase((*s).into()))
                 .collect(),
         );
 
@@ -111,11 +120,16 @@ impl Database {
     }
 
     /// List all font family alias keys
+    ///
+    /// All family names are uppercase.
     pub fn alias_keys(&self) -> impl Iterator<Item = &str> {
         self.aliases.keys().map(|k| k.as_ref())
     }
 
     /// List all aliases for the given family
+    ///
+    /// The `family` parameter must be upper case (or no matches will be found).
+    /// All returned family names are uppercase.
     pub fn aliases_of(&self, family: &str) -> Option<impl Iterator<Item = &str>> {
         self.aliases
             .get(family)
@@ -124,7 +138,8 @@ impl Database {
 
     /// Add font aliases for family
     ///
-    /// When searching for `family`, all `aliases` will be searched too.
+    /// When searching for `family`, all `aliases` will be searched too. Both
+    /// the `family` parameter and all `aliases` are converted to upper case.
     ///
     /// This method may only be used before init; if used afterwards, only a
     /// warning will be issued.
@@ -137,7 +152,9 @@ impl Database {
             return;
         }
 
-        match self.aliases.entry(family) {
+        let aliases = aliases.map(|f| to_uppercase(f));
+
+        match self.aliases.entry(to_uppercase(family)) {
             Entry::Occupied(mut entry) => {
                 let existing = entry.get_mut();
                 match mode {
@@ -240,6 +257,7 @@ impl Database {
 #[derive(Clone, Debug, Default, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct FontSelector<'a> {
+    // contract: all entries are upper case
     families: Vec<Cow<'a, str>>,
     #[cfg_attr(feature = "serde", serde(default, with = "remote::Weight"))]
     weight: Weight,
@@ -285,7 +303,12 @@ impl<'a> FontSelector<'a> {
     ///
     /// If an empty vec is passed, the default "sans-serif" font is used.
     #[inline]
-    pub fn set_families(&mut self, names: Vec<Cow<'a, str>>) {
+    pub fn set_families(&mut self, mut names: Vec<Cow<'a, str>>) {
+        for x in &mut names {
+            let mut y = Default::default();
+            std::mem::swap(x, &mut y);
+            *x = to_uppercase(y);
+        }
         self.families = names;
     }
 
@@ -326,7 +349,7 @@ impl<'a> FontSelector<'a> {
         // TODO(opt): improve, perhaps moving some computation earlier (e.g.
         // culling aliases which do not resolve fonts), and use faster alias expansion.
         let mut families: Vec<Cow<'b, str>> = self.families.clone();
-        let sans_serif = Cow::<'static, str>::from("sans-serif");
+        let sans_serif = Cow::<'static, str>::from("SANS-SERIF");
         if !families.contains(&sans_serif) {
             // All families fall back to sans-serif, ensuring we almost always have a usable font
             families.push(sans_serif);
@@ -352,7 +375,7 @@ impl<'a> FontSelector<'a> {
         // Step 3: find any matching font faces, case-insensitively
         for family in families {
             for (i, upper_name) in db.family_upper.iter().enumerate() {
-                if *upper_name == family.to_uppercase() {
+                if *upper_name == family {
                     candidates.push(&db.db.faces()[i]);
                 }
             }
