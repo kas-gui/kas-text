@@ -86,6 +86,30 @@ impl Database {
         }
     }
 
+    /// Access the database
+    pub fn db(&self) -> &fontdb::Database {
+        &self.db
+    }
+
+    /// Access the list of discovered font families
+    ///
+    /// All family names are uppercase.
+    pub fn families_upper(&self) -> impl Iterator<Item = &str> {
+        self.family_upper.iter().map(|s| s.as_str())
+    }
+
+    /// List all font family alias keys
+    pub fn alias_keys(&self) -> impl Iterator<Item = &str> {
+        self.aliases.keys().map(|k| k.as_ref())
+    }
+
+    /// List all aliases for the given family
+    pub fn aliases_of(&self, family: &str) -> Option<impl Iterator<Item = &str>> {
+        self.aliases
+            .get(family)
+            .map(|result| result.iter().map(|s| s.as_ref()))
+    }
+
     /// Add font aliases for family
     ///
     /// When searching for `family`, all `aliases` will be searched too.

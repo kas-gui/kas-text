@@ -165,6 +165,11 @@ pub struct FontLibrary {
 
 /// Font management
 impl FontLibrary {
+    /// Get a reference to the font database
+    pub fn read_db(&self) -> RwLockReadGuard<Database> {
+        self.db.read().unwrap()
+    }
+
     /// Get mutable access to the font database
     ///
     /// This can be used to adjust font selection. Note that any changes only
