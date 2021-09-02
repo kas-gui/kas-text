@@ -54,7 +54,7 @@ fn to_uppercase<'a>(c: Cow<'a, str>) -> Cow<'a, str> {
 pub struct Database {
     state: State,
     db: fontdb::Database,
-    family_upper: Vec<String>,
+    families_upper: HashMap<String, usize>,
     // contract: all keys and values are uppercase
     aliases: HashMap<Cow<'static, str>, Vec<Cow<'static, str>>>,
 }
@@ -102,7 +102,7 @@ impl Database {
         Database {
             state: State::New(true),
             db: fontdb::Database::new(),
-            family_upper: Vec::new(),
+            families_upper: HashMap::new(),
             aliases,
         }
     }
@@ -116,7 +116,7 @@ impl Database {
     ///
     /// All family names are uppercase.
     pub fn families_upper(&self) -> impl Iterator<Item = &str> {
-        self.family_upper.iter().map(|s| s.as_str())
+        self.families_upper.keys().map(|s| s.as_str())
     }
 
     /// List all font family alias keys
@@ -238,11 +238,12 @@ impl Database {
                 self.db.load_system_fonts();
             }
 
-            self.family_upper = self
+            self.families_upper = self
                 .db
                 .faces()
                 .iter()
-                .map(|face| face.family.to_uppercase())
+                .enumerate()
+                .map(|(i, face)| (face.family.to_uppercase(), i))
                 .collect();
 
             self.state = State::Ready;
@@ -374,10 +375,8 @@ impl<'a> FontSelector<'a> {
         let mut candidates = Vec::new();
         // Step 3: find any matching font faces, case-insensitively
         for family in families {
-            for (i, upper_name) in db.family_upper.iter().enumerate() {
-                if *upper_name == family {
-                    candidates.push(&db.db.faces()[i]);
-                }
+            if let Some(index) = db.families_upper.get(family.as_ref()) {
+                candidates.push(&db.db.faces()[*index]);
             }
 
             // Step 4: if any match from a family, narrow to a single face.
