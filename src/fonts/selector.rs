@@ -245,6 +245,22 @@ impl Database {
                 .enumerate()
                 .map(|(i, face)| (face.family.to_uppercase(), i))
                 .collect();
+            let families_upper = &self.families_upper;
+
+            for aliases in self.aliases.values_mut() {
+                // Remove aliases to missing fonts:
+                aliases.retain(|name| families_upper.contains_key(name.as_ref()));
+
+                // Remove duplicates (this is O(n²), but n is usually small):
+                let mut i = 0;
+                while i < aliases.len() {
+                    if aliases[0..i].contains(&aliases[i]) {
+                        aliases.remove(i);
+                    } else {
+                        i += 1;
+                    }
+                }
+            }
 
             self.state = State::Ready;
         }
