@@ -26,6 +26,8 @@ jobs:
           args: --all -- --check
       - name: doc
         run: RUSTDOCFLAGS="--cfg doc_cfg" cargo doc --features markdown --no-deps
+      - name: Test Harfbuzz
+        run: cargo test --features harfbuzz
 
   test:
     runs-on: ${{ matrix.os }}
