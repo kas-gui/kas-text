@@ -434,8 +434,8 @@ fn shape_rustybuzz(
         .zip(output.glyph_positions().iter())
     {
         let index = idx_offset + info.cluster;
-        assert!(info.codepoint <= u16::MAX as u32, "failed to map glyph id");
-        let id = GlyphId(info.codepoint as u16);
+        assert!(info.glyph_id <= u16::MAX as u32, "failed to map glyph id");
+        let id = GlyphId(info.glyph_id as u16);
 
         if breaks
             .get(break_i)

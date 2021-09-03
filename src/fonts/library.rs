@@ -21,8 +21,8 @@ enum FontError {
     #[error("font load error")]
     TtfParser(#[from] ttf_parser::FaceParsingError),
     #[cfg(all(not(feature = "harfbuzz_rs"), feature = "rustybuzz"))]
-    #[error("unknown font read error")]
-    UnknownLoadError,
+    #[error("invalid units per EM")]
+    UnitsPerEm,
     #[cfg(feature = "ab_glyph")]
     #[error("font load error")]
     AbGlyphFontError(#[from] ab_glyph::InvalidFont),
@@ -90,15 +90,17 @@ impl<'a> FaceStore<'a> {
     ///
     /// The `path` is to be stored; its contents are already loaded in `data`.
     fn new(path: PathBuf, data: &'a [u8], index: u32) -> Result<Self, FontError> {
+        let face = Face::from_slice(data, index)?;
+        #[cfg(all(not(feature = "harfbuzz_rs"), feature = "rustybuzz"))]
+        let rustybuzz = rustybuzz::Face::from_face(face.clone()).ok_or(FontError::UnitsPerEm)?;
         Ok(FaceStore {
             path,
             index,
-            face: Face::from_slice(data, index)?,
+            face,
             #[cfg(feature = "harfbuzz_rs")]
             harfbuzz: harfbuzz_rs::Face::from_bytes(data, index).into(),
             #[cfg(all(not(feature = "harfbuzz_rs"), feature = "rustybuzz"))]
-            rustybuzz: rustybuzz::Face::from_slice(data, index)
-                .ok_or(FontError::UnknownLoadError)?,
+            rustybuzz,
             #[cfg(feature = "ab_glyph")]
             ab_glyph: ab_glyph::FontRef::try_from_slice_and_index(data, index)?,
             #[cfg(feature = "fontdue")]
@@ -163,6 +165,11 @@ pub struct FontLibrary {
 
 /// Font management
 impl FontLibrary {
+    /// Get a reference to the font database
+    pub fn read_db(&self) -> RwLockReadGuard<Database> {
+        self.db.read().unwrap()
+    }
+
     /// Get mutable access to the font database
     ///
     /// This can be used to adjust font selection. Note that any changes only
@@ -247,14 +254,16 @@ impl FontLibrary {
 
     /// Select the default font
     ///
-    /// If `FontId(0)` has not been defined yet, this sets the default font,
-    /// otherwise it does nothing.
+    /// If the font database has not yet been initialised, it is initialised.
+    ///
+    /// If `FontId(0)` has not been defined yet, this sets the default font.
     ///
     /// This *must* be called (at least once) before any other font-loading
     /// method, and before querying any font-derived properties (such as text
     /// dimensions).
     #[inline]
     pub fn select_default(&self) -> Result<(), Box<dyn std::error::Error>> {
+        self.db.write().unwrap().init();
         if self.fonts.read().unwrap().fonts.is_empty() {
             let id = self.select_font(&FontSelector::default())?;
             debug_assert!(id == FontId::default());

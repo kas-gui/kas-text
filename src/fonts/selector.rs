@@ -10,10 +10,12 @@
 use super::families;
 use fontdb::{FaceInfo, Source};
 pub use fontdb::{Stretch, Style, Weight};
+use log::warn;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::collections::hash_map::{Entry, HashMap};
+use std::path::Path;
 
 /// How to add new aliases when others exist
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -24,76 +26,151 @@ pub enum AddMode {
     Replace,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum State {
+    /// Newly created. If the boolean is true, system fonts will be loaded at
+    /// init time.
+    New(bool),
+    Ready,
+}
+
+fn to_uppercase<'a>(c: Cow<'a, str>) -> Cow<'a, str> {
+    match c {
+        Cow::Borrowed(b) if !b.chars().any(|c| c.is_lowercase()) => Cow::Borrowed(b),
+        c @ _ => Cow::Owned(c.to_owned().to_uppercase()),
+    }
+}
+
 /// Manages the list of available fonts and font selection
+///
+/// This database exists as a singleton, accessible through the [`fonts`]
+/// function.
+///
+/// After initialisation font loading and alias adjustment is disabled. The
+/// reason for this is that font selection uses multiple caches and
+/// there is no mechanism for forcing fresh lookups everywhere.
+///
+/// [`fonts`]: super::fonts
 pub struct Database {
+    state: State,
     db: fontdb::Database,
-    family_upper: Vec<String>,
+    families_upper: HashMap<String, usize>,
+    // contract: all keys and values are uppercase
     aliases: HashMap<Cow<'static, str>, Vec<Cow<'static, str>>>,
 }
 
 impl Database {
     pub(crate) fn new() -> Self {
-        let mut db = fontdb::Database::new();
-        db.load_system_fonts();
-
-        let family_upper = db
-            .faces()
-            .iter()
-            .map(|face| face.family.to_uppercase())
-            .collect();
-
         let mut aliases = HashMap::new();
+        // TODO: update families instead of mapping to uppercase here
         aliases.insert(
-            "serif".into(),
+            "SERIF".into(),
             families::DEFAULT_SERIF
                 .iter()
-                .map(|s| (*s).into())
+                .map(|s| to_uppercase((*s).into()))
                 .collect(),
         );
         aliases.insert(
-            "sans-serif".into(),
+            "SANS-SERIF".into(),
             families::DEFAULT_SANS_SERIF
                 .iter()
-                .map(|s| (*s).into())
+                .map(|s| to_uppercase((*s).into()))
                 .collect(),
         );
         aliases.insert(
-            "monospace".into(),
+            "MONOSPACE".into(),
             families::DEFAULT_MONOSPACE
                 .iter()
-                .map(|s| (*s).into())
+                .map(|s| to_uppercase((*s).into()))
                 .collect(),
         );
         aliases.insert(
-            "cursive".into(),
+            "CURSIVE".into(),
             families::DEFAULT_CURSIVE
                 .iter()
-                .map(|s| (*s).into())
+                .map(|s| to_uppercase((*s).into()))
                 .collect(),
         );
         aliases.insert(
-            "fantasy".into(),
+            "FANTASY".into(),
             families::DEFAULT_FANTASY
                 .iter()
-                .map(|s| (*s).into())
+                .map(|s| to_uppercase((*s).into()))
                 .collect(),
         );
 
         Database {
-            db,
-            family_upper,
+            state: State::New(true),
+            db: fontdb::Database::new(),
+            families_upper: HashMap::new(),
             aliases,
         }
     }
 
+    /// Access the database
+    pub fn db(&self) -> &fontdb::Database {
+        &self.db
+    }
+
+    /// Access the list of discovered font families
+    ///
+    /// All family names are uppercase.
+    pub fn families_upper(&self) -> impl Iterator<Item = &str> {
+        self.families_upper.keys().map(|s| s.as_str())
+    }
+
+    /// List all font family alias keys
+    ///
+    /// All family names are uppercase.
+    pub fn alias_keys(&self) -> impl Iterator<Item = &str> {
+        self.aliases.keys().map(|k| k.as_ref())
+    }
+
+    /// List all aliases for the given family
+    ///
+    /// The `family` parameter must be upper case (or no matches will be found).
+    /// All returned family names are uppercase.
+    pub fn aliases_of(&self, family: &str) -> Option<impl Iterator<Item = &str>> {
+        self.aliases
+            .get(family)
+            .map(|result| result.iter().map(|s| s.as_ref()))
+    }
+
+    /// Resolve the substituted font family name for this family
+    ///
+    /// The input must be upper case. The output will be the loaded font's case.
+    /// Example: `SANS-SERIF`
+    pub fn font_family_from_alias(&self, family: &str) -> Option<String> {
+        let families_upper = &self.families_upper;
+        let db = &self.db;
+        self.aliases
+            .get(family)
+            .and_then(|list| list.iter().next())
+            .map(|name| {
+                let index = *families_upper.get(name.as_ref()).unwrap();
+                db.faces()[index].family.clone()
+            })
+    }
+
     /// Add font aliases for family
     ///
-    /// When searching for `family`, all `aliases` will be searched too.
+    /// When searching for `family`, all `aliases` will be searched too. Both
+    /// the `family` parameter and all `aliases` are converted to upper case.
+    ///
+    /// This method may only be used before init; if used afterwards, only a
+    /// warning will be issued.
     pub fn add_aliases<I>(&mut self, family: Cow<'static, str>, aliases: I, mode: AddMode)
     where
         I: Iterator<Item = Cow<'static, str>>,
     {
-        match self.aliases.entry(family) {
+        if &self.state == &State::Ready {
+            warn!("unable to add aliases after font DB init");
+            return;
+        }
+
+        let aliases = aliases.map(|f| to_uppercase(f));
+
+        match self.aliases.entry(to_uppercase(family)) {
             Entry::Occupied(mut entry) => {
                 let existing = entry.get_mut();
                 match mode {
@@ -114,6 +191,114 @@ impl Database {
             }
         }
     }
+
+    /// Control whether system fonts will be loaded on init
+    ///
+    /// Default value: true
+    pub fn set_load_system_fonts(&mut self, load: bool) {
+        if let State::New(l) = &mut self.state {
+            *l = load;
+        }
+    }
+
+    /// Loads a font data into the `Database`.
+    ///
+    /// Will load all font faces in case of a font collection.
+    ///
+    /// This method may only be used before init; if used afterwards, only a
+    /// warning will be issued. By default, system fonts are loaded on init.
+    pub fn load_font_data(&mut self, data: Vec<u8>) {
+        if &self.state == &State::Ready {
+            warn!("unable to load fonts after font DB init");
+            return;
+        }
+        self.db.load_font_data(data);
+    }
+
+    /// Loads a font file into the `Database`.
+    ///
+    /// Will load all font faces in case of a font collection.
+    ///
+    /// This method may only be used before init; if used afterwards, only a
+    /// warning will be issued. By default, system fonts are loaded on init.
+    pub fn load_font_file<P: AsRef<Path>>(&mut self, path: P) -> Result<(), std::io::Error> {
+        if &self.state == &State::Ready {
+            warn!("unable to load fonts after font DB init");
+            return Ok(());
+        }
+        self.db.load_font_file(path)
+    }
+
+    /// Loads font files from the selected directory into the `Database`.
+    ///
+    /// This method will scan directories recursively.
+    ///
+    /// Will load `ttf`, `otf`, `ttc` and `otc` fonts.
+    ///
+    /// Unlike other `load_*` methods, this one doesn't return an error.
+    /// It will simply skip malformed fonts and will print a warning into the log for each of them.
+    ///
+    /// This method may only be used before init; if used afterwards, only a
+    /// warning will be issued. By default, system fonts are loaded on init.
+    pub fn load_fonts_dir<P: AsRef<Path>>(&mut self, dir: P) {
+        if &self.state == &State::Ready {
+            warn!("unable to load fonts after font DB init");
+            return;
+        }
+        self.db.load_fonts_dir(dir);
+    }
+
+    pub(crate) fn init(&mut self) {
+        if let State::New(load) = self.state {
+            if load {
+                self.db.load_system_fonts();
+            }
+
+            self.families_upper = self
+                .db
+                .faces()
+                .iter()
+                .enumerate()
+                .map(|(i, face)| (face.family.to_uppercase(), i))
+                .collect();
+            let families_upper = &self.families_upper;
+
+            for aliases in self.aliases.values_mut() {
+                // Remove aliases to missing fonts:
+                aliases.retain(|name| families_upper.contains_key(name.as_ref()));
+
+                // Remove duplicates (this is O(n²), but n is usually small):
+                let mut i = 0;
+                while i < aliases.len() {
+                    if aliases[0..i].contains(&aliases[i]) {
+                        aliases.remove(i);
+                    } else {
+                        i += 1;
+                    }
+                }
+            }
+
+            // Set family names in DB (only used in case the DB is used
+            // externally, e.g. to render an SVG with resvg).
+            if let Some(name) = self.font_family_from_alias("SERIF") {
+                self.db.set_serif_family(name);
+            }
+            if let Some(name) = self.font_family_from_alias("SANS-SERIF") {
+                self.db.set_sans_serif_family(name);
+            }
+            if let Some(name) = self.font_family_from_alias("MONOSPACE") {
+                self.db.set_monospace_family(name);
+            }
+            if let Some(name) = self.font_family_from_alias("CURSIVE") {
+                self.db.set_cursive_family(name);
+            }
+            if let Some(name) = self.font_family_from_alias("FANTASY") {
+                self.db.set_fantasy_family(name);
+            }
+
+            self.state = State::Ready;
+        }
+    }
 }
 
 /// A font face selection tool
@@ -123,6 +308,7 @@ impl Database {
 #[derive(Clone, Debug, Default, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct FontSelector<'a> {
+    // contract: all entries are upper case
     families: Vec<Cow<'a, str>>,
     #[cfg_attr(feature = "serde", serde(default, with = "remote::Weight"))]
     weight: Weight,
@@ -168,7 +354,12 @@ impl<'a> FontSelector<'a> {
     ///
     /// If an empty vec is passed, the default "sans-serif" font is used.
     #[inline]
-    pub fn set_families(&mut self, names: Vec<Cow<'a, str>>) {
+    pub fn set_families(&mut self, mut names: Vec<Cow<'a, str>>) {
+        for x in &mut names {
+            let mut y = Default::default();
+            std::mem::swap(x, &mut y);
+            *x = to_uppercase(y);
+        }
         self.families = names;
     }
 
@@ -209,7 +400,7 @@ impl<'a> FontSelector<'a> {
         // TODO(opt): improve, perhaps moving some computation earlier (e.g.
         // culling aliases which do not resolve fonts), and use faster alias expansion.
         let mut families: Vec<Cow<'b, str>> = self.families.clone();
-        let sans_serif = Cow::<'static, str>::from("sans-serif");
+        let sans_serif = Cow::<'static, str>::from("SANS-SERIF");
         if !families.contains(&sans_serif) {
             // All families fall back to sans-serif, ensuring we almost always have a usable font
             families.push(sans_serif);
@@ -234,10 +425,8 @@ impl<'a> FontSelector<'a> {
         let mut candidates = Vec::new();
         // Step 3: find any matching font faces, case-insensitively
         for family in families {
-            for (i, upper_name) in db.family_upper.iter().enumerate() {
-                if *upper_name == family.to_uppercase() {
-                    candidates.push(&db.db.faces()[i]);
-                }
+            if let Some(index) = db.families_upper.get(family.as_ref()) {
+                candidates.push(&db.db.faces()[*index]);
             }
 
             // Step 4: if any match from a family, narrow to a single face.
