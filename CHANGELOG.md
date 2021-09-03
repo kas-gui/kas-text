@@ -2,6 +2,17 @@
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] — 2021-09-03
+
+This is a minor release (mostly non-breaking). The primary motivation is to
+enable `resvg` to access the loaded font database. See PR #58:
+
+-   **Breaking:** update dependencies: `bitflags = 1.3.1`, `fontdb = 0.6.0`,
+    `harfbuzz_rs = 2.0`, `rustybuzz = 0.4.0`
+-   Make `fontdb::Database` externally readable and set font families
+-   Additional control over loading fonts
+-   Performance improvements for alias lookups (trim and capitalise earlier)
+
 ## [0.3.4] — 2021-07-28
 
 -   Fix sub-pixel positioning (#57)
