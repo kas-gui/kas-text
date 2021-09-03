@@ -136,6 +136,22 @@ impl Database {
             .map(|result| result.iter().map(|s| s.as_ref()))
     }
 
+    /// Resolve the substituted font family name for this family
+    ///
+    /// The input must be upper case. The output will be the loaded font's case.
+    /// Example: `SANS-SERIF`
+    pub fn font_family_from_alias(&self, family: &str) -> Option<String> {
+        let families_upper = &self.families_upper;
+        let db = &self.db;
+        self.aliases
+            .get(family)
+            .and_then(|list| list.iter().next())
+            .map(|name| {
+                let index = *families_upper.get(name.as_ref()).unwrap();
+                db.faces()[index].family.clone()
+            })
+    }
+
     /// Add font aliases for family
     ///
     /// When searching for `family`, all `aliases` will be searched too. Both
@@ -260,6 +276,24 @@ impl Database {
                         i += 1;
                     }
                 }
+            }
+
+            // Set family names in DB (only used in case the DB is used
+            // externally, e.g. to render an SVG with resvg).
+            if let Some(name) = self.font_family_from_alias("SERIF") {
+                self.db.set_serif_family(name);
+            }
+            if let Some(name) = self.font_family_from_alias("SANS-SERIF") {
+                self.db.set_sans_serif_family(name);
+            }
+            if let Some(name) = self.font_family_from_alias("MONOSPACE") {
+                self.db.set_monospace_family(name);
+            }
+            if let Some(name) = self.font_family_from_alias("CURSIVE") {
+                self.db.set_cursive_family(name);
+            }
+            if let Some(name) = self.font_family_from_alias("FANTASY") {
+                self.db.set_fantasy_family(name);
             }
 
             self.state = State::Ready;
