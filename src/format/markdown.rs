@@ -55,6 +55,9 @@ pub struct Markdown {
 
 impl Markdown {
     /// Parse the input as Markdown
+    ///
+    /// Parsing happens immediately. Fonts must be initialised before calling
+    /// this method.
     #[inline]
     pub fn new(input: &str) -> Result<Self, Error> {
         parse(input)

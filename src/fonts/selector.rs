@@ -10,7 +10,7 @@
 use super::families;
 use fontdb::{FaceInfo, Source};
 pub use fontdb::{Stretch, Style, Weight};
-use log::warn;
+use log::{info, warn};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
@@ -253,6 +253,7 @@ impl Database {
             if load {
                 self.db.load_system_fonts();
             }
+            info!("Found {} fonts", self.db.len());
 
             self.families_upper = self
                 .db
@@ -281,18 +282,23 @@ impl Database {
             // Set family names in DB (only used in case the DB is used
             // externally, e.g. to render an SVG with resvg).
             if let Some(name) = self.font_family_from_alias("SERIF") {
+                info!("Default serif font: {}", name);
                 self.db.set_serif_family(name);
             }
             if let Some(name) = self.font_family_from_alias("SANS-SERIF") {
+                info!("Default sans-serif font: {}", name);
                 self.db.set_sans_serif_family(name);
             }
             if let Some(name) = self.font_family_from_alias("MONOSPACE") {
+                info!("Default monospace font: {}", name);
                 self.db.set_monospace_family(name);
             }
             if let Some(name) = self.font_family_from_alias("CURSIVE") {
+                info!("Default cursive font: {}", name);
                 self.db.set_cursive_family(name);
             }
             if let Some(name) = self.font_family_from_alias("FANTASY") {
+                info!("Default fantasy font: {}", name);
                 self.db.set_fantasy_family(name);
             }
 

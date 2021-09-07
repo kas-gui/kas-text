@@ -2,6 +2,11 @@
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] — 2021-09-07
+
+-   Document loading order requirements (#59)
+-   Additional logging of loaded fonts (#59)
+
 ## [0.4.0] — 2021-09-03
 
 This is a minor release (mostly non-breaking). The primary motivation is to

@@ -258,7 +258,7 @@ impl FontLibrary {
     ///
     /// If `FontId(0)` has not been defined yet, this sets the default font.
     ///
-    /// This *must* be called (at least once) before any other font-loading
+    /// This *must* be called (at least once) before any other font selection
     /// method, and before querying any font-derived properties (such as text
     /// dimensions).
     #[inline]
