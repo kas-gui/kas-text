@@ -2,7 +2,7 @@
 name = "kas-text"
 version = "0.4.1"
 authors = ["Diggory Hardy <git@dhardy.name>"]
-edition = "2018"
+edition = "2021"
 license = "Apache-2.0"
 description = "Text layout and font management"
 readme = "README.md"
