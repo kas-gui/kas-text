@@ -12,7 +12,10 @@ use crate::OwningVecIter;
 
 impl<'t> FormattableText for &'t str {
     #[cfg(feature = "gat")]
-    type FontTokenIter<'a> = std::iter::Empty<FontToken>;
+    type FontTokenIter<'a>
+    where
+        Self: 'a,
+    = std::iter::Empty<FontToken>;
 
     fn as_str(&self) -> &str {
         self
