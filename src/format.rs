@@ -30,7 +30,9 @@ pub trait FormattableText: std::fmt::Debug {
     #[cfg_attr(doc_cfg, doc(cfg(feature = "gat")))]
     #[cfg(feature = "gat")]
     // TODO: rename → Iter
-    type FontTokenIter<'a>: Iterator<Item = FontToken>;
+    type FontTokenIter<'a>: Iterator<Item = FontToken>
+    where
+        Self: 'a;
 
     /// Length of text
     ///
@@ -147,7 +149,10 @@ impl<F: FormattableText + Clone + 'static> FormattableTextDyn for F {
 
 impl<'t> FormattableText for &'t dyn FormattableTextDyn {
     #[cfg(feature = "gat")]
-    type FontTokenIter<'a> = OwningVecIter<FontToken>;
+    type FontTokenIter<'a>
+    where
+        Self: 'a,
+    = OwningVecIter<FontToken>;
 
     #[inline]
     fn str_len(&self) -> usize {
