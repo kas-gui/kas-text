@@ -71,7 +71,7 @@ pub trait FormattableText: std::fmt::Debug {
     ///
     /// This method has some limitations: (1) it may only return a reference to
     /// an existing sequence, (2) effect tokens cannot be generated dependent
-    /// on input state, and (3) it does not incorporate colour information. For
+    /// on input state, and (3) it does not incorporate color information. For
     /// most uses it should still be sufficient, but for other cases it may be
     /// preferable not to use this method (use a dummy implementation returning
     /// `&[]` and use inherent methods on the text object via [`Text::text`]).
@@ -110,7 +110,7 @@ pub trait FormattableTextDyn: std::fmt::Debug {
     ///
     /// This method has some limitations: (1) it may only return a reference to
     /// an existing sequence, (2) effect tokens cannot be generated dependent
-    /// on input state, and (3) it does not incorporate colour information. For
+    /// on input state, and (3) it does not incorporate color information. For
     /// most uses it should still be sufficient, but for other cases it may be
     /// preferable not to use this method (use a dummy implementation returning
     /// `&[]` and use inherent methods on the text object via [`Text::text`]).

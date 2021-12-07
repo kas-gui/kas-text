@@ -66,7 +66,7 @@ pub struct Environment {
     ///
     /// This defaults to infinity (implying no bounds). To enable line-wrapping
     /// set at least a horizontal bound. The vertical bound is required for
-    /// alignment (when aligning to the centre or bottom).
+    /// alignment (when aligning to the center or bottom).
     /// Glyphs outside of these bounds may not be drawn.
     pub bounds: Vec2,
     /// Alignment (horiz, vert)
@@ -240,8 +240,8 @@ pub enum Align {
     Default,
     /// Align to top or left
     TL,
-    /// Align to centre
-    Centre,
+    /// Align to center
+    Center,
     /// Align to bottom or right
     BR,
     /// Stretch to fill space

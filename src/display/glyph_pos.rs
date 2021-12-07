@@ -43,7 +43,7 @@ bitflags::bitflags! {
     pub struct EffectFlags: u32 {
         /// Glyph is underlined
         const UNDERLINE = 1 << 0;
-        /// Glyph is crossed through by a centre-line
+        /// Glyph is crossed through by a center-line
         const STRIKETHROUGH = 1 << 1;
     }
 }
@@ -278,7 +278,7 @@ impl TextDisplay {
     /// If the list `effects` is empty or has first entry with `start > 0`, the
     /// result of `Effect::default(default_aux)` is used. The user payload of
     /// type `X` is simply passed through to `f` and `g` calls and may be useful
-    /// for colour information.
+    /// for color information.
     ///
     /// The callback `f` receives `face_id, dpem, glyph, i, aux` where
     /// `dpu` and `height` are both measures of the font size (pixels per font
