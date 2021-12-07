@@ -23,7 +23,7 @@ pub use markdown::{Error as MarkdownError, Markdown};
 /// Implement either this or [`FormattableTextDyn`], not both.
 ///
 /// This trait can only be written as intended using Generic Associated Types
-/// ("gat", unstable nightly feature), thus `font_tokens` has a different
+/// (`gat`, unstable nightly feature), thus `font_tokens` has a different
 /// signature with/without feature `gat` and the associated type
 /// `FontTokenIter` is only present with feature `gat`.
 pub trait FormattableText: std::fmt::Debug {
@@ -214,7 +214,7 @@ pub struct FontToken {
     /// Index in text at which formatting becomes active
     ///
     /// (Note that we use `u32` not `usize` since it can be assumed text length
-    /// will never exeed `u32::MAX`.)
+    /// will never exceed `u32::MAX`.)
     pub start: u32,
     /// Font identifier
     pub font_id: FontId,

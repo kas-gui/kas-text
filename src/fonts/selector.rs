@@ -29,7 +29,7 @@ pub enum AddMode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum State {
     /// Newly created. If the boolean is true, system fonts will be loaded at
-    /// init time.
+    /// initialization time.
     New(bool),
     Ready,
 }
@@ -46,7 +46,7 @@ fn to_uppercase<'a>(c: Cow<'a, str>) -> Cow<'a, str> {
 /// This database exists as a singleton, accessible through the [`fonts`]
 /// function.
 ///
-/// After initialisation font loading and alias adjustment is disabled. The
+/// After initialization font loading and alias adjustment is disabled. The
 /// reason for this is that font selection uses multiple caches and
 /// there is no mechanism for forcing fresh lookups everywhere.
 ///
@@ -157,8 +157,8 @@ impl Database {
     /// When searching for `family`, all `aliases` will be searched too. Both
     /// the `family` parameter and all `aliases` are converted to upper case.
     ///
-    /// This method may only be used before init; if used afterwards, only a
-    /// warning will be issued.
+    /// This method may only be used before initialization; if used afterwards,
+    /// only a warning will be issued.
     pub fn add_aliases<I>(&mut self, family: Cow<'static, str>, aliases: I, mode: AddMode)
     where
         I: Iterator<Item = Cow<'static, str>>,
@@ -192,7 +192,7 @@ impl Database {
         }
     }
 
-    /// Control whether system fonts will be loaded on init
+    /// Control whether system fonts will be loaded on initialization
     ///
     /// Default value: true
     pub fn set_load_system_fonts(&mut self, load: bool) {
@@ -205,8 +205,9 @@ impl Database {
     ///
     /// Will load all font faces in case of a font collection.
     ///
-    /// This method may only be used before init; if used afterwards, only a
-    /// warning will be issued. By default, system fonts are loaded on init.
+    /// This method may only be used before initialization; if used afterwards,
+    /// only a warning will be issued. By default, system fonts are loaded on
+    /// initialization.
     pub fn load_font_data(&mut self, data: Vec<u8>) {
         if &self.state == &State::Ready {
             warn!("unable to load fonts after font DB init");
@@ -219,8 +220,8 @@ impl Database {
     ///
     /// Will load all font faces in case of a font collection.
     ///
-    /// This method may only be used before init; if used afterwards, only a
-    /// warning will be issued. By default, system fonts are loaded on init.
+    /// This method may only be used before initialization; if used afterwards, only a
+    /// warning will be issued. By default, system fonts are loaded on initialization.
     pub fn load_font_file<P: AsRef<Path>>(&mut self, path: P) -> Result<(), std::io::Error> {
         if &self.state == &State::Ready {
             warn!("unable to load fonts after font DB init");
@@ -238,8 +239,8 @@ impl Database {
     /// Unlike other `load_*` methods, this one doesn't return an error.
     /// It will simply skip malformed fonts and will print a warning into the log for each of them.
     ///
-    /// This method may only be used before init; if used afterwards, only a
-    /// warning will be issued. By default, system fonts are loaded on init.
+    /// This method may only be used before initialization; if used afterwards, only a
+    /// warning will be issued. By default, system fonts are loaded on initialization.
     pub fn load_fonts_dir<P: AsRef<Path>>(&mut self, dir: P) {
         if &self.state == &State::Ready {
             warn!("unable to load fonts after font DB init");
@@ -327,7 +328,7 @@ pub struct FontSelector<'a> {
 impl<'a> FontSelector<'a> {
     /// Synonym for default
     ///
-    /// Without further parametrisation, this will select a generic sans-serif
+    /// Without further parametrization, this will select a generic sans-serif
     /// font which should be suitable for most uses.
     #[inline]
     pub fn new() -> Self {
@@ -358,7 +359,7 @@ impl<'a> FontSelector<'a> {
     /// is used. Glyph-level fallback (missing glyph substitution) is not
     /// currently supported.
     ///
-    /// If an empty vec is passed, the default "sans-serif" font is used.
+    /// If an empty vector is passed, the default "sans-serif" font is used.
     #[inline]
     pub fn set_families(&mut self, mut names: Vec<Cow<'a, str>>) {
         for x in &mut names {

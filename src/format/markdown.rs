@@ -34,7 +34,7 @@ pub enum Error {
 /// -   Explicit line breaks
 /// -   Headings
 /// -   Lists (numerated and bulleted); caveat: indentation after first line
-/// -   Bold, italic (emphasis), strikethrough
+/// -   Bold, italic (emphasis), strike-through
 ///
 /// Not supported:
 ///
@@ -56,7 +56,7 @@ pub struct Markdown {
 impl Markdown {
     /// Parse the input as Markdown
     ///
-    /// Parsing happens immediately. Fonts must be initialised before calling
+    /// Parsing happens immediately. Fonts must be initialized before calling
     /// this method.
     #[inline]
     pub fn new(input: &str) -> Result<Self, Error> {

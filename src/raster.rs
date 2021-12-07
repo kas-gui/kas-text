@@ -79,12 +79,12 @@ pub struct Config {
 impl Config {
     /// Construct configuration
     ///
-    /// For large glyphs the effects of configuration will be mostly unnoticable
+    /// For large glyphs the effects of configuration will be mostly unnoticeable
     /// but for small glyphs effects are more significant. The defaults will
     /// usually be a good choice. Results may depend on the font used.
     ///
     /// The `mode` parameter selects rendering mode (though depending on crate
-    /// features, not all renderers will be available):
+    /// features, not all options will be available):
     ///
     /// -   `mode == 0` (default): use `ab_glyph` for rastering
     /// -   `mode == 1`: use `ab_glyph` and align glyphs to side bearings
@@ -93,8 +93,8 @@ impl Config {
     /// Fonts sizes, in pixels per Em, are rounded to a multiple of `1 / scale_steps`.
     /// The default is `scale_steps == 4`.
     ///
-    /// For font sizes (in pixels per Em) less than `subpixel_threshold`, subpixel positioning is
-    /// enabled with `subpixel_steps` (supporting between 1 and 16 steps). Subpixel positioning
+    /// For font sizes (in pixels per Em) less than `subpixel_threshold`, sub-pixel positioning is
+    /// enabled with `subpixel_steps` (supporting between 1 and 16 steps). Sub-pixel positioning
     /// allows better glyph spacing for small fonts potentially at the cost of minor blurring
     /// (though blurring may be present in any case), and makes words drawn with very small font
     /// sizes more faithfully represent scaled versions drawn with larger fonts.
@@ -278,8 +278,8 @@ fn raster_fontdue(config: &Config, desc: SpriteDescriptor) -> Option<Sprite> {
 
 /// Raster a glyph
 ///
-/// Attempts to raster a glyph. Can fail (if the glyph in the given font face is not
-/// rasterable), in which case `None` is returned.
+/// Attempts to raster a glyph. Can fail (if the glyph in the given font face
+/// cannot be rastered), in which case `None` is returned.
 pub fn raster(config: &Config, desc: SpriteDescriptor) -> Option<Sprite> {
     cfg_if::cfg_if! {
         if #[cfg(all(feature = "fontdue", feature = "ab_glyph"))] {

@@ -3,7 +3,7 @@
 // You may obtain a copy of the License in the LICENSE-APACHE file or at:
 //     https://www.apache.org/licenses/LICENSE-2.0
 
-//! Impls for plain text
+//! Implementations for plain text
 
 use super::{EditableText, FontToken, FormattableText};
 use crate::Effect;

@@ -254,7 +254,7 @@ impl FontLibrary {
 
     /// Select the default font
     ///
-    /// If the font database has not yet been initialised, it is initialised.
+    /// If the font database has not yet been initialized, it is initialized.
     ///
     /// If `FontId(0)` has not been defined yet, this sets the default font.
     ///

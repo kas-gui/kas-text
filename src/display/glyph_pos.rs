@@ -17,7 +17,7 @@ pub struct Effect<X> {
     /// Index in text at which formatting becomes active
     ///
     /// (Note that we use `u32` not `usize` since it can be assumed text length
-    /// will never exeed `u32::MAX`.)
+    /// will never exceed `u32::MAX`.)
     pub start: u32,
     /// Effect flags
     pub flags: EffectFlags,
@@ -286,7 +286,7 @@ impl TextDisplay {
     /// `effects` (or `usize::MAX` when a default-constructed effect token is
     /// used).
     ///
-    /// The callback `g` receives positioning for each underline/strikethrough
+    /// The callback `g` receives positioning for each underline/strike-through
     /// segment: `x1, x2, y_top, h` where `h` is the thickness (height). Note
     /// that it is possible to have `h < 1.0` and `y_top, y_top + h` to round to
     /// the same number; the renderer is responsible for ensuring such lines

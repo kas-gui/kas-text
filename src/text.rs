@@ -13,7 +13,7 @@ use crate::format::{EditableText, FormattableText};
 use crate::{Action, Glyph, Vec2};
 use crate::{EnvFlags, Environment, UpdateEnv};
 
-/// Text, prepared for display in a given enviroment
+/// Text, prepared for display in a given environment
 ///
 /// This struct is composed of three parts: an [`Environment`], a representation
 /// of the [`FormattableText`] being displayed, and a [`TextDisplay`] object.
@@ -389,7 +389,7 @@ pub trait EditableTextApi {
     /// Formatting is adjusted: any specifiers starting at or after `index` are
     /// delayed by the length of `c`.
     ///
-    /// Currently this is not significantly more efficent than
+    /// Currently this is not significantly more efficient than
     /// [`Text::set_text`]. This may change in the future (TODO).
     fn insert_char(&mut self, index: usize, c: char);
 
@@ -404,7 +404,7 @@ pub trait EditableTextApi {
     /// pushed back to the end of the replacement, and the position of any
     /// specifiers after the replaced section is adjusted as appropriate.
     ///
-    /// Currently this is not significantly more efficent than
+    /// Currently this is not significantly more efficient than
     /// [`Text::set_text`]. This may change in the future (TODO).
     fn replace_range(&mut self, range: std::ops::Range<usize>, replace_with: &str);
 
@@ -422,7 +422,7 @@ pub trait EditableTextApi {
     ///
     /// All existing text formatting is removed.
     ///
-    /// Currently this is not significantly more efficent than
+    /// Currently this is not significantly more efficient than
     /// [`Text::set_text`]. This may change in the future (TODO).
     fn swap_string(&mut self, string: &mut String);
 }

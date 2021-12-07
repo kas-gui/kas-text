@@ -12,13 +12,13 @@
 //! NOTE: these lists were put together quickly by a non-expert, and with very
 //! limited testing, thus may have significant defects.
 //!
-//! *Probably* this module should be replaced by system-specific font config
-//! eventually.
+//! *Probably* this module should be replaced by system-specific font
+//! configuration eventually.
 //!
 //! Fonts are chosen based based on the following criteria:
 //!
 //! 1.  Included by default with at least one recent operating system
-//! 2.  Apparance, both quality and being fairly standard
+//! 2.  Appearance, both quality and being fairly standard
 //!
 //! Font family ordering indicates usage preference.
 

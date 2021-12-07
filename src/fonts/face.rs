@@ -131,7 +131,7 @@ impl ScaledFaceRef {
             .map(|m| self.1.to_line_metrics(m))
     }
 
-    /// Metrics for strikethrough
+    /// Metrics for strike-through
     #[inline]
     pub fn strikethrough_metrics(&self) -> Option<LineMetrics> {
         self.0
