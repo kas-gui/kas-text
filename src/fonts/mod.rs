@@ -8,7 +8,7 @@
 //! Fonts are managed by the [`FontLibrary`], of which a static singleton
 //! exists and can be accessed via [`fonts`].
 //!
-//! ### FontId and the default font
+//! ### `FontId` and the default font
 //!
 //! The [`FontId`] type is a numeric identifier for a selected font. It may be
 //! default-constructed to access the *default* font, with number 0.
@@ -28,7 +28,7 @@
 //! It is harmless to attempt to load any font multiple times, whether with
 //! `select_default` or another method.)
 //!
-//! ### FaceId vs FontId
+//! ### `FaceId` vs `FontId`
 //!
 //! Why do both [`FaceId`] and [`FontId`] exist? Font fallbacks. A [`FontId`]
 //! identifies a list of font faces; when selecting glyphs the first face which

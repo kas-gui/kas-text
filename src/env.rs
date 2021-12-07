@@ -3,7 +3,7 @@
 // You may obtain a copy of the License in the LICENSE-APACHE file or at:
 //     https://www.apache.org/licenses/LICENSE-2.0
 
-//! KAS Rich-Text library — text-display enviroment
+//! KAS Rich-Text library — text-display environment
 
 use crate::fonts::{fonts, FontId};
 use crate::{Action, Vec2};
@@ -66,10 +66,10 @@ pub struct Environment {
     ///
     /// This defaults to infinity (implying no bounds). To enable line-wrapping
     /// set at least a horizontal bound. The vertical bound is required for
-    /// alignment (when aligning to the centre or bottom).
+    /// alignment (when aligning to the center or bottom).
     /// Glyphs outside of these bounds may not be drawn.
     pub bounds: Vec2,
-    /// Alignment (horiz, vert)
+    /// Alignment (`horiz`, `vert`)
     ///
     /// By default, horizontal alignment is left or right depending on the
     /// text direction (see [`Environment::dir`]), and vertical alignment is
@@ -216,7 +216,7 @@ bitflags::bitflags! {
         /// Vertically align to the nearest pixel
         ///
         /// This is highly recommended to avoid rendering artifacts at small
-        /// pixel sizes. Affect on layout is negligable.
+        /// pixel sizes. Affect on layout is negligible.
         const PX_VALIGN = 1 << 2;
     }
 }
@@ -240,8 +240,8 @@ pub enum Align {
     Default,
     /// Align to top or left
     TL,
-    /// Align to centre
-    Centre,
+    /// Align to center
+    Center,
     /// Align to bottom or right
     BR,
     /// Stretch to fill space

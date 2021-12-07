@@ -17,7 +17,7 @@ pub struct Effect<X> {
     /// Index in text at which formatting becomes active
     ///
     /// (Note that we use `u32` not `usize` since it can be assumed text length
-    /// will never exeed `u32::MAX`.)
+    /// will never exceed `u32::MAX`.)
     pub start: u32,
     /// Effect flags
     pub flags: EffectFlags,
@@ -43,7 +43,7 @@ bitflags::bitflags! {
     pub struct EffectFlags: u32 {
         /// Glyph is underlined
         const UNDERLINE = 1 << 0;
-        /// Glyph is crossed through by a centre-line
+        /// Glyph is crossed through by a center-line
         const STRIKETHROUGH = 1 << 1;
     }
 }
@@ -278,7 +278,7 @@ impl TextDisplay {
     /// If the list `effects` is empty or has first entry with `start > 0`, the
     /// result of `Effect::default(default_aux)` is used. The user payload of
     /// type `X` is simply passed through to `f` and `g` calls and may be useful
-    /// for colour information.
+    /// for color information.
     ///
     /// The callback `f` receives `face_id, dpem, glyph, i, aux` where
     /// `dpu` and `height` are both measures of the font size (pixels per font
@@ -286,7 +286,7 @@ impl TextDisplay {
     /// `effects` (or `usize::MAX` when a default-constructed effect token is
     /// used).
     ///
-    /// The callback `g` receives positioning for each underline/strikethrough
+    /// The callback `g` receives positioning for each underline/strike-through
     /// segment: `x1, x2, y_top, h` where `h` is the thickness (height). Note
     /// that it is possible to have `h < 1.0` and `y_top, y_top + h` to round to
     /// the same number; the renderer is responsible for ensuring such lines

@@ -25,13 +25,13 @@ impl Vec2 {
         Vec2(self.0.abs(), self.1.abs())
     }
 
-    /// Return the minimum, componentwise
+    /// Return the minimum, component-wise
     #[inline]
     pub fn min(self, other: Self) -> Self {
         Vec2(self.0.min(other.0), self.1.min(other.1))
     }
 
-    /// Return the maximum, componentwise
+    /// Return the maximum, component-wise
     #[inline]
     pub fn max(self, other: Self) -> Self {
         Vec2(self.0.max(other.0), self.1.max(other.1))

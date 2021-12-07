@@ -23,7 +23,7 @@ pub use markdown::{Error as MarkdownError, Markdown};
 /// Implement either this or [`FormattableTextDyn`], not both.
 ///
 /// This trait can only be written as intended using Generic Associated Types
-/// ("gat", unstable nightly feature), thus `font_tokens` has a different
+/// (`gat`, unstable nightly feature), thus `font_tokens` has a different
 /// signature with/without feature `gat` and the associated type
 /// `FontTokenIter` is only present with feature `gat`.
 pub trait FormattableText: std::fmt::Debug {
@@ -71,7 +71,7 @@ pub trait FormattableText: std::fmt::Debug {
     ///
     /// This method has some limitations: (1) it may only return a reference to
     /// an existing sequence, (2) effect tokens cannot be generated dependent
-    /// on input state, and (3) it does not incorporate colour information. For
+    /// on input state, and (3) it does not incorporate color information. For
     /// most uses it should still be sufficient, but for other cases it may be
     /// preferable not to use this method (use a dummy implementation returning
     /// `&[]` and use inherent methods on the text object via [`Text::text`]).
@@ -110,7 +110,7 @@ pub trait FormattableTextDyn: std::fmt::Debug {
     ///
     /// This method has some limitations: (1) it may only return a reference to
     /// an existing sequence, (2) effect tokens cannot be generated dependent
-    /// on input state, and (3) it does not incorporate colour information. For
+    /// on input state, and (3) it does not incorporate color information. For
     /// most uses it should still be sufficient, but for other cases it may be
     /// preferable not to use this method (use a dummy implementation returning
     /// `&[]` and use inherent methods on the text object via [`Text::text`]).
@@ -214,7 +214,7 @@ pub struct FontToken {
     /// Index in text at which formatting becomes active
     ///
     /// (Note that we use `u32` not `usize` since it can be assumed text length
-    /// will never exeed `u32::MAX`.)
+    /// will never exceed `u32::MAX`.)
     pub start: u32,
     /// Font identifier
     pub font_id: FontId,

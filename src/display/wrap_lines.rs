@@ -358,7 +358,7 @@ impl LineAdder {
                 true => spare,
             },
             Align::TL => 0.0,
-            Align::Centre => 0.5 * spare,
+            Align::Center => 0.5 * spare,
             Align::BR => spare,
             Align::Stretch if !is_wrap => match line_is_rtl {
                 false => 0.0,
@@ -477,7 +477,7 @@ impl LineAdder {
         let height = self.vcaret;
         let offset = match align.1 {
             Align::Default | Align::TL | Align::Stretch => 0.0, // nothing to do
-            Align::Centre => 0.5 * (bounds.1 - height),
+            Align::Center => 0.5 * (bounds.1 - height),
             Align::BR => bounds.1 - height,
         };
         if offset != 0.0 {

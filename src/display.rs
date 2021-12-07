@@ -73,7 +73,7 @@ pub struct TextDisplay {
     /// Visual (wrapped) lines, in visual and logical order
     lines: Vec<Line>,
     num_glyphs: u32,
-    /// Required for highlight_lines; may remove later:
+    /// Required for `highlight_lines`; may remove later:
     width: f32,
 }
 
@@ -205,7 +205,7 @@ impl TextDisplay {
     /// This includes the index immediately after the last glyph, thus
     /// `result ≤ text.len()`.
     ///
-    /// Note: if the font's rect does not start at the origin, then its top-left
+    /// Note: if the font's `rect` does not start at the origin, then its top-left
     /// coordinate should first be subtracted from `pos`.
     pub fn text_index_nearest(&self, pos: Vec2) -> usize {
         assert!(self.action.is_ready(), "kas-text::TextDisplay: not ready");
