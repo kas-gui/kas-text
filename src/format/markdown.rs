@@ -371,13 +371,14 @@ impl StackItem {
                 state.start_block(text);
                 self.start = to_u32(text.len());
                 with_clone(self, |item| {
+                    // CSS sizes: https://www.w3.org/TR/2018/REC-css-fonts-3-20180920/#font-size-prop
                     item.rel_size = match level {
-                        HeadingLevel::H1 => 2.0,
-                        HeadingLevel::H2 => 1.75,
-                        HeadingLevel::H3 => 1.5,
-                        HeadingLevel::H4 => 1.35,
-                        HeadingLevel::H5 => 1.2,
-                        HeadingLevel::H6 => 1.1,
+                        HeadingLevel::H1 => 2.0 / 1.0,
+                        HeadingLevel::H2 => 3.0 / 2.0,
+                        HeadingLevel::H3 => 6.0 / 5.0,
+                        HeadingLevel::H4 => 1.0,
+                        HeadingLevel::H5 => 8.0 / 9.0,
+                        HeadingLevel::H6 => 3.0 / 5.0,
                     }
                 })
             }
