@@ -596,9 +596,10 @@ impl<'a> FontSelector<'a> {
 struct DisplayFaceInfo<'a>(&'a FaceInfo);
 impl<'a> fmt::Display for DisplayFaceInfo<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        let path = match &*self.0.source {
+        let path = match &self.0.source {
             Source::Binary(_) => None,
             Source::File(path) => Some(path.display()),
+            Source::SharedFile(path, _) => Some(path.display()),
         };
         write!(
             f,

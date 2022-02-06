@@ -291,8 +291,8 @@ impl FontLibrary {
         let mut faces = Vec::new();
         selector.select(&self.db.read().unwrap(), |source, index| {
             Ok(faces.push(match source {
-                fontdb::Source::Binary(_) => unimplemented!(),
                 fontdb::Source::File(path) => self.load_path(path, index),
+                _ => unimplemented!("loading from source {:?}", source),
             }?))
         })?;
 
