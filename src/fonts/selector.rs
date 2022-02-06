@@ -54,7 +54,7 @@ fn to_uppercase<'a>(c: Cow<'a, str>) -> Cow<'a, str> {
 pub struct Database {
     state: State,
     db: fontdb::Database,
-    families_upper: HashMap<String, usize>,
+    families_upper: HashMap<String, Vec<usize>>,
     // contract: all keys and values are uppercase
     aliases: HashMap<Cow<'static, str>, Vec<Cow<'static, str>>>,
 }
@@ -147,7 +147,7 @@ impl Database {
             .get(family)
             .and_then(|list| list.iter().next())
             .map(|name| {
-                let index = *families_upper.get(name.as_ref()).unwrap();
+                let index = families_upper.get(name.as_ref()).unwrap()[0];
                 db.faces()[index].family.clone()
             })
     }
@@ -256,14 +256,13 @@ impl Database {
             }
             info!("Found {} fonts", self.db.len());
 
-            self.families_upper = self
-                .db
-                .faces()
-                .iter()
-                .enumerate()
-                .map(|(i, face)| (face.family.to_uppercase(), i))
-                .collect();
-            let families_upper = &self.families_upper;
+            let families_upper = &mut self.families_upper;
+            for (i, face) in self.db.faces().iter().enumerate() {
+                families_upper
+                    .entry(face.family.to_uppercase())
+                    .or_default()
+                    .push(i);
+            }
 
             for aliases in self.aliases.values_mut() {
                 // Remove aliases to missing fonts:
@@ -432,8 +431,10 @@ impl<'a> FontSelector<'a> {
         let mut candidates = Vec::new();
         // Step 3: find any matching font faces, case-insensitively
         for family in families {
-            if let Some(index) = db.families_upper.get(family.as_ref()) {
-                candidates.push(&db.db.faces()[*index]);
+            if let Some(indices) = db.families_upper.get(family.as_ref()) {
+                for index in indices {
+                    candidates.push(&db.db.faces()[*index]);
+                }
             }
 
             // Step 4: if any match from a family, narrow to a single face.
