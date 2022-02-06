@@ -10,11 +10,12 @@
 use super::families;
 use fontdb::{FaceInfo, Source};
 pub use fontdb::{Stretch, Style, Weight};
-use log::{info, warn};
+use log::{debug, info, trace, warn};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::collections::hash_map::{Entry, HashMap};
+use std::fmt;
 use std::path::Path;
 
 /// How to add new aliases when others exist
@@ -258,6 +259,7 @@ impl Database {
 
             let families_upper = &mut self.families_upper;
             for (i, face) in self.db.faces().iter().enumerate() {
+                trace!("Discovered: {}", DisplayFaceInfo(face));
                 families_upper
                     .entry(face.family.to_uppercase())
                     .or_default()
@@ -403,6 +405,7 @@ impl<'a> FontSelector<'a> {
     where
         F: FnMut(&'b Source, u32) -> Result<(), Box<dyn std::error::Error>>,
     {
+        debug!("select(): {:?}", self);
         // TODO(opt): improve, perhaps moving some computation earlier (e.g.
         // culling aliases which do not resolve fonts), and use faster alias expansion.
         let mut families: Vec<Cow<'b, str>> = self.families.clone();
@@ -433,7 +436,9 @@ impl<'a> FontSelector<'a> {
         for family in families {
             if let Some(indices) = db.families_upper.get(family.as_ref()) {
                 for index in indices {
-                    candidates.push(&db.db.faces()[*index]);
+                    let candidate = &db.db.faces()[*index];
+                    trace!("candidate: {}", DisplayFaceInfo(candidate));
+                    candidates.push(candidate);
                 }
             }
 
@@ -585,6 +590,21 @@ impl<'a> FontSelector<'a> {
 
         // Return the result.
         matching_set.into_iter().next()
+    }
+}
+
+struct DisplayFaceInfo<'a>(&'a FaceInfo);
+impl<'a> fmt::Display for DisplayFaceInfo<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        let path = match &*self.0.source {
+            Source::Binary(_) => None,
+            Source::File(path) => Some(path.display()),
+        };
+        write!(
+            f,
+            "family=\"{}\", source={:?},{}",
+            self.0.family, path, self.0.index
+        )
     }
 }
 
