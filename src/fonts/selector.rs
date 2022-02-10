@@ -10,11 +10,12 @@
 use super::families;
 use fontdb::{FaceInfo, Source};
 pub use fontdb::{Stretch, Style, Weight};
-use log::{info, warn};
+use log::{debug, info, trace, warn};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::collections::hash_map::{Entry, HashMap};
+use std::fmt;
 use std::path::Path;
 
 /// How to add new aliases when others exist
@@ -54,7 +55,7 @@ fn to_uppercase<'a>(c: Cow<'a, str>) -> Cow<'a, str> {
 pub struct Database {
     state: State,
     db: fontdb::Database,
-    families_upper: HashMap<String, usize>,
+    families_upper: HashMap<String, Vec<usize>>,
     // contract: all keys and values are uppercase
     aliases: HashMap<Cow<'static, str>, Vec<Cow<'static, str>>>,
 }
@@ -147,7 +148,7 @@ impl Database {
             .get(family)
             .and_then(|list| list.iter().next())
             .map(|name| {
-                let index = *families_upper.get(name.as_ref()).unwrap();
+                let index = families_upper.get(name.as_ref()).unwrap()[0];
                 db.faces()[index].family.clone()
             })
     }
@@ -256,14 +257,14 @@ impl Database {
             }
             info!("Found {} fonts", self.db.len());
 
-            self.families_upper = self
-                .db
-                .faces()
-                .iter()
-                .enumerate()
-                .map(|(i, face)| (face.family.to_uppercase(), i))
-                .collect();
-            let families_upper = &self.families_upper;
+            let families_upper = &mut self.families_upper;
+            for (i, face) in self.db.faces().iter().enumerate() {
+                trace!("Discovered: {}", DisplayFaceInfo(face));
+                families_upper
+                    .entry(face.family.to_uppercase())
+                    .or_default()
+                    .push(i);
+            }
 
             for aliases in self.aliases.values_mut() {
                 // Remove aliases to missing fonts:
@@ -404,6 +405,7 @@ impl<'a> FontSelector<'a> {
     where
         F: FnMut(&'b Source, u32) -> Result<(), Box<dyn std::error::Error>>,
     {
+        debug!("select(): {:?}", self);
         // TODO(opt): improve, perhaps moving some computation earlier (e.g.
         // culling aliases which do not resolve fonts), and use faster alias expansion.
         let mut families: Vec<Cow<'b, str>> = self.families.clone();
@@ -432,8 +434,12 @@ impl<'a> FontSelector<'a> {
         let mut candidates = Vec::new();
         // Step 3: find any matching font faces, case-insensitively
         for family in families {
-            if let Some(index) = db.families_upper.get(family.as_ref()) {
-                candidates.push(&db.db.faces()[*index]);
+            if let Some(indices) = db.families_upper.get(family.as_ref()) {
+                for index in indices {
+                    let candidate = &db.db.faces()[*index];
+                    trace!("candidate: {}", DisplayFaceInfo(candidate));
+                    candidates.push(candidate);
+                }
             }
 
             // Step 4: if any match from a family, narrow to a single face.
@@ -584,6 +590,21 @@ impl<'a> FontSelector<'a> {
 
         // Return the result.
         matching_set.into_iter().next()
+    }
+}
+
+struct DisplayFaceInfo<'a>(&'a FaceInfo);
+impl<'a> fmt::Display for DisplayFaceInfo<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        let path = match &*self.0.source {
+            Source::Binary(_) => None,
+            Source::File(path) => Some(path.display()),
+        };
+        write!(
+            f,
+            "family=\"{}\", source={:?},{}",
+            self.0.family, path, self.0.index
+        )
     }
 }
 

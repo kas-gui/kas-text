@@ -2,6 +2,11 @@
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.2] — 2022-02-10
+
+-   Spellcheck documentation (#62)
+-   Fix selection of best font from a family (#63)
+
 ## [0.4.1] — 2021-09-07
 
 -   Document loading order requirements (#59)
