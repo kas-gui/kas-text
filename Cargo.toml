@@ -1,6 +1,6 @@
 [package]
 name = "kas-text"
-version = "0.4.1"
+version = "0.4.2"
 authors = ["Diggory Hardy <git@dhardy.name>"]
 edition = "2021"
 license = "Apache-2.0"
