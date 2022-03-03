@@ -39,7 +39,7 @@ impl FaceRef {
     /// ```
     #[inline]
     pub fn dpu(self, dpem: f32) -> DPU {
-        DPU(dpem / f32::from(self.0.units_per_em().unwrap()))
+        DPU(dpem / f32::from(self.0.units_per_em()))
     }
 
     /// Get a scaled reference

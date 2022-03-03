@@ -522,12 +522,15 @@ fn shape_simple(
         }
 
         if let Some(prev) = prev_glyph_id {
-            if let Some(adv) = (sf.face().0)
-                .kerning_subtables()
-                .filter(|st| st.is_horizontal() && !st.is_variable())
-                .find_map(|st| st.glyphs_kerning(prev.into(), id.into()))
-            {
-                caret += sf.dpu().i16_to_px(adv);
+            if let Some(kern) = sf.face().0.tables().kern {
+                if let Some(adv) = kern
+                    .subtables
+                    .into_iter()
+                    .filter(|st| st.horizontal && !st.variable)
+                    .find_map(|st| st.glyphs_kerning(prev.into(), id.into()))
+                {
+                    caret += sf.dpu().i16_to_px(adv);
+                }
             }
         }
         prev_glyph_id = Some(id);

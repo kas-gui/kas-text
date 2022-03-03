@@ -11,7 +11,7 @@ use crate::fonts::{self, FontId, FontSelector, Style, Weight};
 #[cfg(not(feature = "gat"))]
 use crate::OwningVecIter;
 use crate::{Effect, EffectFlags};
-use pulldown_cmark::{Event, Tag};
+use pulldown_cmark::{Event, HeadingLevel, Tag};
 use std::iter::FusedIterator;
 use thiserror::Error;
 
@@ -367,18 +367,18 @@ impl StackItem {
                 state.start_block(text);
                 None
             }
-            Tag::Heading(level) => {
+            Tag::Heading(level, _, _) => {
                 state.start_block(text);
                 self.start = to_u32(text.len());
                 with_clone(self, |item| {
+                    // CSS sizes: https://www.w3.org/TR/2018/REC-css-fonts-3-20180920/#font-size-prop
                     item.rel_size = match level {
-                        1 => 2.0,
-                        2 => 1.75,
-                        3 => 1.5,
-                        4 => 1.35,
-                        5 => 1.2,
-                        6 => 1.1,
-                        _ => panic!("Unexpected: heading level not in 1..=6"),
+                        HeadingLevel::H1 => 2.0 / 1.0,
+                        HeadingLevel::H2 => 3.0 / 2.0,
+                        HeadingLevel::H3 => 6.0 / 5.0,
+                        HeadingLevel::H4 => 1.0,
+                        HeadingLevel::H5 => 8.0 / 9.0,
+                        HeadingLevel::H6 => 3.0 / 5.0,
                     }
                 })
             }
@@ -427,7 +427,7 @@ impl StackItem {
                 state.end_block();
                 false
             }
-            Tag::Heading(_) | Tag::CodeBlock(_) => {
+            Tag::Heading(_, _, _) | Tag::CodeBlock(_) => {
                 state.end_block();
                 true
             }
