@@ -134,7 +134,6 @@ impl TextDisplay {
         if action == Action::None {
             return None;
         }
-        self.action = Action::None;
 
         if action >= Action::All {
             let bidi = env.flags.contains(EnvFlags::BIDI);
