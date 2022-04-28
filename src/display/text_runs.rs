@@ -39,14 +39,11 @@ impl TextDisplay {
     /// This updates the result of [`TextDisplay::prepare_runs`] due to change
     /// in font size.
     ///
-    /// Prerequisites: prepared runs: panics if action is greater than `Action::Wrap`.  
+    /// Prerequisites: prepared runs: requires action is no greater than `Action::Wrap`.
     /// Post-requirements: prepare lines (requires action `Action::Wrap`).  
     /// Parameters: see [`crate::Environment`] documentation.
-    pub fn resize_runs<F: FormattableText>(&mut self, text: &F, dpp: f32, pt_size: f32) {
-        assert!(
-            self.action <= Action::Wrap,
-            "kas-text::TextDisplay: runs not prepared"
-        );
+    pub(crate) fn resize_runs<F: FormattableText>(&mut self, text: &F, dpp: f32, pt_size: f32) {
+        assert!(self.action <= Action::Wrap);
         self.action = Action::Wrap;
         let mut dpem = dpp * pt_size;
 
@@ -85,8 +82,10 @@ impl TextDisplay {
     /// This is the first step of preparation: breaking text into runs according
     /// to font properties, bidi-levels and line-wrap points.
     ///
-    /// Prerequisites: none (ignores current `action` state).  
-    /// Post-requirements: prepare lines (requires action `Action::Wrap`).  
+    /// This method only updates self as required; use [`Self::require_action`] if necessary.
+    /// On [`Action::All`], this prepares runs from scratch; on [`Action::Resize`] existing runs
+    /// are resized; afterwards, action is no greater than [`Action::Wrap`].
+    ///
     /// Parameters: see [`crate::Environment`] documentation.
     pub fn prepare_runs<F: FormattableText>(
         &mut self,
@@ -97,6 +96,13 @@ impl TextDisplay {
         dpp: f32,
         pt_size: f32,
     ) {
+        match self.action {
+            Action::None | Action::Wrap => return,
+            Action::Resize => return self.resize_runs(text, dpp, pt_size),
+            Action::All => (),
+        }
+        self.action = Action::Wrap;
+
         // This method constructs a list of "hard lines" (the initial line and any
         // caused by a hard break), each composed of a list of "level runs" (the
         // result of splitting and reversing according to Unicode TR9 aka
@@ -105,7 +111,6 @@ impl TextDisplay {
 
         self.runs.clear();
         self.line_runs.clear();
-        self.action = Action::Wrap;
 
         let mut dpem = dpp * pt_size;
 

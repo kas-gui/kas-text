@@ -2,6 +2,12 @@
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] — unreleased
+
+-   Methods which previously panicked when "not ready" now return `Result<T, NotReady>`
+-   Remove `resize_runs` from API
+-   Change behaviour of `Text::prepare_lines` to prepare from scratch if necessary
+
 ## [0.4.2] — 2022-02-10
 
 -   Spellcheck documentation (#62)

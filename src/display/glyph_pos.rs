@@ -5,7 +5,7 @@
 
 //! Methods using positioned glyphs
 
-use super::TextDisplay;
+use super::{NotReady, TextDisplay};
 use crate::conv::to_usize;
 use crate::fonts::{fonts, FaceId, ScaledFaceRef};
 use crate::{Glyph, Vec2};
@@ -154,8 +154,10 @@ impl TextDisplay {
     /// the coordinates of the top-left corner should be added to the result(s).
     /// The result is also not guaranteed to be within the expected window
     /// between 0 and `self.env().bounds`. The user should clamp the result.
-    pub fn text_glyph_pos(&self, index: usize) -> MarkerPosIter {
-        assert!(self.action.is_ready(), "kas-text::TextDisplay: not ready");
+    pub fn text_glyph_pos(&self, index: usize) -> Result<MarkerPosIter, NotReady> {
+        if !self.action.is_ready() {
+            return Err(NotReady);
+        }
 
         let mut v: [MarkerPos; 2] = Default::default();
         let (a, mut b) = (0, 0);
@@ -224,7 +226,7 @@ impl TextDisplay {
             break;
         }
 
-        MarkerPosIter { v, a, b }
+        Ok(MarkerPosIter { v, a, b })
     }
 
     /// Get the number of glyphs
@@ -257,8 +259,10 @@ impl TextDisplay {
     /// low overhead.
     ///
     /// One must call [`TextDisplay::prepare`] before this method.
-    pub fn glyphs<F: FnMut(FaceId, f32, Glyph)>(&self, mut f: F) {
-        assert!(self.action.is_ready(), "kas-text::TextDisplay: not ready");
+    pub fn glyphs<F: FnMut(FaceId, f32, Glyph)>(&self, mut f: F) -> Result<(), NotReady> {
+        if !self.action.is_ready() {
+            return Err(NotReady);
+        }
 
         // self.wrapped_runs is in logical order
         for run_part in self.wrapped_runs.iter().cloned() {
@@ -271,6 +275,8 @@ impl TextDisplay {
                 f(face_id, dpem, glyph);
             }
         }
+
+        Ok(())
     }
 
     /// Like [`TextDisplay::glyphs`] but with added effects
@@ -301,12 +307,16 @@ impl TextDisplay {
         default_aux: X,
         mut f: F,
         mut g: G,
-    ) where
+    ) -> Result<(), NotReady>
+    where
         X: Copy,
         F: FnMut(FaceId, f32, Glyph, usize, X),
         G: FnMut(f32, f32, f32, f32, usize, X),
     {
-        assert!(self.action.is_ready(), "kas-text::TextDisplay: not ready");
+        if !self.action.is_ready() {
+            return Err(NotReady);
+        }
+
         let fonts = fonts();
 
         let mut effect_cur = usize::MAX;
@@ -458,6 +468,8 @@ impl TextDisplay {
                 g(x1, x2, y_top, h, effect_cur, aux);
             }
         }
+
+        Ok(())
     }
 
     /// Yield a sequence of rectangles to highlight a given range, by lines
@@ -476,10 +488,16 @@ impl TextDisplay {
     /// the coordinates of the top-left corner should be added to the result(s).
     /// The result is also not guaranteed to be within the expected window
     /// between 0 and `self.env().bounds`. The user should clamp the result.
-    pub fn highlight_lines(&self, range: std::ops::Range<usize>) -> Vec<(Vec2, Vec2)> {
-        assert!(self.action.is_ready(), "kas-text::TextDisplay: not ready");
+    pub fn highlight_lines(
+        &self,
+        range: std::ops::Range<usize>,
+    ) -> Result<Vec<(Vec2, Vec2)>, NotReady> {
+        if !self.action.is_ready() {
+            return Err(NotReady);
+        }
+
         if range.len() == 0 {
-            return vec![];
+            return Ok(vec![]);
         }
 
         let mut lines = self.lines.iter();
@@ -493,7 +511,7 @@ impl TextDisplay {
                     break 'l1 line;
                 }
             }
-            return vec![];
+            return Ok(vec![]);
         };
 
         if range.start > cur_line.text_range.start() || range.end <= cur_line.text_range.end() {
@@ -548,7 +566,7 @@ impl TextDisplay {
             }
         }
 
-        rects
+        Ok(rects)
     }
 
     /// Yield a sequence of rectangles to highlight a given range, by runs
@@ -567,15 +585,21 @@ impl TextDisplay {
     /// The result is also not guaranteed to be within the expected window
     /// between 0 and `self.env().bounds`. The user should clamp the result.
     #[inline]
-    pub fn highlight_runs(&self, range: std::ops::Range<usize>) -> Vec<(Vec2, Vec2)> {
-        assert!(self.action.is_ready(), "kas-text::TextDisplay: not ready");
+    pub fn highlight_runs(
+        &self,
+        range: std::ops::Range<usize>,
+    ) -> Result<Vec<(Vec2, Vec2)>, NotReady> {
+        if !self.action.is_ready() {
+            return Err(NotReady);
+        }
+
         if range.len() == 0 {
-            return vec![];
+            return Ok(vec![]);
         }
 
         let mut rects = Vec::with_capacity(self.wrapped_runs.len());
         self.highlight_run_range(range, 0..usize::MAX, &mut rects);
-        rects
+        Ok(rects)
     }
 
     /// Produce highlighting rectangles within a range of runs
