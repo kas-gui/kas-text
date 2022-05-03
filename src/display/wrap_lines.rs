@@ -5,7 +5,7 @@
 
 //! Text preparation: wrapping
 
-use super::{RunSpecial, TextDisplay};
+use super::{NotReady, RunSpecial, TextDisplay};
 use crate::conv::{to_u32, to_usize};
 use crate::fonts::{fonts, FontLibrary};
 use crate::shaper::GlyphRun;
@@ -44,15 +44,19 @@ impl TextDisplay {
     ///
     /// This does text layout, with wrapping if enabled.
     ///
-    /// Prerequisites: prepared runs: panics if action is greater than `Action::Wrap`.  
-    /// Post-requirements: none (`Action::None`).  
-    /// Parameters: see [`crate::Environment`] documentation.  
+    /// Prerequisites: prepared runs: errors if action is greater than `Action::Wrap`.
+    /// Post-requirements: none (`Action::None`).
+    /// Parameters: see [`crate::Environment`] documentation.
     /// Returns: required size, in pixels.
-    pub fn prepare_lines(&mut self, bounds: Vec2, flags: EnvFlags, align: (Align, Align)) -> Vec2 {
-        assert!(
-            self.action <= Action::Wrap,
-            "kas-text::TextDisplay: runs not prepared"
-        );
+    pub fn prepare_lines(
+        &mut self,
+        bounds: Vec2,
+        flags: EnvFlags,
+        align: (Align, Align),
+    ) -> Result<Vec2, NotReady> {
+        if self.action > Action::Wrap {
+            return Err(NotReady);
+        }
         self.action = Action::None;
 
         let wrap = flags.contains(EnvFlags::WRAP);
@@ -183,7 +187,7 @@ impl TextDisplay {
         self.lines = adder.lines;
         self.num_glyphs = adder.num_glyphs;
         self.width = bounds.0;
-        required
+        Ok(required)
     }
 }
 

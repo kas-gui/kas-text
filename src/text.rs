@@ -7,7 +7,7 @@
 
 use std::convert::{AsMut, AsRef};
 
-use crate::display::{Effect, MarkerPosIter, TextDisplay};
+use crate::display::{Effect, MarkerPosIter, NotReady, TextDisplay};
 use crate::fonts::FaceId;
 use crate::format::{EditableText, FormattableText};
 use crate::{Action, Glyph, Vec2};
@@ -156,16 +156,13 @@ pub trait TextApi {
     /// environment state.
     fn prepare_runs(&mut self);
 
-    /// Update font size
-    ///
-    /// Wraps [`TextDisplay::resize_runs`], passing parameters from the
-    /// environment state.
-    fn resize_runs(&mut self);
-
     /// Prepare lines ("wrap")
     ///
-    /// Wraps [`TextDisplay::prepare_lines`], passing parameters from the
-    /// environment state.
+    /// Prepares text, returning required size, in pixels.
+    ///
+    /// This differs slightly from [`TextDisplay::prepare_lines`] in that it does all preparation
+    /// necessary. It differs from [`Self::prepare`] in that this method always (re)calculates
+    /// text wrapping and returns size requirements.
     fn prepare_lines(&mut self) -> Vec2;
 
     /// Get the sequence of effect tokens
@@ -228,15 +225,14 @@ impl<T: FormattableText> TextApi for Text<T> {
     }
 
     #[inline]
-    fn resize_runs(&mut self) {
-        self.display
-            .resize_runs(&self.text, self.env.dpp, self.env.pt_size);
-    }
-
-    #[inline]
     fn prepare_lines(&mut self) -> Vec2 {
-        self.display
-            .prepare_lines(self.env.bounds, self.env.flags, self.env.align)
+        if self.display.required_action() > Action::Wrap {
+            self.display.prepare(&self.text, &self.env).unwrap()
+        } else {
+            self.display
+                .prepare_lines(self.env.bounds, self.env.flags, self.env.align)
+                .unwrap()
+        }
     }
 
     #[inline]
@@ -255,8 +251,7 @@ pub trait TextApiExt: TextApi {
         f(&mut update);
         let action = update.finish().max(self.display().action);
         match action {
-            Action::All => self.prepare_runs(),
-            Action::Resize => self.resize_runs(),
+            Action::All | Action::Resize => self.prepare_runs(),
             _ => (),
         }
         self.prepare_lines()
@@ -272,7 +267,7 @@ pub trait TextApiExt: TextApi {
     ///
     /// Wraps [`TextDisplay::num_lines`].
     #[inline]
-    fn num_lines(&self) -> usize {
+    fn num_lines(&self) -> Result<usize, NotReady> {
         self.display().num_lines()
     }
 
@@ -280,7 +275,7 @@ pub trait TextApiExt: TextApi {
     ///
     /// Wraps [`TextDisplay::find_line`].
     #[inline]
-    fn find_line(&self, index: usize) -> Option<(usize, std::ops::Range<usize>)> {
+    fn find_line(&self, index: usize) -> Result<Option<(usize, std::ops::Range<usize>)>, NotReady> {
         self.display().find_line(index)
     }
 
@@ -288,7 +283,7 @@ pub trait TextApiExt: TextApi {
     ///
     /// Wraps [`TextDisplay::line_range`].
     #[inline]
-    fn line_range(&self, line: usize) -> Option<std::ops::Range<usize>> {
+    fn line_range(&self, line: usize) -> Result<Option<std::ops::Range<usize>>, NotReady> {
         self.display().line_range(line)
     }
 
@@ -296,7 +291,7 @@ pub trait TextApiExt: TextApi {
     ///
     /// Wraps [`TextDisplay::line_is_ltr`].
     #[inline]
-    fn line_is_ltr(&self, line: usize) -> bool {
+    fn line_is_ltr(&self, line: usize) -> Result<bool, NotReady> {
         self.display().line_is_ltr(line)
     }
 
@@ -304,7 +299,7 @@ pub trait TextApiExt: TextApi {
     ///
     /// Wraps [`TextDisplay::line_is_rtl`].
     #[inline]
-    fn line_is_rtl(&self, line: usize) -> bool {
+    fn line_is_rtl(&self, line: usize) -> Result<bool, NotReady> {
         self.display().line_is_rtl(line)
     }
 
@@ -312,7 +307,7 @@ pub trait TextApiExt: TextApi {
     ///
     /// Wraps [`TextDisplay::text_index_nearest`].
     #[inline]
-    fn text_index_nearest(&self, pos: Vec2) -> usize {
+    fn text_index_nearest(&self, pos: Vec2) -> Result<usize, NotReady> {
         self.display().text_index_nearest(pos)
     }
 
@@ -320,14 +315,14 @@ pub trait TextApiExt: TextApi {
     ///
     /// Wraps [`TextDisplay::line_index_nearest`].
     #[inline]
-    fn line_index_nearest(&self, line: usize, x: f32) -> Option<usize> {
+    fn line_index_nearest(&self, line: usize, x: f32) -> Result<Option<usize>, NotReady> {
         self.display().line_index_nearest(line, x)
     }
 
     /// Find the starting position (top-left) of the glyph at the given index
     ///
     /// Wraps [`TextDisplay::text_glyph_pos`].
-    fn text_glyph_pos(&self, index: usize) -> MarkerPosIter {
+    fn text_glyph_pos(&self, index: usize) -> Result<MarkerPosIter, NotReady> {
         self.display().text_glyph_pos(index)
     }
 
@@ -342,14 +337,20 @@ pub trait TextApiExt: TextApi {
     /// Yield a sequence of positioned glyphs
     ///
     /// Wraps [`TextDisplay::glyphs`].
-    fn glyphs<F: FnMut(FaceId, f32, Glyph)>(&self, f: F) {
+    fn glyphs<F: FnMut(FaceId, f32, Glyph)>(&self, f: F) -> Result<(), NotReady> {
         self.display().glyphs(f)
     }
 
     /// Like [`TextDisplay::glyphs`] but with added effects
     ///
     /// Wraps [`TextDisplay::glyphs_with_effects`].
-    fn glyphs_with_effects<X, F, G>(&self, effects: &[Effect<X>], default_aux: X, f: F, g: G)
+    fn glyphs_with_effects<X, F, G>(
+        &self,
+        effects: &[Effect<X>],
+        default_aux: X,
+        f: F,
+        g: G,
+    ) -> Result<(), NotReady>
     where
         X: Copy,
         F: FnMut(FaceId, f32, Glyph, usize, X),
@@ -362,7 +363,10 @@ pub trait TextApiExt: TextApi {
     /// Yield a sequence of rectangles to highlight a given range, by lines
     ///
     /// Wraps [`TextDisplay::highlight_lines`].
-    fn highlight_lines(&self, range: std::ops::Range<usize>) -> Vec<(Vec2, Vec2)> {
+    fn highlight_lines(
+        &self,
+        range: std::ops::Range<usize>,
+    ) -> Result<Vec<(Vec2, Vec2)>, NotReady> {
         self.display().highlight_lines(range)
     }
 
@@ -370,7 +374,7 @@ pub trait TextApiExt: TextApi {
     ///
     /// Wraps [`TextDisplay::highlight_runs`].
     #[inline]
-    fn highlight_runs(&self, range: std::ops::Range<usize>) -> Vec<(Vec2, Vec2)> {
+    fn highlight_runs(&self, range: std::ops::Range<usize>) -> Result<Vec<(Vec2, Vec2)>, NotReady> {
         self.display().highlight_runs(range)
     }
 }
