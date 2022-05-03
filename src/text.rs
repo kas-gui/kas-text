@@ -250,6 +250,7 @@ pub trait TextApiExt: TextApi {
         let mut update = UpdateEnv::new(self.env_mut());
         f(&mut update);
         let action = update.finish().max(self.display().action);
+        self.require_action(action);
         match action {
             Action::All | Action::Resize => self.prepare_runs(),
             _ => (),

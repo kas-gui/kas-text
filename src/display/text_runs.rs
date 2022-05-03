@@ -43,7 +43,7 @@ impl TextDisplay {
     /// Post-requirements: prepare lines (requires action `Action::Wrap`).  
     /// Parameters: see [`crate::Environment`] documentation.
     pub(crate) fn resize_runs<F: FormattableText>(&mut self, text: &F, dpp: f32, pt_size: f32) {
-        assert!(self.action <= Action::Wrap);
+        assert!(self.action <= Action::Resize);
         self.action = Action::Wrap;
         let mut dpem = dpp * pt_size;
 
