@@ -15,18 +15,6 @@ use crate::{Action, Vec2};
 pub struct Environment {
     /// Flags enabling/disabling certain features
     ///
-    /// ## Bidirectional text
-    ///
-    /// If enabled, right-to-left text embedded within left-to-right text and
-    /// LTR within RTL will be re-ordered according to the Unicode Bidirectional
-    /// Algorithm (Unicode Technical Report #9).
-    ///
-    /// If disabled, the base paragraph direction may be LTR or RTL depending on
-    /// [`Environment::dir`], but embedded text is not re-ordered.
-    ///
-    /// Default value: `true`. This should normally be enabled unless there is
-    /// a specific reason to disable it.
-    ///
     /// ## Line wrapping
     ///
     /// By default, this is true and long text lines are wrapped based on the
@@ -34,14 +22,11 @@ pub struct Environment {
     /// boundary, but explicit line-breaks such as `\n` still result in new
     /// lines.
     pub flags: EnvFlags,
-    /// Default text direction
+    /// Text direction
     ///
-    /// Usually this may be left to its default value of [`Direction::Auto`].
-    /// If `bidi == true`, this parameter sets the "paragraph embedding level"
-    /// (whose main affect is on lines without strongly-directional characters).
-    /// If `bidi == false` this directly sets the line direction, unless
-    /// `dir == Auto`, in which case direction is auto-detected.
-    pub dir: Direction,
+    /// By default, text direction (LTR or RTL) is automatically detected with
+    /// full bi-directional text support (Unicode Technical Report #9).
+    pub direction: Direction,
     /// Alignment (`horiz`, `vert`)
     ///
     /// By default, horizontal alignment is left or right depending on the
@@ -76,7 +61,7 @@ impl Default for Environment {
     fn default() -> Self {
         Environment {
             flags: Default::default(),
-            dir: Direction::default(),
+            direction: Direction::default(),
             font_id: Default::default(),
             dpem: 11.0 * 96.0 / 72.0,
             bounds: Vec2::INFINITY,
@@ -136,9 +121,9 @@ impl<'a> UpdateEnv<'a> {
     }
 
     /// Set the default direction
-    pub fn set_dir(&mut self, dir: Direction) {
-        if dir != self.env.dir {
-            self.env.dir = dir;
+    pub fn set_direction(&mut self, direction: Direction) {
+        if direction != self.env.direction {
+            self.env.direction = direction;
             self.action = Action::All;
         }
     }
@@ -190,10 +175,6 @@ bitflags::bitflags! {
     /// By default, all flags are enabled
     #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
     pub struct EnvFlags: u8 {
-        /// Enable bidirectional text support
-        ///
-        /// Without this, lines are LTR or RTL only (no bidirectional content).
-        const BIDI = 1 << 0;
         /// Enable line wrapping
         ///
         /// Without this, only explicit line breaks end lines.
@@ -236,23 +217,27 @@ impl Default for Align {
     }
 }
 
-/// Directionality of environment
+/// Directionality of text
 ///
 /// This can be used to force the text direction.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Ord, PartialOrd, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Direction {
-    /// Auto-detect (default)
-    Auto,
-    /// Left-to-Right
-    LR,
-    /// Right-to-Left
-    RL,
+    /// Auto-detect with bi-directional support (default)
+    Bidi,
+    /// Auto-detect with bi-directional support, defaulting to right-to-left
+    BidiRtl,
+    /// Auto-detect, single line direction only
+    Single,
+    /// Force left-to-right text direction
+    Ltr,
+    /// Force right-to-left text direction
+    Rtl,
 }
 
 impl Default for Direction {
     fn default() -> Self {
-        Direction::Auto
+        Direction::Bidi
     }
 }
 

@@ -9,7 +9,7 @@ use smallvec::SmallVec;
 
 use crate::conv::to_usize;
 use crate::format::FormattableText;
-use crate::{shaper, Action, EnvFlags, Environment, Vec2};
+use crate::{shaper, Action, Environment, Vec2};
 
 mod glyph_pos;
 mod text_runs;
@@ -136,8 +136,7 @@ impl TextDisplay {
         }
 
         if action >= Action::All {
-            let bidi = env.flags.contains(EnvFlags::BIDI);
-            self.prepare_runs(text, bidi, env.dir, env.font_id, env.dpem);
+            self.prepare_runs(text, env.direction, env.font_id, env.dpem);
         } else if action == Action::Resize {
             // Note: this is only needed if we didn't just call prepare_runs()
             self.resize_runs(text, env.dpem);

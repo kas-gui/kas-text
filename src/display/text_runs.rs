@@ -89,8 +89,7 @@ impl TextDisplay {
     pub fn prepare_runs<F: FormattableText>(
         &mut self,
         text: &F,
-        bidi: bool,
-        dir: Direction,
+        direction: Direction,
         mut font_id: FontId,
         mut dpem: f32,
     ) {
@@ -123,10 +122,12 @@ impl TextDisplay {
         let fonts = fonts();
         let mut last_face_id = fonts.first_face_for(font_id);
 
-        let default_para_level = match dir {
-            Direction::Auto => None,
-            Direction::LR => Some(LTR_LEVEL),
-            Direction::RL => Some(RTL_LEVEL),
+        let (bidi, default_para_level) = match direction {
+            Direction::Bidi => (true, None),
+            Direction::BidiRtl => (true, Some(RTL_LEVEL)),
+            Direction::Single => (false, None),
+            Direction::Ltr => (false, Some(LTR_LEVEL)),
+            Direction::Rtl => (false, Some(RTL_LEVEL)),
         };
         let mut levels = vec![];
         let mut level: Level;
