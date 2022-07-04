@@ -8,8 +8,7 @@
 use smallvec::SmallVec;
 
 use crate::conv::to_usize;
-use crate::format::FormattableText;
-use crate::{shaper, Action, Environment, Vec2};
+use crate::{shaper, Action, Vec2};
 
 mod glyph_pos;
 mod text_runs;
@@ -27,16 +26,38 @@ pub struct NotReady;
 
 /// Text display, without source text representation
 ///
+/// This struct stores glyph locations and intermediate values used to calculate
+/// glyph layout. It does not contain the source text itself or "environment"
+/// state used during layout.
+///
 /// In general, it is recommended to use [`crate::Text`] instead, which includes
-/// a representation of the source text and environment state.
+/// a representation of the source text and environmental state.
 ///
-/// Once prepared (via [`TextDisplay::prepare`]), this struct contains
-/// everything needed to display text, query glyph position and size
-/// requirements, and even re-wrap text lines. It cannot, however, support
-/// editing or cloning the source text.
+/// ### Preparation
 ///
-/// This struct tracks its state of preparation and can be default-constructed
-/// in an unprepared state with no text.
+/// This struct tracks the state of preparation ([`Self::required_action`]).
+/// Methods will return a [`NotReady`] error if called without sufficient
+/// preparation.
+///
+/// The struct may be default-constructed.
+///
+/// Text preparation proceeds as follows:
+///
+/// 1.  [`Self::prepare_runs`] breaks the source text into runs which may be fed
+///     to the shaping algorithm. Each run has a single bidi embedding level
+///     (direction) and uses a single font face, and contains no explicit line
+///     break (except as a terminator).
+///
+///     Each run is then fed through the text shaper, resulting in a sequence of
+///     type-set glyphs.
+/// 2.  Optionally, [`Self::max_line_length`] may be used to calculate the
+///     required width (mostly useful for short texts which will not wrap).
+/// 3.  [`Self::prepare_lines`] takes the output of the first step and
+///     applies line wrapping, line re-ordering (for bi-directional lines) and
+///     alignment.
+///
+///     This step is separate primarily to allow faster re-wrapping should the
+///     text's wrap width change.
 ///
 /// ### Text navigation
 ///
@@ -113,39 +134,6 @@ impl TextDisplay {
     #[inline]
     pub fn require_action(&mut self, action: Action) {
         self.action = self.action.max(action);
-    }
-
-    /// Prepare text for display, as necessary
-    ///
-    /// Does all preparation steps necessary in order to display or query the
-    /// layout of this text.
-    ///
-    /// Required preparation actions are tracked internally, but cannot
-    /// notice changes in the environment. In case the environment has changed
-    /// one should either call [`TextDisplay::require_action`] before this method.
-    ///
-    /// Returns new size requirements, if an update action occurred. Returns
-    /// `None` if no action was required (since requirements are computed as a
-    /// side-effect of line-wrapping, and presumably in this case the existing
-    /// allocation is sufficient). One may force calculation of this value by
-    /// calling `text.require_action(Action::Wrap)`.
-    pub fn prepare<F: FormattableText>(&mut self, text: &F, env: &Environment) -> Option<Vec2> {
-        let action = self.action;
-        if action == Action::None {
-            return None;
-        }
-
-        if action >= Action::All {
-            self.prepare_runs(text, env.direction, env.font_id, env.dpem);
-        } else if action == Action::Resize {
-            // Note: this is only needed if we didn't just call prepare_runs()
-            self.resize_runs(text, env.dpem);
-        }
-
-        Some(
-            self.prepare_lines(env.bounds, env.flags, env.align)
-                .unwrap(),
-        )
     }
 
     /// Get the number of lines (after wrapping)

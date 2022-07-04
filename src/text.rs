@@ -141,15 +141,6 @@ pub trait TextApi {
     /// See [`TextDisplay::require_action`].
     fn require_action(&mut self, action: Action);
 
-    /// Prepare text for display
-    ///
-    /// Returns the required size to display text (with wrapping based on the
-    /// bounds set in `env`), if any update occurred (see documentation of
-    /// [`TextDisplay::prepare`]).
-    ///
-    /// Wraps [`TextDisplay::prepare`], passing through `env`.
-    fn prepare(&mut self) -> Option<Vec2>;
-
     /// Prepare text runs
     ///
     /// Wraps [`TextDisplay::prepare_runs`], passing parameters from the
@@ -164,6 +155,22 @@ pub trait TextApi {
     /// necessary. It differs from [`Self::prepare`] in that this method always (re)calculates
     /// text wrapping and returns size requirements.
     fn prepare_lines(&mut self) -> Vec2;
+
+    /// Prepare text for display, as necessary
+    ///
+    /// Does all preparation steps necessary in order to display or query the
+    /// layout of this text.
+    ///
+    /// Required preparation actions are tracked internally, but cannot
+    /// notice changes in the environment. In case the environment has changed
+    /// one should either call [`TextDisplay::require_action`] before this method.
+    ///
+    /// Returns new size requirements, if an update action occurred. Returns
+    /// `None` if no action was required (since requirements are computed as a
+    /// side-effect of line-wrapping, and presumably in this case the existing
+    /// allocation is sufficient). One may force calculation of this value by
+    /// calling `text.require_action(Action::Wrap)`.
+    fn prepare(&mut self) -> Option<Vec2>;
 
     /// Get the sequence of effect tokens
     ///
@@ -208,11 +215,6 @@ impl<T: FormattableText> TextApi for Text<T> {
     }
 
     #[inline]
-    fn prepare(&mut self) -> Option<Vec2> {
-        self.display.prepare(&self.text, &self.env)
-    }
-
-    #[inline]
     fn prepare_runs(&mut self) {
         self.display.prepare_runs(
             &self.text,
@@ -224,12 +226,23 @@ impl<T: FormattableText> TextApi for Text<T> {
 
     #[inline]
     fn prepare_lines(&mut self) -> Vec2 {
-        if self.display.required_action() > Action::Wrap {
-            self.display.prepare(&self.text, &self.env).unwrap()
-        } else {
+        self.prepare_runs();
+
+        self.display
+            .prepare_lines(self.env.bounds, self.env.flags, self.env.align)
+            .unwrap()
+    }
+
+    #[inline]
+    fn prepare(&mut self) -> Option<Vec2> {
+        self.prepare_runs();
+
+        if self.display.required_action() > Action::None {
             self.display
                 .prepare_lines(self.env.bounds, self.env.flags, self.env.align)
-                .unwrap()
+                .ok()
+        } else {
+            None
         }
     }
 
