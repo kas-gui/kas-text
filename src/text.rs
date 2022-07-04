@@ -21,10 +21,10 @@ use crate::{Direction, Environment};
 /// Most Functionality is implemented via the [`TextApi`] and [`TextApiExt`]
 /// traits.
 #[derive(Clone, Debug, Default)]
-pub struct Text<T: FormattableText> {
+pub struct Text<T: FormattableText + ?Sized> {
     env: Environment,
-    text: T,
     display: TextDisplay,
+    text: T,
 }
 
 impl<T: FormattableText> Text<T> {
@@ -168,7 +168,7 @@ pub trait TextApi {
     fn effect_tokens(&self) -> &[Effect<()>];
 }
 
-impl<T: FormattableText> TextApi for Text<T> {
+impl<T: FormattableText + ?Sized> TextApi for Text<T> {
     #[inline]
     fn display(&self) -> &TextDisplay {
         &self.display
@@ -436,7 +436,7 @@ pub trait EditableTextApi {
     fn swap_string(&mut self, string: &mut String);
 }
 
-impl<T: EditableText> EditableTextApi for Text<T> {
+impl<T: EditableText + ?Sized> EditableTextApi for Text<T> {
     #[inline]
     fn insert_char(&mut self, index: usize, c: char) {
         self.text.insert_char(index, c);
@@ -462,13 +462,13 @@ impl<T: EditableText> EditableTextApi for Text<T> {
     }
 }
 
-impl<T: FormattableText> AsRef<TextDisplay> for Text<T> {
+impl<T: FormattableText + ?Sized> AsRef<TextDisplay> for Text<T> {
     fn as_ref(&self) -> &TextDisplay {
         &self.display
     }
 }
 
-impl<T: FormattableText> AsMut<TextDisplay> for Text<T> {
+impl<T: FormattableText + ?Sized> AsMut<TextDisplay> for Text<T> {
     fn as_mut(&mut self) -> &mut TextDisplay {
         &mut self.display
     }

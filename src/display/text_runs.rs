@@ -42,7 +42,7 @@ impl TextDisplay {
     /// Prerequisites: prepared runs: requires action is no greater than `Action::Wrap`.
     /// Post-requirements: prepare lines (requires action `Action::Wrap`).  
     /// Parameters: see [`crate::Environment`] documentation.
-    pub(crate) fn resize_runs<F: FormattableText>(&mut self, text: &F, mut dpem: f32) {
+    pub(crate) fn resize_runs<F: FormattableText + ?Sized>(&mut self, text: &F, mut dpem: f32) {
         assert!(self.action <= Action::Resize);
         self.action = Action::Wrap;
 
@@ -86,7 +86,7 @@ impl TextDisplay {
     /// are resized; afterwards, action is no greater than [`Action::Wrap`].
     ///
     /// Parameters: see [`crate::Environment`] documentation.
-    pub fn prepare_runs<F: FormattableText>(
+    pub fn prepare_runs<F: FormattableText + ?Sized>(
         &mut self,
         text: &F,
         direction: Direction,
