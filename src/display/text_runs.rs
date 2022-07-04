@@ -123,7 +123,6 @@ impl TextDisplay {
         let fonts = fonts();
         let mut last_face_id = fonts.first_face_for(font_id);
 
-        let bidi = bidi;
         let default_para_level = match dir {
             Direction::Auto => None,
             Direction::LR => Some(LTR_LEVEL),

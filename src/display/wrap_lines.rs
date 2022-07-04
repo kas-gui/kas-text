@@ -60,7 +60,6 @@ impl TextDisplay {
         self.action = Action::None;
 
         let wrap = flags.contains(EnvFlags::WRAP);
-        let px_valign = flags.contains(EnvFlags::PX_VALIGN);
 
         let fonts = fonts();
         let capacity = 0; // TODO(opt): estimate like self.text_len() / 16 ?
@@ -121,7 +120,7 @@ impl TextDisplay {
                     if wrap && line_len > width_bound && end.2 > 0 {
                         // Add up to last valid break point then wrap and reset
                         let slice = &mut parts[0..end.2];
-                        adder.add_line(fonts, level, &self.runs, slice, true, px_valign);
+                        adder.add_line(fonts, level, &self.runs, slice, true);
 
                         end.2 = 0;
                         start = end;
@@ -178,7 +177,7 @@ impl TextDisplay {
             if parts.len() > 0 {
                 // It should not be possible for a line to end with a no-break, so:
                 debug_assert_eq!(parts.len(), end.2);
-                adder.add_line(fonts, level, &self.runs, &mut parts, false, px_valign);
+                adder.add_line(fonts, level, &self.runs, &mut parts, false);
             }
         }
 
@@ -220,7 +219,6 @@ impl LineAdder {
         runs: &[GlyphRun],
         parts: &mut [PartInfo],
         is_wrap: bool,
-        px_valign: bool,
     ) {
         assert!(parts.len() > 0);
         let line_start = self.runs.len();
@@ -467,9 +465,9 @@ impl LineAdder {
 
         let top = self.vcaret - ascent;
         self.vcaret -= descent;
-        if px_valign {
-            self.vcaret = self.vcaret.round();
-        }
+        // Vertically align lines to the nearest pixel (improves rendering):
+        self.vcaret = self.vcaret.round();
+
         self.longest = self.longest.max(line_len);
         self.lines.push(Line {
             text_range: Range::from(line_text_start..line_text_end),

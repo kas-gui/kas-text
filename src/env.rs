@@ -191,14 +191,13 @@ bitflags::bitflags! {
     #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
     pub struct EnvFlags: u8 {
         /// Enable bidirectional text support
+        ///
+        /// Without this, lines are LTR or RTL only (no bidirectional content).
         const BIDI = 1 << 0;
         /// Enable line wrapping
-        const WRAP = 1 << 1;
-        /// Vertically align to the nearest pixel
         ///
-        /// This is highly recommended to avoid rendering artifacts at small
-        /// pixel sizes. Affect on layout is negligible.
-        const PX_VALIGN = 1 << 2;
+        /// Without this, only explicit line breaks end lines.
+        const WRAP = 1 << 1;
     }
 }
 
