@@ -11,7 +11,7 @@ use crate::display::{Effect, MarkerPosIter, NotReady, TextDisplay};
 use crate::fonts::FaceId;
 use crate::format::{EditableText, FormattableText};
 use crate::{Action, Glyph, Vec2};
-use crate::{Environment, UpdateEnv};
+use crate::{Direction, Environment};
 
 /// Text, prepared for display in a given environment
 ///
@@ -109,13 +109,14 @@ pub trait TextApi {
     fn clone_string(&self) -> String;
 
     /// Read the environment
-    fn env(&self) -> &Environment;
+    fn env(&self) -> Environment;
 
-    /// Mutate the environment
+    /// Set the environment
     ///
-    /// If using this directly, ensure that necessary preparation actions are
-    /// completed afterwards. Consider using [`TextApiExt::update_env`] instead.
-    fn env_mut(&mut self) -> &mut Environment;
+    /// Use of this method may require new preparation actions.
+    /// Call [`TextApiExt::update_env`] instead to perform such actions
+    /// with a single method call.
+    fn set_env(&mut self, env: Environment);
 
     /// Read the [`TextDisplay`]
     fn display(&self) -> &TextDisplay;
@@ -184,13 +185,28 @@ impl<T: FormattableText> TextApi for Text<T> {
     }
 
     #[inline]
-    fn env(&self) -> &Environment {
-        &self.env
+    fn env(&self) -> Environment {
+        self.env
     }
 
     #[inline]
-    fn env_mut(&mut self) -> &mut Environment {
-        &mut self.env
+    fn set_env(&mut self, env: Environment) {
+        let action;
+        if env.font_id != self.env.font_id || env.direction != self.env.direction {
+            action = Action::All;
+        } else if env.dpem != self.env.dpem {
+            action = Action::Resize;
+        } else if env.bounds != self.env.bounds
+            || env.align != self.env.align
+            || env.wrap != self.env.wrap
+        {
+            action = Action::Wrap;
+        } else {
+            debug_assert_eq!(env, self.env);
+            action = Action::None;
+        }
+        self.display.require_action(action);
+        self.env = env;
     }
 
     #[inline]
@@ -241,16 +257,9 @@ pub trait TextApiExt: TextApi {
     /// Update the environment and prepare, returning required size
     ///
     /// This prepares text as necessary. It always performs line-wrapping.
-    fn update_env<F: FnOnce(&mut UpdateEnv)>(&mut self, f: F) -> Vec2 {
-        let mut update = UpdateEnv::new(self.env_mut());
-        f(&mut update);
-        let action = update.finish().max(self.display().action);
-        self.require_action(action);
-        match action {
-            Action::All | Action::Resize => self.prepare_runs(),
-            _ => (),
-        }
-        self.prepare_lines()
+    fn update_env(&mut self, env: Environment) -> Option<Vec2> {
+        self.set_env(env);
+        self.prepare()
     }
 
     /// Get required action
@@ -285,7 +294,6 @@ pub trait TextApiExt: TextApi {
 
     /// Get the directionality of the first line
     fn text_is_rtl(&self) -> Result<bool, NotReady> {
-        use crate::Direction;
         Ok(match self.display().line_is_rtl(0)? {
             None => matches!(self.env().direction, Direction::BidiRtl | Direction::Rtl),
             Some(is_rtl) => is_rtl,

@@ -6,12 +6,12 @@
 //! KAS Rich-Text library — text-display environment
 
 use crate::fonts::{fonts, FontId};
-use crate::{Action, Vec2};
+use crate::Vec2;
 
 /// Environment in which text is prepared for display
 ///
 /// An `Environment` can be default-constructed (without line-wrapping).
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Environment {
     /// Text direction
     ///
@@ -77,83 +77,6 @@ impl Environment {
     /// To use "the standard font", use `font_id = Default::default()`.
     pub fn line_height(&self, font_id: FontId) -> f32 {
         fonts().get_first_face(font_id).height(self.dpem)
-    }
-}
-
-/// Helper to modify an environment
-#[derive(Debug)]
-pub struct UpdateEnv<'a> {
-    env: &'a mut Environment,
-    action: Action,
-}
-
-impl<'a> UpdateEnv<'a> {
-    pub(crate) fn new(env: &'a mut Environment) -> Self {
-        let action = Action::None;
-        UpdateEnv { env, action }
-    }
-
-    pub(crate) fn finish(self) -> Action {
-        self.action
-    }
-
-    /// Read access to the environment
-    pub fn env(&self) -> &Environment {
-        self.env
-    }
-
-    /// Set font
-    pub fn set_font_id(&mut self, font_id: FontId) {
-        if font_id != self.env.font_id {
-            self.env.font_id = font_id;
-            self.action = Action::All;
-        }
-    }
-
-    /// Set font size (pixels per Em)
-    pub fn set_dpem(&mut self, dpem: f32) {
-        if dpem != self.env.dpem {
-            self.env.dpem = dpem;
-            self.action = Action::Resize;
-        }
-    }
-
-    /// Set the default direction
-    pub fn set_direction(&mut self, direction: Direction) {
-        if direction != self.env.direction {
-            self.env.direction = direction;
-            self.action = Action::All;
-        }
-    }
-
-    /// Set the alignment
-    ///
-    /// Takes `(horiz, vert)` tuple to allow easier parameter passing.
-    pub fn set_align(&mut self, align: (Align, Align)) {
-        if align != self.env.align {
-            self.env.align = align;
-            self.action = self.action.max(Action::Wrap);
-        }
-    }
-
-    /// Enable or disable line-wrapping
-    pub fn set_wrap(&mut self, wrap: bool) {
-        if wrap != self.env.wrap {
-            self.env.wrap = wrap;
-            self.action = self.action.max(Action::Wrap);
-        }
-    }
-
-    /// Set the environment's bounds
-    pub fn set_bounds(&mut self, bounds: Vec2) {
-        if bounds != self.env.bounds {
-            // Note (opt): if we had separate align and wrap actions, then we
-            // would only need to do alignment provided:
-            // self.width_required <= bounds.0.min(self.env.bounds.0)
-            // This may not be worth pursuing however.
-            self.env.bounds = bounds;
-            self.action = self.action.max(Action::Wrap);
-        }
     }
 }
 
