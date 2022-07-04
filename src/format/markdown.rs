@@ -12,6 +12,7 @@ use crate::fonts::{self, FontId, FontSelector, Style, Weight};
 use crate::OwningVecIter;
 use crate::{Effect, EffectFlags};
 use pulldown_cmark::{Event, HeadingLevel, Tag};
+use std::fmt::Write;
 use std::iter::FusedIterator;
 use thiserror::Error;
 
@@ -188,7 +189,7 @@ fn parse(input: &str) -> Result<Markdown, Error> {
     let mut fmt: Vec<Fmt> = Vec::new();
     let fonts = fonts::fonts();
     let mut set_last = |item: &StackItem| {
-        let f = Fmt::new(&fonts, item);
+        let f = Fmt::new(fonts, item);
         if let Some(last) = fmt.last_mut() {
             if last.start >= item.start {
                 *last = f;
@@ -203,8 +204,7 @@ fn parse(input: &str) -> Result<Markdown, Error> {
     let mut item = StackItem::default();
 
     let options = pulldown_cmark::Options::ENABLE_STRIKETHROUGH;
-    let mut parser = pulldown_cmark::Parser::new_ext(input, options);
-    while let Some(ev) = parser.next() {
+    for ev in pulldown_cmark::Parser::new_ext(input, options) {
         match ev {
             Event::Start(tag) => {
                 item.start = to_u32(text.len());
@@ -296,15 +296,15 @@ impl State {
             State::None | State::BlockStart | State::BlockEnd => {
                 debug_assert_eq!(*self, State::BlockStart);
             }
-            State::ListItem | State::Part => text.push_str("\n"),
+            State::ListItem | State::Part => text.push('\n'),
         }
         *self = State::ListItem;
     }
     fn soft_break(&mut self, text: &mut String) {
-        text.push_str(" ");
+        text.push(' ');
     }
     fn hard_break(&mut self, text: &mut String) {
-        text.push_str("\n");
+        text.push('\n');
     }
 }
 
@@ -399,7 +399,7 @@ impl StackItem {
                 // line. Without better flow control we cannot fix this.
                 match &mut self.list {
                     Some(x) => {
-                        text.push_str(&format!("{}\t", x));
+                        write!(text, "{}\t", x).unwrap();
                         *x += 1;
                     }
                     None => text.push_str("•\t"),
@@ -433,7 +433,7 @@ impl StackItem {
             }
             Tag::Item => false,
             Tag::Emphasis | Tag::Strong | Tag::Strikethrough => true,
-            tag @ _ => unimplemented!("{:?}", tag),
+            tag => unimplemented!("{:?}", tag),
         }
     }
 }

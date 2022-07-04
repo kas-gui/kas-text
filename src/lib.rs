@@ -15,6 +15,10 @@
 
 #![cfg_attr(doc_cfg, feature(doc_cfg))]
 #![cfg_attr(feature = "gat", feature(generic_associated_types))]
+#![allow(clippy::len_zero)]
+#![allow(clippy::type_complexity)]
+#![allow(clippy::unit_arg)]
+#![allow(clippy::needless_lifetimes)]
 
 mod env;
 pub use env::*;

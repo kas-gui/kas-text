@@ -102,6 +102,11 @@ impl Range {
         to_usize(self.end)
     }
 
+    /// True if the range is empty
+    pub fn is_empty(self) -> bool {
+        self.start >= self.end
+    }
+
     /// The number of iterable items, as `usize`
     pub fn len(self) -> usize {
         to_usize(self.end) - to_usize(self.start)

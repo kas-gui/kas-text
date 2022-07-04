@@ -38,7 +38,7 @@ enum State {
 fn to_uppercase<'a>(c: Cow<'a, str>) -> Cow<'a, str> {
     match c {
         Cow::Borrowed(b) if !b.chars().any(|c| c.is_lowercase()) => Cow::Borrowed(b),
-        c @ _ => Cow::Owned(c.to_owned().to_uppercase()),
+        c => Cow::Owned(c.to_owned().to_uppercase()),
     }
 }
 
@@ -164,12 +164,12 @@ impl Database {
     where
         I: Iterator<Item = Cow<'static, str>>,
     {
-        if &self.state == &State::Ready {
+        if self.state == State::Ready {
             warn!("unable to add aliases after font DB init");
             return;
         }
 
-        let aliases = aliases.map(|f| to_uppercase(f));
+        let aliases = aliases.map(to_uppercase);
 
         match self.aliases.entry(to_uppercase(family)) {
             Entry::Occupied(mut entry) => {
@@ -210,7 +210,7 @@ impl Database {
     /// only a warning will be issued. By default, system fonts are loaded on
     /// initialization.
     pub fn load_font_data(&mut self, data: Vec<u8>) {
-        if &self.state == &State::Ready {
+        if self.state == State::Ready {
             warn!("unable to load fonts after font DB init");
             return;
         }
@@ -224,7 +224,7 @@ impl Database {
     /// This method may only be used before initialization; if used afterwards, only a
     /// warning will be issued. By default, system fonts are loaded on initialization.
     pub fn load_font_file<P: AsRef<Path>>(&mut self, path: P) -> Result<(), std::io::Error> {
-        if &self.state == &State::Ready {
+        if self.state == State::Ready {
             warn!("unable to load fonts after font DB init");
             return Ok(());
         }
@@ -243,7 +243,7 @@ impl Database {
     /// This method may only be used before initialization; if used afterwards, only a
     /// warning will be issued. By default, system fonts are loaded on initialization.
     pub fn load_fonts_dir<P: AsRef<Path>>(&mut self, dir: P) {
-        if &self.state == &State::Ready {
+        if self.state == State::Ready {
             warn!("unable to load fonts after font DB init");
             return;
         }
@@ -518,14 +518,11 @@ impl<'a> FontSelector<'a> {
             Style::Oblique => [Style::Oblique, Style::Italic, Style::Normal],
             Style::Normal => [Style::Normal, Style::Oblique, Style::Italic],
         };
-        let matching_style = *style_preference
-            .iter()
-            .filter(|&query_style| {
-                matching_set
-                    .iter()
-                    .any(|&index| candidates[index].style == *query_style)
-            })
-            .next()?;
+        let matching_style = *style_preference.iter().find(|&query_style| {
+            matching_set
+                .iter()
+                .any(|&index| candidates[index].style == *query_style)
+        })?;
 
         matching_set.retain(|&index| candidates[index].style == matching_style);
 
@@ -534,8 +531,7 @@ impl<'a> FontSelector<'a> {
         // The spec doesn't say what to do if the weight is between 400 and 500 exclusive, so we
         // just use 450 as the cutoff.
         let weight = self.weight.0;
-        let matches = weight >= 400
-            && weight < 450
+        let matches = (400..450).contains(&weight)
             && matching_set
                 .iter()
                 .any(|&index| candidates[index].weight.0 == 500);
@@ -543,8 +539,7 @@ impl<'a> FontSelector<'a> {
         let matching_weight = if matches {
             // Check 500 first.
             Weight::MEDIUM
-        } else if weight >= 450
-            && weight <= 500
+        } else if (450..=500).contains(&weight)
             && matching_set
                 .iter()
                 .any(|&index| candidates[index].weight.0 == 400)

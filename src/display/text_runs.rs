@@ -5,6 +5,8 @@
 
 //! Text preparation: line breaking and BIDI
 
+#![allow(clippy::unnecessary_unwrap)]
+
 use super::TextDisplay;
 use crate::conv::{to_u32, to_usize};
 use crate::fonts::{fonts, FontId};

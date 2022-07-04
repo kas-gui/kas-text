@@ -384,10 +384,8 @@ impl LineAdder {
                             parts[s..i].reverse();
                             start = None;
                         }
-                    } else {
-                        if part_level >= level {
-                            start = Some(i);
-                        }
+                    } else if part_level >= level {
+                        start = Some(i);
                     }
                 }
                 if let Some(s) = start {
@@ -484,7 +482,7 @@ impl LineAdder {
             self.runs.push(RunPart {
                 text_end,
                 glyph_run: part.run,
-                glyph_range: part.glyph_range.into(),
+                glyph_range: part.glyph_range,
                 offset: Vec2(xoffset, self.vcaret),
             });
             if part.end_space {

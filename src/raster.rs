@@ -119,7 +119,7 @@ impl Default for Config {
 }
 
 /// A rastered sprite
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Sprite {
     /// Offset to be added to the glyph position
     pub offset: (i32, i32),

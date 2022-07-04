@@ -5,6 +5,8 @@
 
 //! Font library
 
+#![allow(clippy::len_without_is_empty)]
+
 use super::{selector::Database, FaceRef, FontSelector};
 use crate::conv::{to_u32, to_usize};
 use std::collections::hash_map::{Entry, HashMap};
@@ -25,7 +27,7 @@ enum FontError {
     UnitsPerEm,
     #[cfg(feature = "ab_glyph")]
     #[error("font load error")]
-    AbGlyphFontError(#[from] ab_glyph::InvalidFont),
+    AbGlyph(#[from] ab_glyph::InvalidFont),
     #[cfg(feature = "fontdue")]
     #[error("font load error")]
     StrError(&'static str),

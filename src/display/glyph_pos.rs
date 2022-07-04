@@ -5,13 +5,18 @@
 
 //! Methods using positioned glyphs
 
+#![allow(clippy::collapsible_else_if)]
+#![allow(clippy::or_fun_call)]
+#![allow(clippy::never_loop)]
+#![allow(clippy::needless_range_loop)]
+
 use super::{NotReady, TextDisplay};
 use crate::conv::to_usize;
 use crate::fonts::{fonts, FaceId, ScaledFaceRef};
 use crate::{Glyph, Vec2};
 
 /// Effect formatting marker
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Effect<X> {
     /// Index in text at which formatting becomes active
@@ -328,7 +333,7 @@ impl TextDisplay {
 
         // self.wrapped_runs is in logical order
         for run_part in self.wrapped_runs.iter().cloned() {
-            if run_part.glyph_range.len() == 0 {
+            if run_part.glyph_range.is_empty() {
                 continue;
             }
 
@@ -496,7 +501,7 @@ impl TextDisplay {
             return Err(NotReady);
         }
 
-        if range.len() == 0 {
+        if range.is_empty() {
             return Ok(vec![]);
         }
 
@@ -506,7 +511,7 @@ impl TextDisplay {
 
         // Find the first line
         let mut cur_line = 'l1: loop {
-            while let Some(line) = lines.next() {
+            for line in lines.by_ref() {
                 if line.text_range.includes(range.start) {
                     break 'l1 line;
                 }
@@ -550,7 +555,7 @@ impl TextDisplay {
         }
 
         if range.end > cur_line.text_range.end() {
-            while let Some(line) = lines.next() {
+            for line in lines {
                 if range.end <= line.text_range.end() {
                     cur_line = line;
                     break;
@@ -593,7 +598,7 @@ impl TextDisplay {
             return Err(NotReady);
         }
 
-        if range.len() == 0 {
+        if range.is_empty() {
             return Ok(vec![]);
         }
 
