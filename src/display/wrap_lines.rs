@@ -40,6 +40,51 @@ struct PartInfo {
 }
 
 impl TextDisplay {
+    /// Measure the maximum line length without wrapping
+    ///
+    /// This is a significantly faster way to calculate the required line length
+    /// than [`Self::prepare_lines`].
+    ///
+    /// The return value is at most `limit`.
+    pub fn max_line_length(&self, limit: f32) -> Result<f32, NotReady> {
+        if self.action > Action::Wrap {
+            return Err(NotReady);
+        }
+
+        let mut max_line_len = 0.0f32;
+
+        for line in self.line_runs.iter() {
+            let mut caret = 0.0;
+            let mut line_len = 0.0;
+
+            // Each LineRun contains at least one Run, though a Run may be empty
+            let end_index = line.range.end();
+            debug_assert!(line.range.start < line.range.end);
+            assert!(end_index <= self.runs.len());
+
+            let mut index = line.range.start();
+            while index < end_index {
+                let run = &self.runs[index];
+                let num_parts = run.num_parts();
+                let (_, part_len_no_space, part_len) = run.part_lengths(0..num_parts);
+
+                if part_len_no_space > 0.0 {
+                    line_len = caret + part_len_no_space;
+                    if line_len >= limit {
+                        return Ok(limit);
+                    }
+                }
+                caret += part_len;
+
+                index += 1;
+            }
+
+            max_line_len = max_line_len.max(line_len);
+        }
+
+        Ok(max_line_len)
+    }
+
     /// Prepare lines ("wrap")
     ///
     /// This does text layout, with wrapping if enabled.
