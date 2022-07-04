@@ -288,6 +288,14 @@ pub trait TextApiExt: TextApi {
         self.display().line_range(line)
     }
 
+    /// Get the directionality of the first line
+    fn text_is_rtl(&self) -> Result<bool, NotReady> {
+        Ok(match self.display().line_is_rtl(0)? {
+            None => self.env().dir == crate::Direction::RL,
+            Some(is_rtl) => is_rtl,
+        })
+    }
+
     /// Get the directionality of the current line
     ///
     /// Wraps [`TextDisplay::line_is_rtl`].
