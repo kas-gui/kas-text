@@ -290,17 +290,9 @@ pub trait TextApiExt: TextApi {
 
     /// Get the directionality of the current line
     ///
-    /// Wraps [`TextDisplay::line_is_ltr`].
-    #[inline]
-    fn line_is_ltr(&self, line: usize) -> Result<bool, NotReady> {
-        self.display().line_is_ltr(line)
-    }
-
-    /// Get the directionality of the current line
-    ///
     /// Wraps [`TextDisplay::line_is_rtl`].
     #[inline]
-    fn line_is_rtl(&self, line: usize) -> Result<bool, NotReady> {
+    fn line_is_rtl(&self, line: usize) -> Result<Option<bool>, NotReady> {
         self.display().line_is_rtl(line)
     }
 

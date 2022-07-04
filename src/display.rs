@@ -196,26 +196,26 @@ impl TextDisplay {
 
     /// Get the directionality of the current line
     ///
-    /// Returns `true` for left-to-right lines, `false` for RTL.
+    /// Returns:
     ///
-    /// Panics if `line >= self.num_lines()`.
-    pub fn line_is_ltr(&self, line: usize) -> Result<bool, NotReady> {
+    /// - `Err(NotReady)` if text is not prepared
+    /// - `Ok(None)` if text is empty
+    /// - `Ok(Some(line_is_right_to_left))` otherwise
+    ///
+    /// Note: indeterminate lines (e.g. empty lines) have their direction
+    /// determined from the passed environment; in the case of
+    /// [`Direction::Auto`] this resolves to left-to-right.
+    pub fn line_is_rtl(&self, line: usize) -> Result<Option<bool>, NotReady> {
         if !self.action.is_ready() {
             return Err(NotReady);
         }
-        let first_run = self.lines[line].run_range.start();
-        let glyph_run = to_usize(self.wrapped_runs[first_run].glyph_run);
-        Ok(self.runs[glyph_run].level.is_ltr())
-    }
-
-    /// Get the directionality of the current line
-    ///
-    /// Returns `true` for right-to-left lines, `false` for LTR.
-    ///
-    /// Panics if `line >= self.num_lines()`.
-    #[inline]
-    pub fn line_is_rtl(&self, line: usize) -> Result<bool, NotReady> {
-        self.line_is_ltr(line).map(|is_ltr| !is_ltr)
+        if let Some(line) = self.lines.get(line) {
+            let first_run = line.run_range.start();
+            let glyph_run = to_usize(self.wrapped_runs[first_run].glyph_run);
+            Ok(Some(self.runs[glyph_run].level.is_rtl()))
+        } else {
+            Ok(None)
+        }
     }
 
     /// Find the text index for the glyph nearest the given `pos`
