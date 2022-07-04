@@ -42,10 +42,9 @@ impl TextDisplay {
     /// Prerequisites: prepared runs: requires action is no greater than `Action::Wrap`.
     /// Post-requirements: prepare lines (requires action `Action::Wrap`).  
     /// Parameters: see [`crate::Environment`] documentation.
-    pub(crate) fn resize_runs<F: FormattableText>(&mut self, text: &F, dpp: f32, pt_size: f32) {
+    pub(crate) fn resize_runs<F: FormattableText>(&mut self, text: &F, mut dpem: f32) {
         assert!(self.action <= Action::Resize);
         self.action = Action::Wrap;
-        let mut dpem = dpp * pt_size;
 
         let mut font_tokens = text.font_tokens(dpem);
         let mut next_fmt = font_tokens.next();
@@ -93,12 +92,11 @@ impl TextDisplay {
         bidi: bool,
         dir: Direction,
         mut font_id: FontId,
-        dpp: f32,
-        pt_size: f32,
+        mut dpem: f32,
     ) {
         match self.action {
             Action::None | Action::Wrap => return,
-            Action::Resize => return self.resize_runs(text, dpp, pt_size),
+            Action::Resize => return self.resize_runs(text, dpem),
             Action::All => (),
         }
         self.action = Action::Wrap;
@@ -111,8 +109,6 @@ impl TextDisplay {
 
         self.runs.clear();
         self.line_runs.clear();
-
-        let mut dpem = dpp * pt_size;
 
         let mut font_tokens = text.font_tokens(dpem);
         let mut next_fmt = font_tokens.next();

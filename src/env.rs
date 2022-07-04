@@ -42,26 +42,27 @@ pub struct Environment {
     /// If `bidi == false` this directly sets the line direction, unless
     /// `dir == Auto`, in which case direction is auto-detected.
     pub dir: Direction,
+    /// Alignment (`horiz`, `vert`)
+    ///
+    /// By default, horizontal alignment is left or right depending on the
+    /// text direction (see [`Environment::dir`]), and vertical alignment is
+    /// to the top.
+    pub align: (Align, Align),
     /// Default font
     ///
     /// This font is used unless a formatting token (see [`crate::format`])
     /// is used.
     pub font_id: FontId,
-    /// Pixels-per-point
+    /// Font size: pixels per Em
     ///
-    /// This is a scaling factor used to convert font sizes (in points) to a
-    /// size in pixels (dots). Units are `pixels/point`. See [`crate::fonts`]
-    /// documentation.
+    /// This is a scaling factor used to convert font sizes, with units
+    /// `pixels/Em`. Equivalently, this is the line-height in pixels.
+    /// See [`crate::fonts`] documentation.
     ///
-    /// Default value: `96.0 / 72.0`
-    pub dpp: f32,
-    /// Default font size in points
-    ///
-    /// We use "point sizes" (Points per Em), since this is a widely used
-    /// measure of font size. See [`crate::fonts`] module documentation.
-    ///
-    /// Default value: `11.0`
-    pub pt_size: f32,
+    /// To calculate this from text size in Points, use `dpem = dpp * pt_size`
+    /// where the dots-per-point is usually `dpp = scale_factor * 96.0 / 72.0`
+    /// on PC platforms, or `dpp = 1` on MacOS (or 2 for retina displays).
+    pub dpem: f32,
     /// The available (horizontal and vertical) space
     ///
     /// This defaults to infinity (implying no bounds). To enable line-wrapping
@@ -69,12 +70,6 @@ pub struct Environment {
     /// alignment (when aligning to the center or bottom).
     /// Glyphs outside of these bounds may not be drawn.
     pub bounds: Vec2,
-    /// Alignment (`horiz`, `vert`)
-    ///
-    /// By default, horizontal alignment is left or right depending on the
-    /// text direction (see [`Environment::dir`]), and vertical alignment is
-    /// to the top.
-    pub align: (Align, Align),
 }
 
 impl Default for Environment {
@@ -83,8 +78,7 @@ impl Default for Environment {
             flags: Default::default(),
             dir: Direction::default(),
             font_id: Default::default(),
-            dpp: 96.0 / 72.0,
-            pt_size: 11.0,
+            dpem: 11.0 * 96.0 / 72.0,
             bounds: Vec2::INFINITY,
             align: Default::default(),
         }
@@ -92,14 +86,14 @@ impl Default for Environment {
 }
 
 impl Environment {
-    /// Returns the height of standard horizontal text
+    /// Returns the height of horizontal text
     ///
-    /// This depends on the `pt_size` and `dpp` fields.
+    /// This should be similar to the value of [`Self::dpem`], but depends on
+    /// the font.
     ///
-    /// To use "the standard font", use `Default::default()`.
-    pub fn height(&self, font_id: FontId) -> f32 {
-        let dpem = self.pt_size * self.dpp;
-        fonts().get_first_face(font_id).height(dpem)
+    /// To use "the standard font", use `font_id = Default::default()`.
+    pub fn line_height(&self, font_id: FontId) -> f32 {
+        fonts().get_first_face(font_id).height(self.dpem)
     }
 }
 
@@ -133,22 +127,10 @@ impl<'a> UpdateEnv<'a> {
         }
     }
 
-    /// Set DPP
-    ///
-    /// Units are pixels/point (see [`Environment::dpp`]).
-    pub fn set_dpp(&mut self, dpp: f32) {
-        if dpp != self.env.dpp {
-            self.env.dpp = dpp;
-            self.action = Action::Resize;
-        }
-    }
-
-    /// Set default font size in points
-    ///
-    /// Units are points/em (see [`Environment::pt_size`]).
-    pub fn set_pt_size(&mut self, pt_size: f32) {
-        if pt_size != self.env.pt_size {
-            self.env.pt_size = pt_size;
+    /// Set font size (pixels per Em)
+    pub fn set_dpem(&mut self, dpem: f32) {
+        if dpem != self.env.dpem {
+            self.env.dpem = dpem;
             self.action = Action::Resize;
         }
     }
@@ -193,11 +175,10 @@ impl<'a> UpdateEnv<'a> {
 }
 
 impl Environment {
-    /// Construct, with explicit font size
-    pub fn new(dpp: f32, pt_size: f32) -> Self {
+    /// Construct, with explicit font size (pixels per Em)
+    pub fn new(dpem: f32) -> Self {
         Environment {
-            dpp,
-            pt_size,
+            dpem,
             ..Default::default()
         }
     }
@@ -278,5 +259,5 @@ impl Default for Direction {
 
 #[test]
 fn size() {
-    assert_eq!(std::mem::size_of::<Environment>(), 24);
+    assert_eq!(std::mem::size_of::<Environment>(), 20);
 }
