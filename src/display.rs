@@ -149,7 +149,7 @@ impl TextDisplay {
         )
     }
 
-    /// Get the number of lines
+    /// Get the number of lines (after wrapping)
     pub fn num_lines(&self) -> Result<usize, NotReady> {
         if !self.action.is_ready() {
             return Err(NotReady);
