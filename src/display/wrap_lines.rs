@@ -9,7 +9,7 @@ use super::{NotReady, RunSpecial, TextDisplay};
 use crate::conv::{to_u32, to_usize};
 use crate::fonts::{fonts, FontLibrary};
 use crate::shaper::GlyphRun;
-use crate::{Action, Align, EnvFlags, Range, Vec2};
+use crate::{Action, Align, Range, Vec2};
 use smallvec::SmallVec;
 use unicode_bidi::Level;
 
@@ -96,15 +96,13 @@ impl TextDisplay {
     pub fn prepare_lines(
         &mut self,
         bounds: Vec2,
-        flags: EnvFlags,
+        wrap: bool,
         align: (Align, Align),
     ) -> Result<Vec2, NotReady> {
         if self.action > Action::Wrap {
             return Err(NotReady);
         }
         self.action = Action::None;
-
-        let wrap = flags.contains(EnvFlags::WRAP);
 
         let fonts = fonts();
         let capacity = 0; // TODO(opt): estimate like self.text_len() / 16 ?

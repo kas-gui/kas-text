@@ -213,7 +213,7 @@ impl<T: FormattableText> TextApi for Text<T> {
         self.prepare_runs();
 
         self.display
-            .prepare_lines(self.env.bounds, self.env.flags, self.env.align)
+            .prepare_lines(self.env.bounds, self.env.wrap, self.env.align)
             .unwrap()
     }
 
@@ -223,7 +223,7 @@ impl<T: FormattableText> TextApi for Text<T> {
 
         if self.display.required_action() > Action::None {
             self.display
-                .prepare_lines(self.env.bounds, self.env.flags, self.env.align)
+                .prepare_lines(self.env.bounds, self.env.wrap, self.env.align)
                 .ok()
         } else {
             None

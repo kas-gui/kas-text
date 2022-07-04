@@ -13,20 +13,18 @@ use crate::{Action, Vec2};
 /// An `Environment` can be default-constructed (without line-wrapping).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Environment {
-    /// Flags enabling/disabling certain features
-    ///
-    /// ## Line wrapping
-    ///
-    /// By default, this is true and long text lines are wrapped based on the
-    /// width bounds. If set to false, lines are not wrapped at the width
-    /// boundary, but explicit line-breaks such as `\n` still result in new
-    /// lines.
-    pub flags: EnvFlags,
     /// Text direction
     ///
     /// By default, text direction (LTR or RTL) is automatically detected with
     /// full bi-directional text support (Unicode Technical Report #9).
     pub direction: Direction,
+    /// Line wrapping
+    ///
+    /// By default, this is true and long text lines are wrapped based on the
+    /// width bounds. If set to false, lines are not wrapped at the width
+    /// boundary, but explicit line-breaks such as `\n` still result in new
+    /// lines.
+    pub wrap: bool,
     /// Alignment (`horiz`, `vert`)
     ///
     /// By default, horizontal alignment is left or right depending on the
@@ -60,8 +58,8 @@ pub struct Environment {
 impl Default for Environment {
     fn default() -> Self {
         Environment {
-            flags: Default::default(),
             direction: Direction::default(),
+            wrap: true,
             font_id: Default::default(),
             dpem: 11.0 * 96.0 / 72.0,
             bounds: Vec2::INFINITY,
@@ -140,8 +138,8 @@ impl<'a> UpdateEnv<'a> {
 
     /// Enable or disable line-wrapping
     pub fn set_wrap(&mut self, wrap: bool) {
-        if wrap != self.env.flags.contains(EnvFlags::WRAP) {
-            self.env.flags.set(EnvFlags::WRAP, wrap);
+        if wrap != self.env.wrap {
+            self.env.wrap = wrap;
             self.action = self.action.max(Action::Wrap);
         }
     }
@@ -166,25 +164,6 @@ impl Environment {
             dpem,
             ..Default::default()
         }
-    }
-}
-
-bitflags::bitflags! {
-    /// Environment flags
-    ///
-    /// By default, all flags are enabled
-    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-    pub struct EnvFlags: u8 {
-        /// Enable line wrapping
-        ///
-        /// Without this, only explicit line breaks end lines.
-        const WRAP = 1 << 1;
-    }
-}
-
-impl Default for EnvFlags {
-    fn default() -> Self {
-        EnvFlags::all()
     }
 }
 
