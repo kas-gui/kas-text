@@ -69,6 +69,15 @@ impl Default for Environment {
 }
 
 impl Environment {
+    /// Set font size
+    ///
+    /// This is an alternative to setting [`Self::dpem`] directly. It is assumed
+    /// that 72 Points = 1 Inch and the base screen resolution is 96 DPI.
+    /// (Note: MacOS uses a different definition where 1 Point = 1 Pixel.)
+    pub fn set_font_size(&mut self, pt_size: f32, scale_factor: f32) {
+        self.dpem = pt_size * scale_factor * (96.0 / 72.0);
+    }
+
     /// Returns the height of horizontal text
     ///
     /// This should be similar to the value of [`Self::dpem`], but depends on
