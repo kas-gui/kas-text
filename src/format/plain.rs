@@ -22,11 +22,11 @@ impl<'t> FormattableText for &'t str {
     }
 
     #[cfg(feature = "gat")]
-    fn font_tokens<'a>(&'a self, _: f32, _: f32) -> Self::FontTokenIter<'a> {
+    fn font_tokens<'a>(&'a self, _: f32) -> Self::FontTokenIter<'a> {
         std::iter::empty()
     }
     #[cfg(not(feature = "gat"))]
-    fn font_tokens(&self, _: f32, _: f32) -> OwningVecIter<FontToken> {
+    fn font_tokens(&self, _: f32) -> OwningVecIter<FontToken> {
         OwningVecIter::new(Vec::new())
     }
 
@@ -44,11 +44,11 @@ impl FormattableText for String {
     }
 
     #[cfg(feature = "gat")]
-    fn font_tokens<'a>(&'a self, _: f32, _: f32) -> Self::FontTokenIter<'a> {
+    fn font_tokens<'a>(&'a self, _: f32) -> Self::FontTokenIter<'a> {
         std::iter::empty()
     }
     #[cfg(not(feature = "gat"))]
-    fn font_tokens(&self, _: f32, _: f32) -> OwningVecIter<FontToken> {
+    fn font_tokens(&self, _: f32) -> OwningVecIter<FontToken> {
         OwningVecIter::new(Vec::new())
     }
 

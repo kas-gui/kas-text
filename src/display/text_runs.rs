@@ -47,7 +47,7 @@ impl TextDisplay {
         self.action = Action::Wrap;
         let mut dpem = dpp * pt_size;
 
-        let mut font_tokens = text.font_tokens(dpp, pt_size);
+        let mut font_tokens = text.font_tokens(dpem);
         let mut next_fmt = font_tokens.next();
 
         for run in &mut self.runs {
@@ -114,7 +114,7 @@ impl TextDisplay {
 
         let mut dpem = dpp * pt_size;
 
-        let mut font_tokens = text.font_tokens(dpp, pt_size);
+        let mut font_tokens = text.font_tokens(dpem);
         let mut next_fmt = font_tokens.next();
         if let Some(fmt) = next_fmt.as_ref() {
             if fmt.start == 0 {

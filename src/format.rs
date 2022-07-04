@@ -50,22 +50,22 @@ pub trait FormattableText: std::fmt::Debug {
     /// It is expected that [`FontToken::start`] of yielded items is strictly
     /// increasing; if not, formatting may not be applied correctly.
     ///
-    /// The `dpp` and `pt_size` parameters are as in [`crate::Environment`].
+    /// The `dpem` parameter is font size as in [`crate::Environment`].
     ///
     /// For plain text this iterator will be empty.
     #[cfg(feature = "gat")]
-    fn font_tokens<'a>(&'a self, dpp: f32, pt_size: f32) -> Self::FontTokenIter<'a>;
+    fn font_tokens<'a>(&'a self, dpem: f32) -> Self::FontTokenIter<'a>;
 
     /// Construct an iterator over formatting items
     ///
     /// It is expected that [`FontToken::start`] of yielded items is strictly
     /// increasing; if not, formatting may not be applied correctly.
     ///
-    /// The `dpp` and `pt_size` parameters are as in [`crate::Environment`].
+    /// The `dpem` parameter is font size as in [`crate::Environment`].
     ///
     /// For plain text this iterator will be empty.
     #[cfg(not(feature = "gat"))]
-    fn font_tokens(&self, dpp: f32, pt_size: f32) -> OwningVecIter<FontToken>;
+    fn font_tokens(&self, dpem: f32) -> OwningVecIter<FontToken>;
 
     /// Get the sequence of effect tokens
     ///
@@ -101,10 +101,10 @@ pub trait FormattableTextDyn: std::fmt::Debug {
     /// It is expected that [`FontToken::start`] of yielded items is strictly
     /// increasing; if not, formatting may not be applied correctly.
     ///
-    /// The `dpp` and `pt_size` parameters are as in [`crate::Environment`].
+    /// The `dpem` parameter is font size as in [`crate::Environment`].
     ///
     /// For plain text this iterator will be empty.
-    fn font_tokens(&self, dpp: f32, pt_size: f32) -> OwningVecIter<FontToken>;
+    fn font_tokens(&self, dpem: f32) -> OwningVecIter<FontToken>;
 
     /// Get the sequence of effect tokens
     ///
@@ -130,8 +130,8 @@ impl<F: FormattableText + Clone + 'static> FormattableTextDyn for F {
         FormattableText::as_str(self)
     }
 
-    fn font_tokens(&self, dpp: f32, pt_size: f32) -> OwningVecIter<FontToken> {
-        let iter = FormattableText::font_tokens(self, dpp, pt_size);
+    fn font_tokens(&self, dpem: f32) -> OwningVecIter<FontToken> {
+        let iter = FormattableText::font_tokens(self, dpem);
         #[cfg(feature = "gat")]
         {
             OwningVecIter::new(iter.collect())
@@ -165,8 +165,8 @@ impl<'t> FormattableText for &'t dyn FormattableTextDyn {
     }
 
     #[inline]
-    fn font_tokens(&self, dpp: f32, pt_size: f32) -> OwningVecIter<FontToken> {
-        FormattableTextDyn::font_tokens(*self, dpp, pt_size)
+    fn font_tokens(&self, dpem: f32) -> OwningVecIter<FontToken> {
+        FormattableTextDyn::font_tokens(*self, dpem)
     }
 
     fn effect_tokens(&self) -> &[Effect<()>] {

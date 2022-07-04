@@ -117,13 +117,13 @@ impl FormattableText for Markdown {
 
     #[cfg(feature = "gat")]
     #[inline]
-    fn font_tokens<'a>(&'a self, dpp: f32, pt_size: f32) -> Self::FontTokenIter<'a> {
-        FontTokenIter::new(&self.fmt, dpp * pt_size)
+    fn font_tokens<'a>(&'a self, dpem: f32) -> Self::FontTokenIter<'a> {
+        FontTokenIter::new(&self.fmt, dpem)
     }
     #[cfg(not(feature = "gat"))]
     #[inline]
-    fn font_tokens(&self, dpp: f32, pt_size: f32) -> OwningVecIter<FontToken> {
-        let iter = FontTokenIter::new(&self.fmt, dpp * pt_size);
+    fn font_tokens(&self, dpem: f32) -> OwningVecIter<FontToken> {
+        let iter = FontTokenIter::new(&self.fmt, dpem);
         OwningVecIter::new(iter.collect())
     }
 
