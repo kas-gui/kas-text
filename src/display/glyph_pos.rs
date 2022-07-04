@@ -247,7 +247,7 @@ impl TextDisplay {
     /// ```no_run
     /// # use kas_text::{Glyph, Text, Environment, TextApi, TextApiExt};
     /// # fn draw(_: Vec<(f32, Glyph)>) {}
-    /// let mut text = Text::new_single("Some example text");
+    /// let mut text = Text::new("Some example text");
     /// text.prepare();
     ///
     /// let mut glyphs = Vec::with_capacity(text.num_glyphs());

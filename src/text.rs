@@ -11,7 +11,7 @@ use crate::display::{Effect, MarkerPosIter, NotReady, TextDisplay};
 use crate::fonts::FaceId;
 use crate::format::{EditableText, FormattableText};
 use crate::{Action, Glyph, Vec2};
-use crate::{EnvFlags, Environment, UpdateEnv};
+use crate::{Environment, UpdateEnv};
 
 /// Text, prepared for display in a given environment
 ///
@@ -20,48 +20,32 @@ use crate::{EnvFlags, Environment, UpdateEnv};
 ///
 /// Most Functionality is implemented via the [`TextApi`] and [`TextApiExt`]
 /// traits.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Text<T: FormattableText> {
     env: Environment,
     text: T,
     display: TextDisplay,
 }
 
-impl<T: FormattableText + Default> Default for Text<T> {
-    fn default() -> Self {
-        Text::new(Environment::default(), T::default())
-    }
-}
-
 impl<T: FormattableText> Text<T> {
-    /// Construct from an environment and a text model
+    /// Construct from a text model
     ///
     /// This struct must be made ready for usage by calling [`Text::prepare`].
-    pub fn new(env: Environment, text: T) -> Self {
+    #[inline]
+    pub fn new(text: T) -> Self {
+        Text::new_env(Default::default(), text)
+    }
+
+    /// Construct from a text model and environment
+    ///
+    /// This struct must be made ready for usage by calling [`Text::prepare`].
+    #[inline]
+    pub fn new_env(env: Environment, text: T) -> Self {
         Text {
             env,
-            text: text,
-            display: TextDisplay::default(),
+            text,
+            display: Default::default(),
         }
-    }
-
-    /// Construct from a default environment (single-line) and text
-    ///
-    /// The environment is default-constructed, with line-wrapping
-    /// turned off (see [`Environment::flags`] doc).
-    #[inline]
-    pub fn new_single(text: T) -> Self {
-        let mut env = Environment::default();
-        env.flags.remove(EnvFlags::WRAP);
-        Self::new(env, text)
-    }
-
-    /// Construct from a default environment (multi-line) and text
-    ///
-    /// The environment is default-constructed (line-wrap on).
-    #[inline]
-    pub fn new_multi(text: T) -> Self {
-        Self::new(Environment::default(), text)
     }
 
     /// Clone the formatted text
