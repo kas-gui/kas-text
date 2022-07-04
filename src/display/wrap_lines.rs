@@ -89,10 +89,10 @@ impl TextDisplay {
     ///
     /// This does text layout, with wrapping if enabled.
     ///
-    /// Prerequisites: prepared runs: errors if action is greater than `Action::Wrap`.
-    /// Post-requirements: none (`Action::None`).
-    /// Parameters: see [`crate::Environment`] documentation.
-    /// Returns: bottom-right corner of bounding box on output
+    /// Returns:
+    ///
+    /// -   `Err(NotReady)` if required action is greater than [`Action::Wrap`]
+    /// -   `Ok(bounding_corner)` on success
     pub fn prepare_lines(
         &mut self,
         bounds: Vec2,
@@ -224,24 +224,24 @@ impl TextDisplay {
             }
         }
 
-        let required = adder.finish(bounds, align);
+        let bounding_corner = adder.finish(bounds, align);
         self.wrapped_runs = adder.runs;
         self.lines = adder.lines;
         self.num_glyphs = adder.num_glyphs;
-        self.r_bound = required.0;
-        Ok(required)
+        self.r_bound = bounding_corner.0;
+        Ok(bounding_corner)
     }
 
     /// Vertically align lines
     ///
-    /// Returns the bottom of bounding box after alignment.
-    pub fn vertically_align(&mut self, bound: f32, v_align: Align) -> Result<f32, NotReady> {
+    /// Returns the bottom-right bounding corner.
+    pub fn vertically_align(&mut self, bound: f32, v_align: Align) -> Result<Vec2, NotReady> {
         if self.action > Action::VAlign {
             return Err(NotReady);
         }
 
         if self.lines.is_empty() {
-            return Ok(0.0);
+            return Ok(Vec2(0.0, 0.0));
         }
 
         let top = self.lines.first().unwrap().top;
@@ -265,7 +265,7 @@ impl TextDisplay {
             }
         }
 
-        Ok(bottom)
+        Ok(Vec2(self.r_bound, bottom))
     }
 }
 
@@ -491,6 +491,7 @@ impl LineAdder {
         };
 
         let mut end_caret = caret;
+
         for (i, part) in parts.iter().enumerate() {
             let run = &runs[to_usize(part.run)];
 
@@ -559,6 +560,7 @@ impl LineAdder {
     fn finish(&mut self, bounds: Vec2, align: (Align, Align)) -> Vec2 {
         let height = self.vcaret;
         let offset = match align.1 {
+            _ if !(height < bounds.1) => 0.0,
             Align::Default | Align::TL | Align::Stretch => 0.0, // nothing to do
             Align::Center => 0.5 * (bounds.1 - height),
             Align::BR => bounds.1 - height,

@@ -143,15 +143,6 @@ pub trait TextApi {
     /// This fully prepares text for display.
     fn measure_height(&mut self) -> f32;
 
-    /// Prepare lines ("wrap")
-    ///
-    /// Prepares text, returning bottom-right corner of bounding box on output.
-    ///
-    /// This differs slightly from [`TextDisplay::prepare_lines`] in that it does all preparation
-    /// necessary. It differs from [`Self::prepare`] in that this method always (re)calculates
-    /// text wrapping and returns size requirements.
-    fn prepare_lines(&mut self) -> Vec2;
-
     /// Prepare text for display, as necessary
     ///
     /// Does all preparation steps necessary in order to display or query the
@@ -161,14 +152,9 @@ pub trait TextApi {
     /// notice changes in the environment. In case the environment has changed
     /// one should either call [`TextDisplay::require_action`] before this method.
     ///
-    /// Returns bottom-right corner of bounding box on output
-    /// when an update action (other than vertical alignment) occurred.
-    /// Returns `None` if no significant action was required
-    /// (since requirements are computed as a
-    /// side-effect of line-wrapping, and presumably in this case the existing
-    /// allocation is sufficient). One may force calculation of this value by
-    /// calling `text.require_action(Action::Wrap)`.
-    fn prepare(&mut self) -> Option<Vec2>;
+    /// Returns true if at least some action is performed *and* the text exceeds
+    /// the allocated bounds ([`Environment::bounds`]).
+    fn prepare(&mut self) -> bool;
 
     /// Get the sequence of effect tokens
     ///
@@ -254,46 +240,38 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
         }
 
         if action >= Action::Wrap {
-            let result = self
-                .display
+            self.display
                 .prepare_lines(self.env.bounds, self.env.wrap, self.env.align)
-                .unwrap();
-            result.1
+                .unwrap()
+                .1
         } else if action == Action::VAlign {
             self.display
                 .vertically_align(self.env.bounds.1, self.env.align.1)
                 .unwrap()
+                .1
         } else {
             self.display.bounding_box().unwrap().1
         }
     }
 
     #[inline]
-    fn prepare_lines(&mut self) -> Vec2 {
-        self.prepare_runs();
-
-        self.display
-            .prepare_lines(self.env.bounds, self.env.wrap, self.env.align)
-            .unwrap()
-    }
-
-    #[inline]
-    fn prepare(&mut self) -> Option<Vec2> {
+    fn prepare(&mut self) -> bool {
         self.prepare_runs();
 
         let action = self.display.required_action();
-        if action == Action::Wrap {
+        let bound = if action == Action::Wrap {
             self.display
                 .prepare_lines(self.env.bounds, self.env.wrap, self.env.align)
-                .ok()
+                .unwrap()
         } else if action == Action::VAlign {
             self.display
                 .vertically_align(self.env.bounds.1, self.env.align.1)
-                .unwrap();
-            None
+                .unwrap()
         } else {
-            None
-        }
+            return false;
+        };
+
+        !(bound.0 <= self.env.bounds.0 && bound.1 <= self.env.bounds.1)
     }
 
     #[inline]
@@ -306,10 +284,11 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
 pub trait TextApiExt: TextApi {
     /// Update the environment and do full preparation
     ///
-    /// Returns the bottom-right corner of bounding box on output.
+    /// Fully prepares the text.
     ///
-    /// This prepares text as necessary. It always performs line-wrapping.
-    fn update_env(&mut self, env: Environment) -> Option<Vec2> {
+    /// Returns true if at least some action is performed *and* the text exceeds
+    /// the allocated bounds ([`Environment::bounds`]).
+    fn update_env(&mut self, env: Environment) -> bool {
         self.set_env(env);
         self.prepare()
     }
