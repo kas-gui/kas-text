@@ -488,6 +488,10 @@ impl LineAdder {
             for run in &mut self.runs {
                 run.offset.1 += offset;
             }
+            for line in &mut self.lines {
+                line.top += offset;
+                line.bottom += offset;
+            }
         }
 
         Vec2(self.longest, height)
