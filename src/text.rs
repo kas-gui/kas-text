@@ -150,8 +150,10 @@ pub trait TextApi {
     /// notice changes in the environment. In case the environment has changed
     /// one should either call [`TextDisplay::require_action`] before this method.
     ///
-    /// Returns new size requirements, if an update action occurred. Returns
-    /// `None` if no action was required (since requirements are computed as a
+    /// Returns new size requirements
+    /// when an update action (other than vertical alignment) occurred.
+    /// Returns `None` if no significant action was required
+    /// (since requirements are computed as a
     /// side-effect of line-wrapping, and presumably in this case the existing
     /// allocation is sufficient). One may force calculation of this value by
     /// calling `text.require_action(Action::Wrap)`.
@@ -196,11 +198,13 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
             action = Action::All;
         } else if env.dpem != self.env.dpem {
             action = Action::Resize;
-        } else if env.bounds != self.env.bounds
-            || env.align != self.env.align
+        } else if env.bounds.0 != self.env.bounds.0
+            || env.align.0 != self.env.align.0
             || env.wrap != self.env.wrap
         {
             action = Action::Wrap;
+        } else if env.bounds.1 != self.env.bounds.1 || env.align.1 != self.env.align.1 {
+            action = Action::VAlign;
         } else {
             debug_assert_eq!(env, self.env);
             action = Action::None;
@@ -237,10 +241,16 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
     fn prepare(&mut self) -> Option<Vec2> {
         self.prepare_runs();
 
-        if self.display.required_action() > Action::None {
+        let action = self.display.required_action();
+        if action == Action::Wrap {
             self.display
                 .prepare_lines(self.env.bounds, self.env.wrap, self.env.align)
                 .ok()
+        } else if action == Action::VAlign {
+            self.display
+                .vertically_align(self.env.bounds.1, self.env.align.1)
+                .unwrap();
+            None
         } else {
             None
         }

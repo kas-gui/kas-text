@@ -96,7 +96,7 @@ impl TextDisplay {
         mut dpem: f32,
     ) {
         match self.action {
-            Action::None | Action::Wrap => return,
+            Action::None | Action::VAlign | Action::Wrap => return,
             Action::Resize => return self.resize_runs(text, dpem),
             Action::All => (),
         }

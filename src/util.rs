@@ -10,6 +10,8 @@
 pub enum Action {
     /// Nothing to do
     None,
+    /// Fix vertical alignment
+    VAlign,
     /// Do wrapping and alignment
     Wrap,
     /// Resize text, and above

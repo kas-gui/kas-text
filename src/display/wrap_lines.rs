@@ -231,6 +231,42 @@ impl TextDisplay {
         self.width = bounds.0;
         Ok(required)
     }
+
+    /// Vertically align lines
+    ///
+    /// Returns the bottom of bounding box after alignment.
+    pub fn vertically_align(&mut self, bound: f32, v_align: Align) -> Result<f32, NotReady> {
+        if self.action > Action::VAlign {
+            return Err(NotReady);
+        }
+
+        if self.lines.is_empty() {
+            return Ok(0.0);
+        }
+
+        let top = self.lines.first().unwrap().top;
+        let bottom = self.lines.last().unwrap().bottom;
+        let height = bottom - top;
+        let new_offset = match v_align {
+            _ if height >= bound => 0.0,
+            Align::Default | Align::TL | Align::Stretch => 0.0,
+            Align::Center => 0.5 * (bound - height),
+            Align::BR => bound - height,
+        };
+        let offset = new_offset - top;
+
+        if offset != 0.0 {
+            for run in &mut self.wrapped_runs {
+                run.offset.1 += offset;
+            }
+            for line in &mut self.lines {
+                line.top += offset;
+                line.bottom += offset;
+            }
+        }
+
+        Ok(bottom)
+    }
 }
 
 #[derive(Default)]
