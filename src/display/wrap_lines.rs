@@ -46,7 +46,7 @@ impl TextDisplay {
     /// than [`Self::prepare_lines`].
     ///
     /// The return value is at most `limit`.
-    pub fn max_line_length(&self, limit: f32) -> Result<f32, NotReady> {
+    pub fn measure_width(&self, limit: f32) -> Result<f32, NotReady> {
         if self.action > Action::Wrap {
             return Err(NotReady);
         }

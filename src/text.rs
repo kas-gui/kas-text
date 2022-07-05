@@ -132,6 +132,12 @@ pub trait TextApi {
     /// environment state.
     fn prepare_runs(&mut self);
 
+    /// Measure required width, up to some `limit`
+    ///
+    /// This calls [`Self::prepare_runs`] where necessary, but does not fully
+    /// prepare text for display.
+    fn measure_width(&mut self, limit: f32) -> f32;
+
     /// Prepare lines ("wrap")
     ///
     /// Prepares text, returning required size, in pixels.
@@ -228,6 +234,14 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
         );
     }
 
+    fn measure_width(&mut self, limit: f32) -> f32 {
+        if self.display.required_action() > Action::Wrap {
+            self.prepare_runs();
+        }
+
+        self.display.measure_width(limit).unwrap()
+    }
+
     #[inline]
     fn prepare_lines(&mut self) -> Vec2 {
         self.prepare_runs();
@@ -264,7 +278,7 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
 
 /// Extension trait over [`TextApi`]
 pub trait TextApiExt: TextApi {
-    /// Update the environment and prepare, returning required size
+    /// Update the environment and do full preparation
     ///
     /// This prepares text as necessary. It always performs line-wrapping.
     fn update_env(&mut self, env: Environment) -> Option<Vec2> {
