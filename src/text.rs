@@ -138,6 +138,11 @@ pub trait TextApi {
     /// prepare text for display.
     fn measure_width(&mut self, limit: f32) -> f32;
 
+    /// Measure required vertical height, wrapping as configured
+    ///
+    /// This fully prepares text for display.
+    fn measure_height(&mut self) -> f32;
+
     /// Prepare lines ("wrap")
     ///
     /// Prepares text, returning required size, in pixels.
@@ -240,6 +245,27 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
         }
 
         self.display.measure_width(limit).unwrap()
+    }
+
+    fn measure_height(&mut self) -> f32 {
+        let action = self.display.required_action();
+        if action > Action::Wrap {
+            self.prepare_runs();
+        }
+
+        if action >= Action::Wrap {
+            let result = self
+                .display
+                .prepare_lines(self.env.bounds, self.env.wrap, self.env.align)
+                .unwrap();
+            result.1
+        } else if action == Action::VAlign {
+            self.display
+                .vertically_align(self.env.bounds.1, self.env.align.1)
+                .unwrap()
+        } else {
+            self.display.height().unwrap()
+        }
     }
 
     #[inline]

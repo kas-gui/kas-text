@@ -144,6 +144,21 @@ impl TextDisplay {
         Ok(self.lines.len())
     }
 
+    /// Get the required height
+    pub fn height(&self) -> Result<f32, NotReady> {
+        if self.action > Action::VAlign {
+            return Err(NotReady);
+        }
+
+        if self.lines.is_empty() {
+            return Ok(0.0);
+        }
+
+        let top = self.lines.first().unwrap().top;
+        let bottom = self.lines.last().unwrap().bottom;
+        Ok(bottom - top)
+    }
+
     /// Find the line containing text `index`
     ///
     /// Returns the line number and the text-range of the line.
