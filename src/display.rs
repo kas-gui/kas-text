@@ -102,7 +102,7 @@ pub struct TextDisplay {
     lines: Vec<Line>,
     num_glyphs: u32,
     /// Required for `highlight_lines`; may remove later:
-    width: f32,
+    r_bound: f32,
 }
 
 impl Default for TextDisplay {
@@ -114,7 +114,7 @@ impl Default for TextDisplay {
             wrapped_runs: Default::default(),
             lines: Default::default(),
             num_glyphs: 0,
-            width: 0.0,
+            r_bound: 0.0,
         }
     }
 }
@@ -144,19 +144,19 @@ impl TextDisplay {
         Ok(self.lines.len())
     }
 
-    /// Get the required height
-    pub fn height(&self) -> Result<f32, NotReady> {
+    /// Get the size of the required bounding box
+    pub fn bounding_box(&self) -> Result<Vec2, NotReady> {
         if self.action > Action::VAlign {
             return Err(NotReady);
         }
 
         if self.lines.is_empty() {
-            return Ok(0.0);
+            return Ok(Vec2::ZERO);
         }
 
         let top = self.lines.first().unwrap().top;
         let bottom = self.lines.last().unwrap().bottom;
-        Ok(bottom - top)
+        Ok(Vec2(self.r_bound, bottom - top))
     }
 
     /// Find the line containing text `index`

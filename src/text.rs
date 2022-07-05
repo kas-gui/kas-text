@@ -145,7 +145,7 @@ pub trait TextApi {
 
     /// Prepare lines ("wrap")
     ///
-    /// Prepares text, returning required size, in pixels.
+    /// Prepares text, returning bottom-right corner of bounding box on output.
     ///
     /// This differs slightly from [`TextDisplay::prepare_lines`] in that it does all preparation
     /// necessary. It differs from [`Self::prepare`] in that this method always (re)calculates
@@ -161,7 +161,7 @@ pub trait TextApi {
     /// notice changes in the environment. In case the environment has changed
     /// one should either call [`TextDisplay::require_action`] before this method.
     ///
-    /// Returns new size requirements
+    /// Returns bottom-right corner of bounding box on output
     /// when an update action (other than vertical alignment) occurred.
     /// Returns `None` if no significant action was required
     /// (since requirements are computed as a
@@ -264,7 +264,7 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
                 .vertically_align(self.env.bounds.1, self.env.align.1)
                 .unwrap()
         } else {
-            self.display.height().unwrap()
+            self.display.bounding_box().unwrap().1
         }
     }
 
@@ -306,10 +306,18 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
 pub trait TextApiExt: TextApi {
     /// Update the environment and do full preparation
     ///
+    /// Returns the bottom-right corner of bounding box on output.
+    ///
     /// This prepares text as necessary. It always performs line-wrapping.
     fn update_env(&mut self, env: Environment) -> Option<Vec2> {
         self.set_env(env);
         self.prepare()
+    }
+
+    /// Get the size of the required bounding box
+    fn bounding_box(&mut self) -> Vec2 {
+        self.prepare();
+        self.display().bounding_box().unwrap()
     }
 
     /// Get required action

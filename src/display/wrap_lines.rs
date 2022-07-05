@@ -92,7 +92,7 @@ impl TextDisplay {
     /// Prerequisites: prepared runs: errors if action is greater than `Action::Wrap`.
     /// Post-requirements: none (`Action::None`).
     /// Parameters: see [`crate::Environment`] documentation.
-    /// Returns: required size, in pixels.
+    /// Returns: bottom-right corner of bounding box on output
     pub fn prepare_lines(
         &mut self,
         bounds: Vec2,
@@ -228,7 +228,7 @@ impl TextDisplay {
         self.wrapped_runs = adder.runs;
         self.lines = adder.lines;
         self.num_glyphs = adder.num_glyphs;
-        self.width = bounds.0;
+        self.r_bound = required.0;
         Ok(required)
     }
 
@@ -274,7 +274,7 @@ struct LineAdder {
     runs: Vec<RunPart>,
     lines: Vec<Line>,
     line_gap: f32,
-    longest: f32,
+    r_bound: f32,
     vcaret: f32,
     num_glyphs: u32,
     halign: Align,
@@ -535,6 +535,8 @@ impl LineAdder {
             }
         }
 
+        self.r_bound = self.r_bound.max(end_caret);
+
         // Other parts of this library expect runs to be in logical order, so
         // we re-order now (does not affect display position).
         // TODO: should we change this, e.g. for visual-order navigation?
@@ -545,7 +547,6 @@ impl LineAdder {
         // Vertically align lines to the nearest pixel (improves rendering):
         self.vcaret = self.vcaret.round();
 
-        self.longest = self.longest.max(line_len);
         self.lines.push(Line {
             text_range: Range::from(line_text_start..line_text_end),
             run_range: (line_start..self.runs.len()).into(),
@@ -554,7 +555,7 @@ impl LineAdder {
         });
     }
 
-    // Returns: required dimensions
+    /// Returns the bottom-right bounding corner.
     fn finish(&mut self, bounds: Vec2, align: (Align, Align)) -> Vec2 {
         let height = self.vcaret;
         let offset = match align.1 {
@@ -572,6 +573,6 @@ impl LineAdder {
             }
         }
 
-        Vec2(self.longest, height)
+        Vec2(self.r_bound, height + offset)
     }
 }

@@ -507,7 +507,7 @@ impl TextDisplay {
 
         let mut lines = self.lines.iter();
         let mut rects = Vec::with_capacity(self.lines.len());
-        let rbound = self.width;
+        let rbound = self.r_bound;
 
         // Find the first line
         let mut cur_line = 'l1: loop {
