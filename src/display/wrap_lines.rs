@@ -246,7 +246,10 @@ impl LineAdder {
             max_level = max_level.max(run.level);
         }
 
-        self.vcaret += line_gap.max(self.line_gap) + ascent;
+        if !self.lines.is_empty() {
+            self.vcaret += line_gap.max(self.line_gap);
+        }
+        self.vcaret += ascent;
         self.line_gap = line_gap;
 
         let line_text_start = {
