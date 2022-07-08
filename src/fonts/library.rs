@@ -403,8 +403,8 @@ impl FontLibrary {
     /// [`FaceId`] values are indices assigned consecutively and are permanent.
     /// For any `x < self.num_faces()`, `FaceId(x)` is a valid font face identifier.
     ///
-    /// Font faces may be loaded on demand (by [`crate::Text::prepare`] but are
-    /// never unloaded or adjusted, hence this value may increase but not decrease.
+    /// This value may increase as fonts may be loaded on demand. It will not
+    /// decrease since fonts are never unloaded during program execution.
     pub fn num_faces(&self) -> usize {
         let faces = self.faces.read().unwrap();
         faces.faces.len()

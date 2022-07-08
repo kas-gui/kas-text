@@ -50,7 +50,7 @@ pub struct NotReady;
 ///
 ///     Each run is then fed through the text shaper, resulting in a sequence of
 ///     type-set glyphs.
-/// 2.  Optionally, [`Self::max_line_length`] may be used to calculate the
+/// 2.  Optionally, [`Self::measure_width`] may be used to calculate the
 ///     required width (mostly useful for short texts which will not wrap).
 /// 3.  [`Self::prepare_lines`] takes the output of the first step and
 ///     applies line wrapping, line re-ordering (for bi-directional lines) and
@@ -205,8 +205,7 @@ impl TextDisplay {
     /// - `Ok(Some(line_is_right_to_left))` otherwise
     ///
     /// Note: indeterminate lines (e.g. empty lines) have their direction
-    /// determined from the passed environment; in the case of
-    /// [`Direction::Auto`] this resolves to left-to-right.
+    /// determined from the passed environment, by default left-to-right.
     pub fn line_is_rtl(&self, line: usize) -> Result<Option<bool>, NotReady> {
         if !self.action.is_ready() {
             return Err(NotReady);

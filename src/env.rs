@@ -28,7 +28,7 @@ pub struct Environment {
     /// Alignment (`horiz`, `vert`)
     ///
     /// By default, horizontal alignment is left or right depending on the
-    /// text direction (see [`Environment::dir`]), and vertical alignment is
+    /// text direction (see [`Self::direction`]), and vertical alignment is
     /// to the top.
     pub align: (Align, Align),
     /// Default font

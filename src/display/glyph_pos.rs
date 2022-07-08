@@ -262,8 +262,6 @@ impl TextDisplay {
     ///
     /// This method has fairly low cost: `O(n)` in the number of glyphs with
     /// low overhead.
-    ///
-    /// One must call [`TextDisplay::prepare`] before this method.
     pub fn glyphs<F: FnMut(FaceId, f32, Glyph)>(&self, mut f: F) -> Result<(), NotReady> {
         if !self.action.is_ready() {
             return Err(NotReady);

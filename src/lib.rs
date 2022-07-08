@@ -19,6 +19,7 @@
 #![allow(clippy::type_complexity)]
 #![allow(clippy::unit_arg)]
 #![allow(clippy::needless_lifetimes)]
+#![allow(clippy::neg_cmp_op_on_partial_ord)]
 
 mod env;
 pub use env::*;
