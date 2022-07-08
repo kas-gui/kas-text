@@ -10,7 +10,7 @@ use crate::conv::{to_u32, to_usize};
 use crate::fonts::{fonts, FontId};
 use crate::format::FormattableText;
 use crate::{shaper, Action, Direction, Range};
-use unicode_bidi::{BidiInfo, Level, LTR_LEVEL, RTL_LEVEL};
+use unicode_bidi::{BidiClass, BidiInfo, Level, LTR_LEVEL, RTL_LEVEL};
 use xi_unicode::LineBreakIterator;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -121,6 +121,7 @@ impl TextDisplay {
 
         let fonts = fonts();
         let mut last_face_id = fonts.first_face_for(font_id);
+        let mut last_dpem = dpem;
 
         let (bidi, default_para_level) = match direction {
             Direction::Bidi => (true, None),
@@ -129,14 +130,19 @@ impl TextDisplay {
             Direction::Ltr => (false, Some(LTR_LEVEL)),
             Direction::Rtl => (false, Some(RTL_LEVEL)),
         };
-        let mut levels = vec![];
         let mut level: Level;
+        let levels;
+        let classes;
         if bidi || default_para_level.is_none() {
-            levels = BidiInfo::new(text.as_str(), default_para_level).levels;
+            let info = BidiInfo::new(text.as_str(), default_para_level);
+            levels = info.levels;
             assert_eq!(text.str_len(), levels.len());
             level = levels.get(0).cloned().unwrap_or(LTR_LEVEL);
+            classes = info.original_classes;
         } else {
             level = default_para_level.unwrap();
+            levels = vec![];
+            classes = vec![];
         }
 
         let mut start = 0;
@@ -167,12 +173,26 @@ impl TextDisplay {
 
             // Force end of current run?
             let bidi_break = bidi && levels[pos] != level;
-            let fmt_break = next_fmt
-                .as_ref()
-                .map(|fmt| to_usize(fmt.start) == pos)
-                .unwrap_or(false);
 
-            let mut face_id = fonts.face_for_char_or_first(font_id, c);
+            let mut fmt_break = false;
+            if let Some(fmt) = next_fmt.as_ref() {
+                if to_usize(fmt.start) == pos {
+                    fmt_break = true;
+                    font_id = fmt.font_id;
+                    dpem = fmt.dpem;
+                    next_fmt = font_tokens.next();
+                }
+            }
+
+            let opt_last_face = if matches!(
+                classes[pos],
+                BidiClass::L | BidiClass::R | BidiClass::AL | BidiClass::EN | BidiClass::AN
+            ) {
+                None
+            } else {
+                Some(last_face_id)
+            };
+            let face_id = fonts.face_for_char_or_first(font_id, opt_last_face, c);
             let font_break = pos > 0 && face_id != last_face_id;
 
             if hard_break || control_break || bidi_break || fmt_break || font_break {
@@ -190,21 +210,12 @@ impl TextDisplay {
                 self.runs.push(shaper::shape(
                     text.as_str(),
                     range,
-                    dpem,
+                    last_dpem,
                     last_face_id,
                     breaks,
                     special,
                     level,
                 ));
-
-                if let Some(fmt) = next_fmt.as_ref() {
-                    if to_usize(fmt.start) == pos {
-                        font_id = fmt.font_id;
-                        dpem = fmt.dpem;
-                        next_fmt = font_tokens.next();
-                    }
-                    face_id = fonts.face_for_char_or_first(font_id, c);
-                }
 
                 if hard_break {
                     let range = Range::from(line_start..self.runs.len());
@@ -234,6 +245,7 @@ impl TextDisplay {
             last_is_control = is_control;
             last_is_htab = is_htab;
             last_face_id = face_id;
+            last_dpem = dpem;
         }
 
         // Conclude: add last run. This may be empty, but we want it anyway.
@@ -248,7 +260,7 @@ impl TextDisplay {
         self.runs.push(shaper::shape(
             text.as_str(),
             range,
-            dpem,
+            last_dpem,
             last_face_id,
             breaks,
             special,
@@ -273,7 +285,7 @@ impl TextDisplay {
             self.runs.push(shaper::shape(
                 text.as_str(),
                 range,
-                dpem,
+                last_dpem,
                 last_face_id,
                 breaks,
                 RunSpecial::None,
