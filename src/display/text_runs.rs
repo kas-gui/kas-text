@@ -180,6 +180,11 @@ impl TextDisplay {
             let font_break = pos > 0 && face_id != last_face_id;
 
             if hard_break || control_break || bidi_break || fmt_break || font_break {
+                // TODO: sometimes this results in empty runs immediately
+                // following another run. Ideally we would either merge these
+                // into the previous run or not simply break in this case.
+                // Note: the prior run may end with NoBreak while the latter
+                // (and the merge result) do not.
                 let range = (start..non_control_end).into();
                 let special = match (last_is_htab, last_is_control || is_break) {
                     (true, _) => RunSpecial::HTab,
@@ -290,10 +295,24 @@ impl TextDisplay {
             println!("line (rtl={}) runs:", line.rtl);
             for run in &self.runs[line.range.to_std()] {
                 let slice = &text.as_str()[run.range];
-                println!(
-                    "\t{:?}, text.as_str()[{}..{}]: '{}', breaks={:?}",
-                    run.level, run.range.start, run.range.end, slice, run.breaks,
+                print!(
+                    "\t{:?}, text.as_str()[{}..{}]: '{}', ",
+                    run.level, run.range.start, run.range.end, slice
                 );
+                match run.special {
+                    RunSpecial::None => (),
+                    RunSpecial::NoBreak => print!("NoBreak, "),
+                    RunSpecial::HTab => print!("HTab, "),
+                }
+                print!("breaks=[");
+                let mut iter = run.breaks.iter();
+                if let Some(b) = iter.next() {
+                    print!("{}", b.index);
+                }
+                for b in iter {
+                    print!(", {}", b.index);
+                }
+                println!("]");
             }
         }
         */
