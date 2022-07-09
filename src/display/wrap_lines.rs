@@ -45,7 +45,8 @@ impl TextDisplay {
     /// This is a significantly faster way to calculate the required line length
     /// than [`Self::prepare_lines`].
     ///
-    /// The return value is at most `limit`.
+    /// The return value is at most `limit` and is unaffected by alignment and
+    /// wrap configuration of [`crate::Environment`].
     pub fn measure_width(&self, limit: f32) -> Result<f32, NotReady> {
         if self.action > Action::Wrap {
             return Err(NotReady);

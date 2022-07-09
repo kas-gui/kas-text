@@ -145,6 +145,10 @@ impl TextDisplay {
     }
 
     /// Get the size of the required bounding box
+    ///
+    /// This is the position of the lower-right corner of a bounding box on
+    /// content after alignment, which is done using the input bounds. This is
+    /// only the minimum size requirement when top-left alignment is used.
     pub fn bounding_box(&self) -> Result<Vec2, NotReady> {
         if self.action > Action::VAlign {
             return Err(NotReady);

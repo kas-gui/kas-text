@@ -11,7 +11,7 @@ use crate::display::{Effect, MarkerPosIter, NotReady, TextDisplay};
 use crate::fonts::FaceId;
 use crate::format::{EditableText, FormattableText};
 use crate::{Action, Glyph, Vec2};
-use crate::{Direction, Environment};
+use crate::{Align, Direction, Environment};
 
 /// Text, prepared for display in a given environment
 ///
@@ -135,12 +135,20 @@ pub trait TextApi {
     /// Measure required width, up to some `limit`
     ///
     /// This calls [`Self::prepare_runs`] where necessary, but does not fully
-    /// prepare text for display.
+    /// prepare text for display. It is a significantly faster way to calculate
+    /// the required line length than by fully preparing text.
+    ///
+    /// The return value is at most `limit` and is unaffected by alignment and
+    /// wrap configuration of [`Environment`].
     fn measure_width(&mut self, limit: f32) -> f32;
 
     /// Measure required vertical height, wrapping as configured
     ///
-    /// This fully prepares text for display.
+    /// This ensures that the vertical component of [`Environment::align`] is
+    /// [`Align::TL`], then fully prepares text for display.
+    ///
+    /// Adjusting only vertical alignment after this method call via
+    /// [`TextApiExt::update_env`] or equivalent is fast.
     fn measure_height(&mut self) -> f32;
 
     /// Prepare text for display, as necessary
@@ -234,6 +242,11 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
     }
 
     fn measure_height(&mut self) -> f32 {
+        if self.env.align.1 != Align::TL {
+            self.env.align.1 = Align::TL;
+            self.display.require_action(Action::VAlign);
+        }
+
         let action = self.display.required_action();
         if action > Action::Wrap {
             self.prepare_runs();
@@ -284,7 +297,8 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
 pub trait TextApiExt: TextApi {
     /// Update the environment and do full preparation
     ///
-    /// Fully prepares the text.
+    /// Fully prepares the text. This is equivalent to calling
+    /// [`TextApi::set_env`] followed by [`TextApi::prepare`].
     ///
     /// Returns true if at least some action is performed *and* the text exceeds
     /// the allocated bounds ([`Environment::bounds`]).
@@ -294,6 +308,11 @@ pub trait TextApiExt: TextApi {
     }
 
     /// Get the size of the required bounding box
+    ///
+    /// This is the position of the lower-right corner of a bounding box on
+    /// content after alignment, which is done using the input bounds
+    /// ([`Environment::bounds`]). Thus, this is only the minimum size
+    /// requirement when top-left alignment is used.
     fn bounding_box(&mut self) -> Vec2 {
         self.prepare();
         self.display().bounding_box().unwrap()
