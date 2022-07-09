@@ -7,18 +7,18 @@ on:
     branches: [ master ]
 
 jobs:
-  check:
-    name: Format and Doc
+  nightly:
+    name: Nightly
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
-      - name: Install latest nightly and rustfmt
+      - name: Install toolchain
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
           toolchain: nightly
           override: true
-          components: rustfmt
+          components: rustfmt, clippy
       - name: Rustfmt check
         uses: actions-rs/cargo@v1
         with:
@@ -28,23 +28,32 @@ jobs:
         run: RUSTDOCFLAGS="--cfg doc_cfg" cargo doc --features markdown --no-deps
       - name: Test Harfbuzz
         run: cargo test --features harfbuzz
+      - name: Clippy
+        run: cargo +nightly clippy --features shaping,markdown,raster,serde
+      - name: test (gat)
+        run: cargo test --all-features
 
   test:
+    name: Test
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
-        # disabled because of shaderc dependencies: windows-latest
+        os: [macos-latest, windows-latest]
+        toolchain: [stable]
+        include:
+          - os: ubuntu-latest
+            toolchain: "1.58.0"
+          - os: ubuntu-latest
+            toolchain: beta
 
     steps:
       - uses: actions/checkout@v2
-      - name: Install latest nightly
+      - name: Install toolchain
         uses: actions-rs/toolchain@v1
         with:
-            toolchain: nightly
-            override: true
+          profile: minimal
+          toolchain: ${{ matrix.toolchain }}
+          override: true
       - name: test
-        run: cargo test --features markdown,shaping,raster
-      - name: test (gat)
-        run: cargo test --all-features
+        run: cargo test --features markdown,shaping,raster,serde
