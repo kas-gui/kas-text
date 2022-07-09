@@ -5,12 +5,14 @@
 
 //! Text preparation: line breaking and BIDI
 
+#![allow(clippy::unnecessary_unwrap)]
+
 use super::TextDisplay;
 use crate::conv::{to_u32, to_usize};
 use crate::fonts::{fonts, FontId};
 use crate::format::FormattableText;
 use crate::{shaper, Action, Direction, Range};
-use unicode_bidi::{BidiInfo, Level, LTR_LEVEL, RTL_LEVEL};
+use unicode_bidi::{BidiClass, BidiInfo, Level, LTR_LEVEL, RTL_LEVEL};
 use xi_unicode::LineBreakIterator;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -42,12 +44,11 @@ impl TextDisplay {
     /// Prerequisites: prepared runs: requires action is no greater than `Action::Wrap`.
     /// Post-requirements: prepare lines (requires action `Action::Wrap`).  
     /// Parameters: see [`crate::Environment`] documentation.
-    pub(crate) fn resize_runs<F: FormattableText>(&mut self, text: &F, dpp: f32, pt_size: f32) {
+    pub(crate) fn resize_runs<F: FormattableText + ?Sized>(&mut self, text: &F, mut dpem: f32) {
         assert!(self.action <= Action::Resize);
         self.action = Action::Wrap;
-        let mut dpem = dpp * pt_size;
 
-        let mut font_tokens = text.font_tokens(dpp, pt_size);
+        let mut font_tokens = text.font_tokens(dpem);
         let mut next_fmt = font_tokens.next();
 
         for run in &mut self.runs {
@@ -87,18 +88,16 @@ impl TextDisplay {
     /// are resized; afterwards, action is no greater than [`Action::Wrap`].
     ///
     /// Parameters: see [`crate::Environment`] documentation.
-    pub fn prepare_runs<F: FormattableText>(
+    pub fn prepare_runs<F: FormattableText + ?Sized>(
         &mut self,
         text: &F,
-        bidi: bool,
-        dir: Direction,
+        direction: Direction,
         mut font_id: FontId,
-        dpp: f32,
-        pt_size: f32,
+        mut dpem: f32,
     ) {
         match self.action {
-            Action::None | Action::Wrap => return,
-            Action::Resize => return self.resize_runs(text, dpp, pt_size),
+            Action::None | Action::VAlign | Action::Wrap => return,
+            Action::Resize => return self.resize_runs(text, dpem),
             Action::All => (),
         }
         self.action = Action::Wrap;
@@ -112,9 +111,7 @@ impl TextDisplay {
         self.runs.clear();
         self.line_runs.clear();
 
-        let mut dpem = dpp * pt_size;
-
-        let mut font_tokens = text.font_tokens(dpp, pt_size);
+        let mut font_tokens = text.font_tokens(dpem);
         let mut next_fmt = font_tokens.next();
         if let Some(fmt) = next_fmt.as_ref() {
             if fmt.start == 0 {
@@ -126,21 +123,28 @@ impl TextDisplay {
 
         let fonts = fonts();
         let mut last_face_id = fonts.first_face_for(font_id);
+        let mut last_dpem = dpem;
 
-        let bidi = bidi;
-        let default_para_level = match dir {
-            Direction::Auto => None,
-            Direction::LR => Some(LTR_LEVEL),
-            Direction::RL => Some(RTL_LEVEL),
+        let (bidi, default_para_level) = match direction {
+            Direction::Bidi => (true, None),
+            Direction::BidiRtl => (true, Some(RTL_LEVEL)),
+            Direction::Single => (false, None),
+            Direction::Ltr => (false, Some(LTR_LEVEL)),
+            Direction::Rtl => (false, Some(RTL_LEVEL)),
         };
-        let mut levels = vec![];
         let mut level: Level;
+        let levels;
+        let classes;
         if bidi || default_para_level.is_none() {
-            levels = BidiInfo::new(text.as_str(), default_para_level).levels;
+            let info = BidiInfo::new(text.as_str(), default_para_level);
+            levels = info.levels;
             assert_eq!(text.str_len(), levels.len());
             level = levels.get(0).cloned().unwrap_or(LTR_LEVEL);
+            classes = info.original_classes;
         } else {
             level = default_para_level.unwrap();
+            levels = vec![];
+            classes = vec![];
         }
 
         let mut start = 0;
@@ -171,15 +175,34 @@ impl TextDisplay {
 
             // Force end of current run?
             let bidi_break = bidi && levels[pos] != level;
-            let fmt_break = next_fmt
-                .as_ref()
-                .map(|fmt| to_usize(fmt.start) == pos)
-                .unwrap_or(false);
 
-            let mut face_id = fonts.face_for_char_or_first(font_id, c);
+            let mut fmt_break = false;
+            if let Some(fmt) = next_fmt.as_ref() {
+                if to_usize(fmt.start) == pos {
+                    fmt_break = true;
+                    font_id = fmt.font_id;
+                    dpem = fmt.dpem;
+                    next_fmt = font_tokens.next();
+                }
+            }
+
+            let opt_last_face = if matches!(
+                classes[pos],
+                BidiClass::L | BidiClass::R | BidiClass::AL | BidiClass::EN | BidiClass::AN
+            ) {
+                None
+            } else {
+                Some(last_face_id)
+            };
+            let face_id = fonts.face_for_char_or_first(font_id, opt_last_face, c);
             let font_break = pos > 0 && face_id != last_face_id;
 
             if hard_break || control_break || bidi_break || fmt_break || font_break {
+                // TODO: sometimes this results in empty runs immediately
+                // following another run. Ideally we would either merge these
+                // into the previous run or not simply break in this case.
+                // Note: the prior run may end with NoBreak while the latter
+                // (and the merge result) do not.
                 let range = (start..non_control_end).into();
                 let special = match (last_is_htab, last_is_control || is_break) {
                     (true, _) => RunSpecial::HTab,
@@ -189,21 +212,12 @@ impl TextDisplay {
                 self.runs.push(shaper::shape(
                     text.as_str(),
                     range,
-                    dpem,
+                    last_dpem,
                     last_face_id,
                     breaks,
                     special,
                     level,
                 ));
-
-                if let Some(fmt) = next_fmt.as_ref() {
-                    if to_usize(fmt.start) == pos {
-                        font_id = fmt.font_id;
-                        dpem = fmt.dpem;
-                        next_fmt = font_tokens.next();
-                    }
-                    face_id = fonts.face_for_char_or_first(font_id, c);
-                }
 
                 if hard_break {
                     let range = Range::from(line_start..self.runs.len());
@@ -233,6 +247,7 @@ impl TextDisplay {
             last_is_control = is_control;
             last_is_htab = is_htab;
             last_face_id = face_id;
+            last_dpem = dpem;
         }
 
         // Conclude: add last run. This may be empty, but we want it anyway.
@@ -247,7 +262,7 @@ impl TextDisplay {
         self.runs.push(shaper::shape(
             text.as_str(),
             range,
-            dpem,
+            last_dpem,
             last_face_id,
             breaks,
             special,
@@ -272,7 +287,7 @@ impl TextDisplay {
             self.runs.push(shaper::shape(
                 text.as_str(),
                 range,
-                dpem,
+                last_dpem,
                 last_face_id,
                 breaks,
                 RunSpecial::None,
@@ -290,10 +305,24 @@ impl TextDisplay {
             println!("line (rtl={}) runs:", line.rtl);
             for run in &self.runs[line.range.to_std()] {
                 let slice = &text.as_str()[run.range];
-                println!(
-                    "\t{:?}, text.as_str()[{}..{}]: '{}', breaks={:?}",
-                    run.level, run.range.start, run.range.end, slice, run.breaks,
+                print!(
+                    "\t{:?}, text.as_str()[{}..{}]: '{}', ",
+                    run.level, run.range.start, run.range.end, slice
                 );
+                match run.special {
+                    RunSpecial::None => (),
+                    RunSpecial::NoBreak => print!("NoBreak, "),
+                    RunSpecial::HTab => print!("HTab, "),
+                }
+                print!("breaks=[");
+                let mut iter = run.breaks.iter();
+                if let Some(b) = iter.next() {
+                    print!("{}", b.index);
+                }
+                for b in iter {
+                    print!(", {}", b.index);
+                }
+                println!("]");
             }
         }
         */

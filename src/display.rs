@@ -8,8 +8,7 @@
 use smallvec::SmallVec;
 
 use crate::conv::to_usize;
-use crate::format::FormattableText;
-use crate::{shaper, Action, EnvFlags, Environment, Vec2};
+use crate::{shaper, Action, Vec2};
 
 mod glyph_pos;
 mod text_runs;
@@ -27,16 +26,38 @@ pub struct NotReady;
 
 /// Text display, without source text representation
 ///
+/// This struct stores glyph locations and intermediate values used to calculate
+/// glyph layout. It does not contain the source text itself or "environment"
+/// state used during layout.
+///
 /// In general, it is recommended to use [`crate::Text`] instead, which includes
-/// a representation of the source text and environment state.
+/// a representation of the source text and environmental state.
 ///
-/// Once prepared (via [`TextDisplay::prepare`]), this struct contains
-/// everything needed to display text, query glyph position and size
-/// requirements, and even re-wrap text lines. It cannot, however, support
-/// editing or cloning the source text.
+/// ### Preparation
 ///
-/// This struct tracks its state of preparation and can be default-constructed
-/// in an unprepared state with no text.
+/// This struct tracks the state of preparation ([`Self::required_action`]).
+/// Methods will return a [`NotReady`] error if called without sufficient
+/// preparation.
+///
+/// The struct may be default-constructed.
+///
+/// Text preparation proceeds as follows:
+///
+/// 1.  [`Self::prepare_runs`] breaks the source text into runs which may be fed
+///     to the shaping algorithm. Each run has a single bidi embedding level
+///     (direction) and uses a single font face, and contains no explicit line
+///     break (except as a terminator).
+///
+///     Each run is then fed through the text shaper, resulting in a sequence of
+///     type-set glyphs.
+/// 2.  Optionally, [`Self::measure_width`] may be used to calculate the
+///     required width (mostly useful for short texts which will not wrap).
+/// 3.  [`Self::prepare_lines`] takes the output of the first step and
+///     applies line wrapping, line re-ordering (for bi-directional lines) and
+///     alignment.
+///
+///     This step is separate primarily to allow faster re-wrapping should the
+///     text's wrap width change.
 ///
 /// ### Text navigation
 ///
@@ -81,7 +102,7 @@ pub struct TextDisplay {
     lines: Vec<Line>,
     num_glyphs: u32,
     /// Required for `highlight_lines`; may remove later:
-    width: f32,
+    r_bound: f32,
 }
 
 impl Default for TextDisplay {
@@ -93,7 +114,7 @@ impl Default for TextDisplay {
             wrapped_runs: Default::default(),
             lines: Default::default(),
             num_glyphs: 0,
-            width: 0.0,
+            r_bound: 0.0,
         }
     }
 }
@@ -115,46 +136,31 @@ impl TextDisplay {
         self.action = self.action.max(action);
     }
 
-    /// Prepare text for display, as necessary
-    ///
-    /// Does all preparation steps necessary in order to display or query the
-    /// layout of this text.
-    ///
-    /// Required preparation actions are tracked internally, but cannot
-    /// notice changes in the environment. In case the environment has changed
-    /// one should either call [`TextDisplay::require_action`] before this method.
-    ///
-    /// Returns new size requirements, if an update action occurred. Returns
-    /// `None` if no action was required (since requirements are computed as a
-    /// side-effect of line-wrapping, and presumably in this case the existing
-    /// allocation is sufficient). One may force calculation of this value by
-    /// calling `text.require_action(Action::Wrap)`.
-    pub fn prepare<F: FormattableText>(&mut self, text: &F, env: &Environment) -> Option<Vec2> {
-        let action = self.action;
-        if action == Action::None {
-            return None;
-        }
-
-        if action >= Action::All {
-            let bidi = env.flags.contains(EnvFlags::BIDI);
-            self.prepare_runs(text, bidi, env.dir, env.font_id, env.dpp, env.pt_size);
-        } else if action == Action::Resize {
-            // Note: this is only needed if we didn't just call prepare_runs()
-            self.resize_runs(text, env.dpp, env.pt_size);
-        }
-
-        Some(
-            self.prepare_lines(env.bounds, env.flags, env.align)
-                .unwrap(),
-        )
-    }
-
-    /// Get the number of lines
+    /// Get the number of lines (after wrapping)
     pub fn num_lines(&self) -> Result<usize, NotReady> {
         if !self.action.is_ready() {
             return Err(NotReady);
         }
         Ok(self.lines.len())
+    }
+
+    /// Get the size of the required bounding box
+    ///
+    /// This is the position of the lower-right corner of a bounding box on
+    /// content after alignment, which is done using the input bounds. This is
+    /// only the minimum size requirement when top-left alignment is used.
+    pub fn bounding_box(&self) -> Result<Vec2, NotReady> {
+        if self.action > Action::VAlign {
+            return Err(NotReady);
+        }
+
+        if self.lines.is_empty() {
+            return Ok(Vec2::ZERO);
+        }
+
+        let top = self.lines.first().unwrap().top;
+        let bottom = self.lines.last().unwrap().bottom;
+        Ok(Vec2(self.r_bound, bottom - top))
     }
 
     /// Find the line containing text `index`
@@ -196,26 +202,25 @@ impl TextDisplay {
 
     /// Get the directionality of the current line
     ///
-    /// Returns `true` for left-to-right lines, `false` for RTL.
+    /// Returns:
     ///
-    /// Panics if `line >= self.num_lines()`.
-    pub fn line_is_ltr(&self, line: usize) -> Result<bool, NotReady> {
+    /// - `Err(NotReady)` if text is not prepared
+    /// - `Ok(None)` if text is empty
+    /// - `Ok(Some(line_is_right_to_left))` otherwise
+    ///
+    /// Note: indeterminate lines (e.g. empty lines) have their direction
+    /// determined from the passed environment, by default left-to-right.
+    pub fn line_is_rtl(&self, line: usize) -> Result<Option<bool>, NotReady> {
         if !self.action.is_ready() {
             return Err(NotReady);
         }
-        let first_run = self.lines[line].run_range.start();
-        let glyph_run = to_usize(self.wrapped_runs[first_run].glyph_run);
-        Ok(self.runs[glyph_run].level.is_ltr())
-    }
-
-    /// Get the directionality of the current line
-    ///
-    /// Returns `true` for right-to-left lines, `false` for LTR.
-    ///
-    /// Panics if `line >= self.num_lines()`.
-    #[inline]
-    pub fn line_is_rtl(&self, line: usize) -> Result<bool, NotReady> {
-        self.line_is_ltr(line).map(|is_ltr| !is_ltr)
+        if let Some(line) = self.lines.get(line) {
+            let first_run = line.run_range.start();
+            let glyph_run = to_usize(self.wrapped_runs[first_run].glyph_run);
+            Ok(Some(self.runs[glyph_run].level.is_rtl()))
+        } else {
+            Ok(None)
+        }
     }
 
     /// Find the text index for the glyph nearest the given `pos`

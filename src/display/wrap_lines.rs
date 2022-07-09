@@ -9,7 +9,7 @@ use super::{NotReady, RunSpecial, TextDisplay};
 use crate::conv::{to_u32, to_usize};
 use crate::fonts::{fonts, FontLibrary};
 use crate::shaper::GlyphRun;
-use crate::{Action, Align, EnvFlags, Range, Vec2};
+use crate::{Action, Align, Range, Vec2};
 use smallvec::SmallVec;
 use unicode_bidi::Level;
 
@@ -40,27 +40,70 @@ struct PartInfo {
 }
 
 impl TextDisplay {
+    /// Measure the maximum line length without wrapping
+    ///
+    /// This is a significantly faster way to calculate the required line length
+    /// than [`Self::prepare_lines`].
+    ///
+    /// The return value is at most `limit` and is unaffected by alignment and
+    /// wrap configuration of [`crate::Environment`].
+    pub fn measure_width(&self, limit: f32) -> Result<f32, NotReady> {
+        if self.action > Action::Wrap {
+            return Err(NotReady);
+        }
+
+        let mut max_line_len = 0.0f32;
+
+        for line in self.line_runs.iter() {
+            let mut caret = 0.0;
+            let mut line_len = 0.0;
+
+            // Each LineRun contains at least one Run, though a Run may be empty
+            let end_index = line.range.end();
+            debug_assert!(line.range.start < line.range.end);
+            assert!(end_index <= self.runs.len());
+
+            let mut index = line.range.start();
+            while index < end_index {
+                let run = &self.runs[index];
+                let num_parts = run.num_parts();
+                let (_, part_len_no_space, part_len) = run.part_lengths(0..num_parts);
+
+                if part_len_no_space > 0.0 {
+                    line_len = caret + part_len_no_space;
+                    if line_len >= limit {
+                        return Ok(limit);
+                    }
+                }
+                caret += part_len;
+
+                index += 1;
+            }
+
+            max_line_len = max_line_len.max(line_len);
+        }
+
+        Ok(max_line_len)
+    }
+
     /// Prepare lines ("wrap")
     ///
     /// This does text layout, with wrapping if enabled.
     ///
-    /// Prerequisites: prepared runs: errors if action is greater than `Action::Wrap`.
-    /// Post-requirements: none (`Action::None`).
-    /// Parameters: see [`crate::Environment`] documentation.
-    /// Returns: required size, in pixels.
+    /// Returns:
+    ///
+    /// -   `Err(NotReady)` if required action is greater than [`Action::Wrap`]
+    /// -   `Ok(bounding_corner)` on success
     pub fn prepare_lines(
         &mut self,
         bounds: Vec2,
-        flags: EnvFlags,
+        wrap: bool,
         align: (Align, Align),
     ) -> Result<Vec2, NotReady> {
         if self.action > Action::Wrap {
             return Err(NotReady);
         }
         self.action = Action::None;
-
-        let wrap = flags.contains(EnvFlags::WRAP);
-        let px_valign = flags.contains(EnvFlags::PX_VALIGN);
 
         let fonts = fonts();
         let capacity = 0; // TODO(opt): estimate like self.text_len() / 16 ?
@@ -121,7 +164,7 @@ impl TextDisplay {
                     if wrap && line_len > width_bound && end.2 > 0 {
                         // Add up to last valid break point then wrap and reset
                         let slice = &mut parts[0..end.2];
-                        adder.add_line(fonts, level, &self.runs, slice, true, px_valign);
+                        adder.add_line(fonts, level, &self.runs, slice, true);
 
                         end.2 = 0;
                         start = end;
@@ -178,16 +221,53 @@ impl TextDisplay {
             if parts.len() > 0 {
                 // It should not be possible for a line to end with a no-break, so:
                 debug_assert_eq!(parts.len(), end.2);
-                adder.add_line(fonts, level, &self.runs, &mut parts, false, px_valign);
+                adder.add_line(fonts, level, &self.runs, &mut parts, false);
             }
         }
 
-        let required = adder.finish(bounds, align);
+        let bounding_corner = adder.finish(bounds, align);
         self.wrapped_runs = adder.runs;
         self.lines = adder.lines;
         self.num_glyphs = adder.num_glyphs;
-        self.width = bounds.0;
-        Ok(required)
+        self.r_bound = bounding_corner.0;
+        Ok(bounding_corner)
+    }
+
+    /// Vertically align lines
+    ///
+    /// Returns the bottom-right bounding corner.
+    pub fn vertically_align(&mut self, bound: f32, v_align: Align) -> Result<Vec2, NotReady> {
+        if self.action > Action::VAlign {
+            return Err(NotReady);
+        }
+        self.action = Action::None;
+
+        if self.lines.is_empty() {
+            return Ok(Vec2(0.0, 0.0));
+        }
+
+        let top = self.lines.first().unwrap().top;
+        let bottom = self.lines.last().unwrap().bottom;
+        let height = bottom - top;
+        let new_offset = match v_align {
+            _ if height >= bound => 0.0,
+            Align::Default | Align::TL | Align::Stretch => 0.0,
+            Align::Center => 0.5 * (bound - height),
+            Align::BR => bound - height,
+        };
+        let offset = new_offset - top;
+
+        if offset != 0.0 {
+            for run in &mut self.wrapped_runs {
+                run.offset.1 += offset;
+            }
+            for line in &mut self.lines {
+                line.top += offset;
+                line.bottom += offset;
+            }
+        }
+
+        Ok(Vec2(self.r_bound, bottom))
     }
 }
 
@@ -196,7 +276,7 @@ struct LineAdder {
     runs: Vec<RunPart>,
     lines: Vec<Line>,
     line_gap: f32,
-    longest: f32,
+    r_bound: f32,
     vcaret: f32,
     num_glyphs: u32,
     halign: Align,
@@ -220,7 +300,6 @@ impl LineAdder {
         runs: &[GlyphRun],
         parts: &mut [PartInfo],
         is_wrap: bool,
-        px_valign: bool,
     ) {
         assert!(parts.len() > 0);
         let line_start = self.runs.len();
@@ -343,10 +422,8 @@ impl LineAdder {
                             parts[s..i].reverse();
                             start = None;
                         }
-                    } else {
-                        if part_level >= level {
-                            start = Some(i);
-                        }
+                    } else if part_level >= level {
+                        start = Some(i);
                     }
                 }
                 if let Some(s) = start {
@@ -416,6 +493,7 @@ impl LineAdder {
         };
 
         let mut end_caret = caret;
+
         for (i, part) in parts.iter().enumerate() {
             let run = &runs[to_usize(part.run)];
 
@@ -443,7 +521,7 @@ impl LineAdder {
             self.runs.push(RunPart {
                 text_end,
                 glyph_run: part.run,
-                glyph_range: part.glyph_range.into(),
+                glyph_range: part.glyph_range,
                 offset: Vec2(xoffset, self.vcaret),
             });
             if part.end_space {
@@ -460,6 +538,8 @@ impl LineAdder {
             }
         }
 
+        self.r_bound = self.r_bound.max(end_caret);
+
         // Other parts of this library expect runs to be in logical order, so
         // we re-order now (does not affect display position).
         // TODO: should we change this, e.g. for visual-order navigation?
@@ -467,10 +547,9 @@ impl LineAdder {
 
         let top = self.vcaret - ascent;
         self.vcaret -= descent;
-        if px_valign {
-            self.vcaret = self.vcaret.round();
-        }
-        self.longest = self.longest.max(line_len);
+        // Vertically align lines to the nearest pixel (improves rendering):
+        self.vcaret = self.vcaret.round();
+
         self.lines.push(Line {
             text_range: Range::from(line_text_start..line_text_end),
             run_range: (line_start..self.runs.len()).into(),
@@ -479,10 +558,11 @@ impl LineAdder {
         });
     }
 
-    // Returns: required dimensions
+    /// Returns the bottom-right bounding corner.
     fn finish(&mut self, bounds: Vec2, align: (Align, Align)) -> Vec2 {
         let height = self.vcaret;
         let offset = match align.1 {
+            _ if !(height < bounds.1) => 0.0,
             Align::Default | Align::TL | Align::Stretch => 0.0, // nothing to do
             Align::Center => 0.5 * (bounds.1 - height),
             Align::BR => bounds.1 - height,
@@ -497,6 +577,6 @@ impl LineAdder {
             }
         }
 
-        Vec2(self.longest, height)
+        Vec2(self.r_bound, height + offset)
     }
 }

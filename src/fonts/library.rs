@@ -5,6 +5,8 @@
 
 //! Font library
 
+#![allow(clippy::len_without_is_empty)]
+
 use super::{selector::Database, FaceRef, FontSelector};
 use crate::conv::{to_u32, to_usize};
 use std::collections::hash_map::{Entry, HashMap};
@@ -25,7 +27,7 @@ enum FontError {
     UnitsPerEm,
     #[cfg(feature = "ab_glyph")]
     #[error("font load error")]
-    AbGlyphFontError(#[from] ab_glyph::InvalidFont),
+    AbGlyph(#[from] ab_glyph::InvalidFont),
     #[cfg(feature = "fontdue")]
     #[error("font load error")]
     StrError(&'static str),
@@ -207,10 +209,21 @@ impl FontLibrary {
         self.get_face(face_id)
     }
 
-    /// Resolve the face for a character
+    /// Resolve the font face for a character
     ///
-    /// This selects the first face containing this glyph from the font list.
-    pub fn face_for_char(&self, font_id: FontId, c: char) -> Option<FaceId> {
+    /// If `last_face_id` is a face used by `font_id` and this face covers `c`,
+    /// then return `last_face_id`. (This is to avoid changing the font face
+    /// unnecessarily, such as when encountering a space amid Arabic text.)
+    ///
+    /// Otherwise, return the first face of `font_id` which covers `c`.
+    ///
+    /// Otherwise (if no face covers `c`) return `None`.
+    pub fn face_for_char(
+        &self,
+        font_id: FontId,
+        last_face_id: Option<FaceId>,
+        c: char,
+    ) -> Option<FaceId> {
         // TODO: `face.glyph_index` is a bit slow to use like this where several
         // faces may return no result before we find a match. Caching results
         // in a HashMap helps. Perhaps better would be to (somehow) determine
@@ -223,13 +236,23 @@ impl FontLibrary {
             .find(|item| item.0 == font_id)
             .expect("invalid FontId");
 
+        let faces = self.faces.read().unwrap();
+
+        if let Some(face_id) = last_face_id {
+            if font.1.contains(&face_id) {
+                let face = &faces.faces[face_id.get()];
+                // TODO(opt): should we cache this lookup?
+                if face.face.glyph_index(c).is_some() {
+                    return Some(face_id);
+                }
+            }
+        }
+
         match font.2.entry(c) {
             Entry::Occupied(entry) => *entry.get(),
             Entry::Vacant(entry) => {
-                let faces = self.faces.read().unwrap();
-                let list = &font.1;
                 let mut id: Option<FaceId> = None;
-                for face_id in list.iter() {
+                for face_id in font.1.iter() {
                     let face = &faces.faces[face_id.get()];
                     if face.face.glyph_index(c).is_some() {
                         id = Some(*face_id);
@@ -242,13 +265,23 @@ impl FontLibrary {
         }
     }
 
-    /// Resolve the face for a character
+    /// Resolve the font face for a character
     ///
-    /// This selects the first face containing this glyph from the font list,
-    /// otherwise choosing the first face.
+    /// If `last_face_id` is a face used by `font_id` and this face covers `c`,
+    /// then return `last_face_id`. (This is to avoid changing the font face
+    /// unnecessarily, such as when encountering a space amid Arabic text.)
+    ///
+    /// Otherwise, return the first face of `font_id` which covers `c`.
+    ///
+    /// Otherwise (if no face covers `c`) return the first face for `font_id`.
     #[inline]
-    pub fn face_for_char_or_first(&self, font_id: FontId, c: char) -> FaceId {
-        self.face_for_char(font_id, c)
+    pub fn face_for_char_or_first(
+        &self,
+        font_id: FontId,
+        last_face_id: Option<FaceId>,
+        c: char,
+    ) -> FaceId {
+        self.face_for_char(font_id, last_face_id, c)
             .unwrap_or_else(|| self.first_face_for(font_id))
     }
 
@@ -370,8 +403,8 @@ impl FontLibrary {
     /// [`FaceId`] values are indices assigned consecutively and are permanent.
     /// For any `x < self.num_faces()`, `FaceId(x)` is a valid font face identifier.
     ///
-    /// Font faces may be loaded on demand (by [`crate::Text::prepare`] but are
-    /// never unloaded or adjusted, hence this value may increase but not decrease.
+    /// This value may increase as fonts may be loaded on demand. It will not
+    /// decrease since fonts are never unloaded during program execution.
     pub fn num_faces(&self) -> usize {
         let faces = self.faces.read().unwrap();
         faces.faces.len()
