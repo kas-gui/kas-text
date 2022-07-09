@@ -106,8 +106,7 @@ impl TextDisplay {
         self.action = Action::None;
 
         let fonts = fonts();
-        let capacity = 0; // TODO(opt): estimate like self.text_len() / 16 ?
-        let mut adder = LineAdder::new(capacity, bounds, align);
+        let mut adder = LineAdder::new(bounds, align);
         let width_bound = adder.width_bound;
         let justify = align.0 == Align::Stretch;
         let mut parts = Vec::with_capacity(16);
@@ -273,8 +272,8 @@ impl TextDisplay {
 
 #[derive(Default)]
 struct LineAdder {
-    runs: Vec<RunPart>,
-    lines: Vec<Line>,
+    runs: SmallVec<[RunPart; 1]>,
+    lines: SmallVec<[Line; 1]>,
     line_gap: f32,
     r_bound: f32,
     vcaret: f32,
@@ -283,10 +282,8 @@ struct LineAdder {
     width_bound: f32,
 }
 impl LineAdder {
-    fn new(run_capacity: usize, bounds: Vec2, align: (Align, Align)) -> Self {
-        let runs = Vec::with_capacity(run_capacity);
+    fn new(bounds: Vec2, align: (Align, Align)) -> Self {
         LineAdder {
-            runs,
             halign: align.0,
             width_bound: bounds.0,
             ..Default::default()

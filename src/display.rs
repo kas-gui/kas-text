@@ -89,6 +89,15 @@ pub struct NotReady;
 /// number, then [`TextDisplay::line_index_nearest`] to find the new index.
 #[derive(Clone, Debug)]
 pub struct TextDisplay {
+    // NOTE: typical numbers of elements:
+    // Simple labels: runs=1, line_runs=1, wrapped_runs=1, lines=1
+    // Longer texts wrapped over n lines: runs=1, line_runs=1, wrapped_runs=n, lines=n
+    // Justified wrapped text: similar, but wrapped_runs is the word count
+    // Simple texts with explicit breaks over n lines: all=n
+    // Single-line bidi text: runs=n, line_runs=1, wrapped_runs=n, lines=1
+    // Complex bidi or formatted texts: all=many
+    // Conclusion: SmallVec<[T; 1]> saves allocations in many cases.
+    //
     /// Level runs within the text, in logical order
     runs: SmallVec<[shaper::GlyphRun; 1]>,
     /// Subsets of runs forming a line, with line direction
@@ -97,12 +106,23 @@ pub struct TextDisplay {
     /// Contiguous runs, in logical order
     ///
     /// Within a line, runs may not be in visual order due to BIDI reversals.
-    wrapped_runs: Vec<RunPart>,
+    wrapped_runs: SmallVec<[RunPart; 1]>,
     /// Visual (wrapped) lines, in visual and logical order
-    lines: Vec<Line>,
+    lines: SmallVec<[Line; 1]>,
     num_glyphs: u32,
     /// Required for `highlight_lines`; may remove later:
     r_bound: f32,
+}
+
+#[cfg(test)]
+#[test]
+fn size_of_elts() {
+    use std::mem::size_of;
+    assert_eq!(size_of::<SmallVec<[u8; 0]>>(), 32);
+    assert_eq!(size_of::<shaper::GlyphRun>(), 128);
+    assert_eq!(size_of::<LineRun>(), 12);
+    assert_eq!(size_of::<RunPart>(), 24);
+    assert_eq!(size_of::<Line>(), 24);
 }
 
 impl Default for TextDisplay {
