@@ -240,6 +240,7 @@ impl TextDisplay {
         if self.action > Action::VAlign {
             return Err(NotReady);
         }
+        self.action = Action::None;
 
         if self.lines.is_empty() {
             return Ok(Vec2(0.0, 0.0));
