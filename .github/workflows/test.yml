@@ -25,12 +25,12 @@ jobs:
           command: fmt
           args: --all -- --check
       - name: doc
-        run: RUSTDOCFLAGS="--cfg doc_cfg" cargo doc --features markdown --no-deps
+        run: RUSTDOCFLAGS="--cfg doc_cfg" cargo doc --features markdown,raster,num_glyphs --no-deps
       - name: Test Harfbuzz
-        run: cargo test --features harfbuzz
+        run: cargo test --all-targets --features harfbuzz
       - name: Clippy
-        run: cargo +nightly clippy --features shaping,markdown,raster,serde
-      - name: test (gat)
+        run: cargo +nightly clippy --features shaping,markdown,raster,serde,num_glyphs
+      - name: Test (all features including GAT)
         run: cargo test --all-features
 
   test:
@@ -55,5 +55,7 @@ jobs:
           profile: minimal
           toolchain: ${{ matrix.toolchain }}
           override: true
-      - name: test
-        run: cargo test --features markdown,shaping,raster,serde
+      - name: Test (reduced features)
+        run: cargo test --all-targets --features markdown,raster
+      - name: Test (all features except GAT)
+        run: cargo test --features markdown,shaping,raster,serde,num_glyphs

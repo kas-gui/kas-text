@@ -109,6 +109,7 @@ pub struct TextDisplay {
     wrapped_runs: SmallVec<[RunPart; 1]>,
     /// Visual (wrapped) lines, in visual and logical order
     lines: SmallVec<[Line; 1]>,
+    #[cfg(feature = "num_glyphs")]
     num_glyphs: u32,
     /// Required for `highlight_lines`; may remove later:
     r_bound: f32,
@@ -133,6 +134,7 @@ impl Default for TextDisplay {
             action: Action::All, // highest value
             wrapped_runs: Default::default(),
             lines: Default::default(),
+            #[cfg(feature = "num_glyphs")]
             num_glyphs: 0,
             r_bound: 0.0,
         }

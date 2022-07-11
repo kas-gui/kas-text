@@ -15,10 +15,13 @@ exclude = ["design"]
 [package.metadata.docs.rs]
 # To build locally:
 # RUSTDOCFLAGS="--cfg doc_cfg" cargo +nightly doc --features markdown,raster --no-deps --open
-features = ["markdown", "raster"]
+features = ["markdown", "raster", "num_glyphs"]
 rustdoc-args = ["--cfg", "doc_cfg"]
 
 [features]
+# Support num_glyphs method
+num_glyphs = []
+
 # Enable shaping with the default dependency.
 shaping = ["rustybuzz"]
 # Enable shaping via HarfBuzz.
