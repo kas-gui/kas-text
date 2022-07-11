@@ -420,7 +420,7 @@ fn shape_rustybuzz(
     buffer.push_str(slice);
     let features = [];
 
-    let output = rustybuzz::shape(&face, &features, buffer);
+    let output = rustybuzz::shape(face, &features, buffer);
 
     let mut caret = 0.0;
     let mut no_space_end = caret;
