@@ -309,13 +309,12 @@ pub trait TextApiExt: TextApi {
 
     /// Get the size of the required bounding box
     ///
-    /// This is the position of the lower-right corner of a bounding box on
-    /// content after alignment, which is done using the input bounds
+    /// This is the position of the upper-left and lower-right corners of a
+    /// bounding box on content, after alignment. which is done using the input bounds
     /// ([`Environment::bounds`]). Thus, this is only the minimum size
     /// requirement when top-left alignment is used.
-    fn bounding_box(&mut self) -> Vec2 {
-        self.prepare();
-        self.display().bounding_box().unwrap()
+    fn bounding_box(&self) -> Result<Vec2, NotReady> {
+        self.display().bounding_box()
     }
 
     /// Get required action
