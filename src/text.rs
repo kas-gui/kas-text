@@ -263,7 +263,7 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
                 .unwrap()
                 .1
         } else {
-            self.display.bounding_box().unwrap().1
+            (self.display.bounding_box().unwrap().1).1
         }
     }
 
@@ -310,10 +310,9 @@ pub trait TextApiExt: TextApi {
     /// Get the size of the required bounding box
     ///
     /// This is the position of the upper-left and lower-right corners of a
-    /// bounding box on content, after alignment. which is done using the input bounds
-    /// ([`Environment::bounds`]). Thus, this is only the minimum size
-    /// requirement when top-left alignment is used.
-    fn bounding_box(&self) -> Result<Vec2, NotReady> {
+    /// bounding box on content.
+    /// Alignment and input bounds do affect the result.
+    fn bounding_box(&self) -> Result<(Vec2, Vec2), NotReady> {
         self.display().bounding_box()
     }
 

@@ -507,7 +507,6 @@ impl TextDisplay {
 
         let mut lines = self.lines.iter();
         let mut rects = Vec::with_capacity(self.lines.len());
-        let rbound = self.r_bound;
 
         // Find the first line
         let mut cur_line = 'l1: loop {
@@ -527,15 +526,15 @@ impl TextDisplay {
                 let first_run = cur_line.run_range.start();
                 let glyph_run = to_usize(self.wrapped_runs[first_run].glyph_run);
                 if self.runs[glyph_run].level.is_ltr() {
-                    let mut dist = rbound - (rects[0].1).0;
+                    let mut dist = self.r_bound - (rects[0].1).0;
                     for i in 1..rects.len() {
-                        let d = rbound - (rects[i].1).0;
+                        let d = self.r_bound - (rects[i].1).0;
                         if d < dist {
                             nearest = i;
                             dist = d;
                         }
                     }
-                    (rects[nearest].1).0 = rbound;
+                    (rects[nearest].1).0 = self.r_bound;
                 } else {
                     let mut dist = (rects[0].0).0;
                     for i in 1..rects.len() {
@@ -549,8 +548,8 @@ impl TextDisplay {
                 }
             }
         } else {
-            let a = Vec2(0.0, cur_line.top);
-            let b = Vec2(rbound, cur_line.bottom);
+            let a = Vec2(self.l_bound, cur_line.top);
+            let b = Vec2(self.r_bound, cur_line.bottom);
             rects.push((a, b));
         }
 
@@ -561,8 +560,8 @@ impl TextDisplay {
                     break;
                 }
 
-                let a = Vec2(0.0, line.top);
-                let b = Vec2(rbound, line.bottom);
+                let a = Vec2(self.l_bound, line.top);
+                let b = Vec2(self.r_bound, line.bottom);
                 rects.push((a, b));
             }
 

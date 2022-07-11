@@ -111,7 +111,7 @@ pub struct TextDisplay {
     lines: SmallVec<[Line; 1]>,
     #[cfg(feature = "num_glyphs")]
     num_glyphs: u32,
-    /// Required for `highlight_lines`; may remove later:
+    l_bound: f32,
     r_bound: f32,
 }
 
@@ -136,6 +136,7 @@ impl Default for TextDisplay {
             lines: Default::default(),
             #[cfg(feature = "num_glyphs")]
             num_glyphs: 0,
+            l_bound: 0.0,
             r_bound: 0.0,
         }
     }
@@ -168,21 +169,21 @@ impl TextDisplay {
 
     /// Get the size of the required bounding box
     ///
-    /// This is the position of the lower-right corner of a bounding box on
-    /// content after alignment, which is done using the input bounds. This is
-    /// only the minimum size requirement when top-left alignment is used.
-    pub fn bounding_box(&self) -> Result<Vec2, NotReady> {
+    /// This is the position of the upper-left and lower-right corners of a
+    /// bounding box on content.
+    /// Alignment and input bounds do affect the result.
+    pub fn bounding_box(&self) -> Result<(Vec2, Vec2), NotReady> {
         if self.action > Action::VAlign {
             return Err(NotReady);
         }
 
         if self.lines.is_empty() {
-            return Ok(Vec2::ZERO);
+            return Ok((Vec2::ZERO, Vec2::ZERO));
         }
 
         let top = self.lines.first().unwrap().top;
         let bottom = self.lines.last().unwrap().bottom;
-        Ok(Vec2(self.r_bound, bottom - top))
+        Ok((Vec2(self.l_bound, top), Vec2(self.r_bound, bottom)))
     }
 
     /// Find the line containing text `index`

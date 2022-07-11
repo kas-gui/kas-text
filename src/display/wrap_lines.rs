@@ -231,6 +231,7 @@ impl TextDisplay {
         {
             self.num_glyphs = adder.num_glyphs;
         }
+        self.l_bound = adder.l_bound;
         self.r_bound = bounding_corner.0;
         Ok(bounding_corner)
     }
@@ -278,6 +279,7 @@ struct LineAdder {
     runs: SmallVec<[RunPart; 1]>,
     lines: SmallVec<[Line; 1]>,
     line_gap: f32,
+    l_bound: f32,
     r_bound: f32,
     vcaret: f32,
     #[cfg(feature = "num_glyphs")]
@@ -493,6 +495,7 @@ impl LineAdder {
             }
         };
 
+        self.l_bound = caret;
         let mut end_caret = caret;
 
         for (i, part) in parts.iter().enumerate() {
