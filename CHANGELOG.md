@@ -4,9 +4,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.5.0] — unreleased
 
--   Methods which previously panicked when "not ready" now return `Result<T, NotReady>`
--   Remove `resize_runs` from API
--   Change behaviour of `Text::prepare_lines` to prepare from scratch if necessary
+CI: test stable and check Clippy lints.
+
+Error handling:
+
+-   Add `NotReady` error type
+-   Most methods now return `Result<T, NotReady>` instead of panicking
+
+Text environment:
+
+-   Remove `UpdateEnv` type
+-   Rename `Text::new` to `new_env`, `Text::new_multi` to `Text::new` and
+    remove `Text::new_single`. Note: in usage, the `Environment::wrap` flag
+    is usually set anyway.
+-   `Environment` is now `Copy`
+-   `Text::env` returns `Environment` by copy not reference
+-   `Text::env_mut` replaced with `Text::set_env`, which sets required actions
+-   `Environment::dir` renamed to `direction`
+-   Enum `Direction` adjusted to include bidi and non-bidi modes.
+-   `Environment::flags` and its type `EnvFlags` removed.
+    `Environment::wrap: bool` added and `Direction` adjusted (see above).
+    `PX_PALIGN` option removed (behaviour is now always enabled).
+-   Parameters `dpp` and `pt_size` of `Environment`, `TextDisplay::prepare_runs`
+    and `FormattableText::font_tokens` are replaced with the single `dpem`.
+
+Text preparation:
+
+-   Add `Action::VAlign` requiring only `TextDisplay::vertically_align` action
+-   Remove `TextDisplay::prepare` (but `TextApi::prepare` remains)
+-   `TextDisplay::resize_runs` is no longer a public method
+-   `TextDisplay::prepare_runs` may call `resize_runs` automatically depending
+    on preparation status
+-   Remove `TextApi::resize_runs` and `TextApi::prepare_lines`
+-   All `TextApi` and `TextApiExt` methods doing any preparation now do all
+    required preparation, and avoid unnecessary steps.
+
+Text measurements:
+
+-   Add `TextDisplay::bounding_box` and `TextApiExt::bounding_box`
+-   Add `TextDisplay::measure_width` and `TextDisplay::vertically_align`
+-   Add `TextApi::measure_width` and `TextApi::measure_height`
+-   Remove `TextDisplay::line_is_ltr` and `TextApiExt::line_is_ltr`
+-   Add `TextApiExt::text_is_rtl`
+-   `TextDisplay::line_is_rtl` and `TextApiExt::line_is_rtl` now return type
+    `Result<Option<bool>, NotReady>`, returning `Ok(None)` if text is empty
+-   `TextDisplay::prepare_lines` returns the bottom-right corner of the bounding
+    box around content instead of the size of content.
+
+Font fallback:
+
+-   `FontLibrary::face_for_char` and `face_for_char_or_first` take an extra
+    parameter: `last_face_id: Option<FaceId>`. This allows the font fallback
+    mechanism to avoid switching the font unnecessarily. In usage, letters and
+    numbers are selected as before while other characters are selected from the
+    last font face used if possible, resulting in longer runs being passed to
+    the shaper when using fallback fonts.
+
+Misc:
+
+-   Add `Range::is_empty`
+-   Do not add "line gap" before first line. (In practice this is often 0 anyway.)
+-   Do not vertically align text too tall for the input bounds.
+-   Fix position of text highlights on vertically aligned text.
+-   Markdown formatter: use heading level sizes as defined by CSS
 
 ## [0.4.2] — 2022-02-10
 

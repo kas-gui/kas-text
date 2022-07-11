@@ -89,6 +89,15 @@ pub struct NotReady;
 /// number, then [`TextDisplay::line_index_nearest`] to find the new index.
 #[derive(Clone, Debug)]
 pub struct TextDisplay {
+    // NOTE: typical numbers of elements:
+    // Simple labels: runs=1, line_runs=1, wrapped_runs=1, lines=1
+    // Longer texts wrapped over n lines: runs=1, line_runs=1, wrapped_runs=n, lines=n
+    // Justified wrapped text: similar, but wrapped_runs is the word count
+    // Simple texts with explicit breaks over n lines: all=n
+    // Single-line bidi text: runs=n, line_runs=1, wrapped_runs=n, lines=1
+    // Complex bidi or formatted texts: all=many
+    // Conclusion: SmallVec<[T; 1]> saves allocations in many cases.
+    //
     /// Level runs within the text, in logical order
     runs: SmallVec<[shaper::GlyphRun; 1]>,
     /// Subsets of runs forming a line, with line direction
@@ -97,12 +106,24 @@ pub struct TextDisplay {
     /// Contiguous runs, in logical order
     ///
     /// Within a line, runs may not be in visual order due to BIDI reversals.
-    wrapped_runs: Vec<RunPart>,
+    wrapped_runs: SmallVec<[RunPart; 1]>,
     /// Visual (wrapped) lines, in visual and logical order
-    lines: Vec<Line>,
+    lines: SmallVec<[Line; 1]>,
+    #[cfg(feature = "num_glyphs")]
     num_glyphs: u32,
-    /// Required for `highlight_lines`; may remove later:
+    l_bound: f32,
     r_bound: f32,
+}
+
+#[cfg(test)]
+#[test]
+fn size_of_elts() {
+    use std::mem::size_of;
+    assert_eq!(size_of::<SmallVec<[u8; 0]>>(), 32);
+    assert_eq!(size_of::<shaper::GlyphRun>(), 128);
+    assert_eq!(size_of::<LineRun>(), 12);
+    assert_eq!(size_of::<RunPart>(), 24);
+    assert_eq!(size_of::<Line>(), 24);
 }
 
 impl Default for TextDisplay {
@@ -113,7 +134,9 @@ impl Default for TextDisplay {
             action: Action::All, // highest value
             wrapped_runs: Default::default(),
             lines: Default::default(),
+            #[cfg(feature = "num_glyphs")]
             num_glyphs: 0,
+            l_bound: 0.0,
             r_bound: 0.0,
         }
     }
@@ -146,21 +169,21 @@ impl TextDisplay {
 
     /// Get the size of the required bounding box
     ///
-    /// This is the position of the lower-right corner of a bounding box on
-    /// content after alignment, which is done using the input bounds. This is
-    /// only the minimum size requirement when top-left alignment is used.
-    pub fn bounding_box(&self) -> Result<Vec2, NotReady> {
+    /// This is the position of the upper-left and lower-right corners of a
+    /// bounding box on content.
+    /// Alignment and input bounds do affect the result.
+    pub fn bounding_box(&self) -> Result<(Vec2, Vec2), NotReady> {
         if self.action > Action::VAlign {
             return Err(NotReady);
         }
 
         if self.lines.is_empty() {
-            return Ok(Vec2::ZERO);
+            return Ok((Vec2::ZERO, Vec2::ZERO));
         }
 
         let top = self.lines.first().unwrap().top;
         let bottom = self.lines.last().unwrap().bottom;
-        Ok(Vec2(self.r_bound, bottom - top))
+        Ok((Vec2(self.l_bound, top), Vec2(self.r_bound, bottom)))
     }
 
     /// Find the line containing text `index`

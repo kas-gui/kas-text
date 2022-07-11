@@ -106,8 +106,7 @@ impl TextDisplay {
         self.action = Action::None;
 
         let fonts = fonts();
-        let capacity = 0; // TODO(opt): estimate like self.text_len() / 16 ?
-        let mut adder = LineAdder::new(capacity, bounds, align);
+        let mut adder = LineAdder::new(bounds, align);
         let width_bound = adder.width_bound;
         let justify = align.0 == Align::Stretch;
         let mut parts = Vec::with_capacity(16);
@@ -228,7 +227,11 @@ impl TextDisplay {
         let bounding_corner = adder.finish(bounds, align);
         self.wrapped_runs = adder.runs;
         self.lines = adder.lines;
-        self.num_glyphs = adder.num_glyphs;
+        #[cfg(feature = "num_glyphs")]
+        {
+            self.num_glyphs = adder.num_glyphs;
+        }
+        self.l_bound = adder.l_bound;
         self.r_bound = bounding_corner.0;
         Ok(bounding_corner)
     }
@@ -273,20 +276,20 @@ impl TextDisplay {
 
 #[derive(Default)]
 struct LineAdder {
-    runs: Vec<RunPart>,
-    lines: Vec<Line>,
+    runs: SmallVec<[RunPart; 1]>,
+    lines: SmallVec<[Line; 1]>,
     line_gap: f32,
+    l_bound: f32,
     r_bound: f32,
     vcaret: f32,
+    #[cfg(feature = "num_glyphs")]
     num_glyphs: u32,
     halign: Align,
     width_bound: f32,
 }
 impl LineAdder {
-    fn new(run_capacity: usize, bounds: Vec2, align: (Align, Align)) -> Self {
-        let runs = Vec::with_capacity(run_capacity);
+    fn new(bounds: Vec2, align: (Align, Align)) -> Self {
         LineAdder {
-            runs,
             halign: align.0,
             width_bound: bounds.0,
             ..Default::default()
@@ -492,12 +495,16 @@ impl LineAdder {
             }
         };
 
+        self.l_bound = caret;
         let mut end_caret = caret;
 
         for (i, part) in parts.iter().enumerate() {
             let run = &runs[to_usize(part.run)];
 
-            self.num_glyphs += to_u32(part.glyph_range.len());
+            #[cfg(feature = "num_glyphs")]
+            {
+                self.num_glyphs += to_u32(part.glyph_range.len());
+            }
 
             let mut text_end = run.range.end;
             let mut offset = 0.0;
