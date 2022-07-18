@@ -544,7 +544,7 @@ impl LineAdder {
             }
         }
 
-        self.r_bound = self.r_bound.max(end_caret);
+        self.r_bound = self.r_bound.max(caret);
 
         // Other parts of this library expect runs to be in logical order, so
         // we re-order now (does not affect display position).
