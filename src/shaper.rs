@@ -208,21 +208,34 @@ impl GlyphRun {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Input<'a> {
+    /// Contiguous text
+    pub text: &'a str,
+    pub dpem: f32,
+    pub face_id: FaceId,
+    pub level: Level,
+}
+
 /// Shape a `run` of text
 ///
 /// A "run" is expected to be the maximal sequence of code points of the same
 /// embedding level (as defined by Unicode TR9 aka BIDI algorithm) *and*
 /// excluding all hard line breaks (e.g. `\n`).
 pub(crate) fn shape(
-    text: &str,   // contiguous text
+    input: Input,
     range: Range, // range in text
-    dpem: f32,
-    face_id: FaceId,
     // All soft-break locations within this run, excluding the end
     mut breaks: SmallVec<[GlyphBreak; 5]>,
     special: RunSpecial,
-    level: Level,
 ) -> GlyphRun {
+    let Input {
+        text,
+        dpem,
+        face_id,
+        level,
+    } = input;
+
     /*
     print!("shape[{:?}]:\t", special);
     let mut start = range.start();
