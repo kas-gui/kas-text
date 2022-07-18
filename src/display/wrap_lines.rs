@@ -134,7 +134,7 @@ impl TextDisplay {
                 let run = &self.runs[index];
                 let num_parts = run.num_parts();
                 let (allow_break, tab) = match run.special {
-                    RunSpecial::None => (true, false),
+                    RunSpecial::None | RunSpecial::HardBreak => (true, false),
                     RunSpecial::NoBreak => (false, false),
                     RunSpecial::HTab => (true, true),
                 };

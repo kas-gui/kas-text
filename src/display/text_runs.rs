@@ -18,9 +18,11 @@ use xi_unicode::LineBreakIterator;
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum RunSpecial {
     None,
-    /// Forbid a break here
+    /// Run ends with a hard break
+    HardBreak,
+    /// Run does not end with a break
     NoBreak,
-    /// Horizontal tab
+    /// Run is a horizontal tab (run is a single char only)
     HTab,
 }
 
@@ -178,6 +180,9 @@ impl TextDisplay {
             let is_break = next_break.0 == pos;
             // Forcibly end the line?
             let hard_break = is_break && next_break.1;
+            if is_break {
+                next_break = breaks_iter.next().unwrap_or((0, false));
+            }
 
             // Force end of current run?
             let bidi_break = bidi && levels[pos] != input.level;
@@ -210,10 +215,11 @@ impl TextDisplay {
                 // Note: the prior run may end with NoBreak while the latter
                 // (and the merge result) do not.
                 let range = (start..non_control_end).into();
-                let special = match (last_is_htab, last_is_control || is_break) {
-                    (true, _) => RunSpecial::HTab,
-                    (false, true) => RunSpecial::None,
-                    (false, false) => RunSpecial::NoBreak,
+                let special = match () {
+                    _ if hard_break => RunSpecial::HardBreak,
+                    _ if last_is_htab => RunSpecial::HTab,
+                    _ if last_is_control || is_break => RunSpecial::None,
+                    _ => RunSpecial::NoBreak,
                 };
                 self.runs.push(shaper::shape(input, range, breaks, special));
 
@@ -230,16 +236,10 @@ impl TextDisplay {
                     input.level = levels[pos];
                 }
                 breaks = Default::default();
-                if is_break {
-                    next_break = breaks_iter.next().unwrap_or((0, false));
-                }
-            } else if is_break {
-                if !is_control {
-                    // We break runs when hitting control chars, but do so
-                    // later; we do not want a "soft break" here.
-                    breaks.push(shaper::GlyphBreak::new(to_u32(pos)));
-                }
-                next_break = breaks_iter.next().unwrap_or((0, false));
+            } else if is_break && !is_control {
+                // We do break runs when hitting control chars, but only when
+                // encountering the next non-control character.
+                breaks.push(shaper::GlyphBreak::new(to_u32(pos)));
             }
 
             last_is_control = is_control;
@@ -248,14 +248,20 @@ impl TextDisplay {
             input.dpem = dpem;
         }
 
+        // The LineBreakIterator finishes with a break (unless the string is empty).
+        // This is a hard break when the string finishes with an explicit line-break.
+        debug_assert_eq!(next_break.0, text.len());
+        let hard_break = next_break.1;
+
         // Conclude: add last run. This may be empty, but we want it anyway.
         if !last_is_control {
             non_control_end = text.len();
         }
         let range = (start..non_control_end).into();
-        let special = match last_is_htab {
-            true => RunSpecial::HTab,
-            false => RunSpecial::None,
+        let special = match () {
+            _ if hard_break => RunSpecial::HardBreak,
+            _ if last_is_htab => RunSpecial::HTab,
+            _ => RunSpecial::None,
         };
         self.runs.push(shaper::shape(input, range, breaks, special));
 
@@ -264,11 +270,8 @@ impl TextDisplay {
         let rtl = self.runs[line_start].level.is_rtl();
         self.line_runs.push(LineRun { range, rtl });
 
-        // The LineBreakIterator finishes with a break (unless the string is empty).
-        // This is a hard break when the string finishes with an explicit line-break,
-        // in which case we have an implied new line (empty).
-        debug_assert_eq!(next_break.0, text.len());
-        if next_break.1 {
+        // Following a hard break we have an implied empty line.
+        if hard_break {
             let range = Range::from(text.len()..text.len());
             input.level = default_para_level.unwrap_or(LTR_LEVEL);
             breaks = Default::default();
