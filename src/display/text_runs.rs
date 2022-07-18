@@ -26,17 +26,6 @@ pub(crate) enum RunSpecial {
     HTab,
 }
 
-#[derive(Copy, Clone, Debug)]
-pub(crate) struct LineRun {
-    /// Range within runs
-    ///
-    /// Runs within this range occur in visual order, from the line's start
-    /// (left or right depending on direction).
-    pub range: Range,
-    /// If true, line is right-to-left
-    pub rtl: bool,
-}
-
 impl TextDisplay {
     /// Update font size
     ///
@@ -111,7 +100,6 @@ impl TextDisplay {
         // (where wrapping may introduce new lines depending on available space).
 
         self.runs.clear();
-        self.line_runs.clear();
 
         let mut font_tokens = text.font_tokens(dpem);
         let mut next_fmt = font_tokens.next();
@@ -162,7 +150,6 @@ impl TextDisplay {
         let mut breaks_iter = LineBreakIterator::new(text);
         let mut next_break = breaks_iter.next().unwrap_or((0, false));
 
-        let mut line_start = 0;
         let mut last_is_control = false;
         let mut last_is_htab = false;
         let mut non_control_end = 0;
@@ -223,13 +210,6 @@ impl TextDisplay {
                 };
                 self.runs.push(shaper::shape(input, range, breaks, special));
 
-                if hard_break {
-                    let range = Range::from(line_start..self.runs.len());
-                    let rtl = self.runs[line_start].level.is_rtl();
-                    self.line_runs.push(LineRun { range, rtl });
-                    line_start = self.runs.len();
-                }
-
                 start = pos;
                 non_control_end = pos;
                 if bidi {
@@ -265,50 +245,38 @@ impl TextDisplay {
         };
         self.runs.push(shaper::shape(input, range, breaks, special));
 
-        debug_assert!(line_start < self.runs.len());
-        let range = Range::from(line_start..self.runs.len());
-        let rtl = self.runs[line_start].level.is_rtl();
-        self.line_runs.push(LineRun { range, rtl });
-
         // Following a hard break we have an implied empty line.
         if hard_break {
             let range = Range::from(text.len()..text.len());
             input.level = default_para_level.unwrap_or(LTR_LEVEL);
             breaks = Default::default();
-            line_start = self.runs.len();
             self.runs
                 .push(shaper::shape(input, range, breaks, RunSpecial::None));
-
-            let range = Range::from(line_start..self.runs.len());
-            let rtl = input.level.is_rtl();
-            self.line_runs.push(LineRun { range, rtl });
         }
 
         /*
         println!("text: {}", text);
-        for line in self.line_runs.iter() {
-            println!("line (rtl={}) runs:", line.rtl);
-            for run in &self.runs[line.range.to_std()] {
-                let slice = &text[run.range];
-                print!(
-                    "\t{:?}, text[{}..{}]: '{}', ",
-                    run.level, run.range.start, run.range.end, slice
-                );
-                match run.special {
-                    RunSpecial::None => (),
-                    RunSpecial::NoBreak => print!("NoBreak, "),
-                    RunSpecial::HTab => print!("HTab, "),
-                }
-                print!("breaks=[");
-                let mut iter = run.breaks.iter();
-                if let Some(b) = iter.next() {
-                    print!("{}", b.index);
-                }
-                for b in iter {
-                    print!(", {}", b.index);
-                }
-                println!("]");
+        for run in &self.runs {
+            let slice = &text[run.range];
+            print!(
+                "\t{:?}, text[{}..{}]: '{}', ",
+                run.level, run.range.start, run.range.end, slice
+            );
+            match run.special {
+                RunSpecial::None => (),
+                RunSpecial::HardBreak => println!("HardBreak, "),
+                RunSpecial::NoBreak => print!("NoBreak, "),
+                RunSpecial::HTab => print!("HTab, "),
             }
+            print!("breaks=[");
+            let mut iter = run.breaks.iter();
+            if let Some(b) = iter.next() {
+                print!("{}", b.index);
+            }
+            for b in iter {
+                print!(", {}", b.index);
+            }
+            println!("]");
         }
         */
     }

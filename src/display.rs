@@ -14,7 +14,7 @@ mod glyph_pos;
 mod text_runs;
 mod wrap_lines;
 pub use glyph_pos::{Effect, EffectFlags, MarkerPos, MarkerPosIter};
-pub(crate) use text_runs::{LineRun, RunSpecial};
+pub(crate) use text_runs::RunSpecial;
 use wrap_lines::{Line, RunPart};
 
 /// Error returned on operations if not ready
@@ -90,18 +90,16 @@ pub struct NotReady;
 #[derive(Clone, Debug)]
 pub struct TextDisplay {
     // NOTE: typical numbers of elements:
-    // Simple labels: runs=1, line_runs=1, wrapped_runs=1, lines=1
-    // Longer texts wrapped over n lines: runs=1, line_runs=1, wrapped_runs=n, lines=n
+    // Simple labels: runs=1, wrapped_runs=1, lines=1
+    // Longer texts wrapped over n lines: runs=1, wrapped_runs=n, lines=n
     // Justified wrapped text: similar, but wrapped_runs is the word count
     // Simple texts with explicit breaks over n lines: all=n
-    // Single-line bidi text: runs=n, line_runs=1, wrapped_runs=n, lines=1
+    // Single-line bidi text: runs=n, wrapped_runs=n, lines=1
     // Complex bidi or formatted texts: all=many
     // Conclusion: SmallVec<[T; 1]> saves allocations in many cases.
     //
     /// Level runs within the text, in logical order
     runs: SmallVec<[shaper::GlyphRun; 1]>,
-    /// Subsets of runs forming a line, with line direction
-    line_runs: SmallVec<[LineRun; 1]>,
     pub(crate) action: Action,
     /// Contiguous runs, in logical order
     ///
@@ -121,7 +119,6 @@ fn size_of_elts() {
     use std::mem::size_of;
     assert_eq!(size_of::<SmallVec<[u8; 0]>>(), 32);
     assert_eq!(size_of::<shaper::GlyphRun>(), 128);
-    assert_eq!(size_of::<LineRun>(), 12);
     assert_eq!(size_of::<RunPart>(), 24);
     assert_eq!(size_of::<Line>(), 24);
 }
@@ -130,7 +127,6 @@ impl Default for TextDisplay {
     fn default() -> Self {
         TextDisplay {
             runs: Default::default(),
-            line_runs: Default::default(),
             action: Action::All, // highest value
             wrapped_runs: Default::default(),
             lines: Default::default(),

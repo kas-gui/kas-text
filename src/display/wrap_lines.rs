@@ -53,34 +53,26 @@ impl TextDisplay {
         }
 
         let mut max_line_len = 0.0f32;
+        let mut caret = 0.0;
+        let mut line_len = 0.0;
 
-        for line in self.line_runs.iter() {
-            let mut caret = 0.0;
-            let mut line_len = 0.0;
+        for run in self.runs.iter() {
+            let num_parts = run.num_parts();
+            let (_, part_len_no_space, part_len) = run.part_lengths(0..num_parts);
 
-            // Each LineRun contains at least one Run, though a Run may be empty
-            let end_index = line.range.end();
-            debug_assert!(line.range.start < line.range.end);
-            assert!(end_index <= self.runs.len());
-
-            let mut index = line.range.start();
-            while index < end_index {
-                let run = &self.runs[index];
-                let num_parts = run.num_parts();
-                let (_, part_len_no_space, part_len) = run.part_lengths(0..num_parts);
-
-                if part_len_no_space > 0.0 {
-                    line_len = caret + part_len_no_space;
-                    if line_len >= limit {
-                        return Ok(limit);
-                    }
+            if part_len_no_space > 0.0 {
+                line_len = caret + part_len_no_space;
+                if line_len >= limit {
+                    return Ok(limit);
                 }
-                caret += part_len;
-
-                index += 1;
             }
+            caret += part_len;
 
-            max_line_len = max_line_len.max(line_len);
+            if run.special == RunSpecial::HardBreak {
+                max_line_len = max_line_len.max(line_len);
+                caret = 0.0;
+                line_len = 0.0;
+            }
         }
 
         Ok(max_line_len)
@@ -113,114 +105,121 @@ impl TextDisplay {
 
         // Almost everything in "this" method depends on the line direction, so
         // we determine that then call the appropriate implementation.
-        for line in self.line_runs.iter() {
-            // Each LineRun contains at least one Run, though a Run may be empty
-            let end_index = line.range.end();
-            debug_assert!(line.range.start < line.range.end);
-            assert!(end_index <= self.runs.len());
-            let level = match line.rtl {
-                false => Level::ltr(),
-                true => Level::rtl(),
-            };
+        let mut level = unicode_bidi::LTR_LEVEL;
+        let mut last_hard_break = true;
 
-            // Tuples: (index, part)
-            let mut start = (line.range.start(), 0, 0);
-            let mut end = start;
-            parts.clear();
+        // Tuples: (index, part, num_parts)
+        let mut start = (0, 0, 0);
+        let mut end = start;
 
-            let mut caret = 0.0;
-            let mut index = start.0;
-            'a: while index < end_index {
-                let run = &self.runs[index];
-                let num_parts = run.num_parts();
-                let (allow_break, tab) = match run.special {
-                    RunSpecial::None | RunSpecial::HardBreak => (true, false),
-                    RunSpecial::NoBreak => (false, false),
-                    RunSpecial::HTab => (true, true),
-                };
+        let mut caret = 0.0;
+        let mut index = start.0;
 
-                let mut last_part = start.1;
-                let mut part = last_part + 1;
-                while part <= num_parts {
-                    let (part_offset, part_len_no_space, mut part_len) =
-                        run.part_lengths(last_part..part);
-                    if tab {
-                        // Tab runs have no glyph; instead we calculate part_len
-                        // based on the current line length.
+        let end_index = self.runs.len();
+        'a: while index < end_index {
+            let run = &self.runs[index];
+            let num_parts = run.num_parts();
 
-                        // TODO(bidi): we should really calculate this after
-                        // re-ordering the line based on full line contents,
-                        // then use a checkpoint reset if too long.
+            let hard_break = run.special == RunSpecial::HardBreak;
+            let allow_break = run.special != RunSpecial::NoBreak;
+            let tab = run.special == RunSpecial::HTab;
 
-                        let sf = fonts.get_face(run.face_id).scale_by_dpu(run.dpu);
-                        // TODO: custom tab sizes?
-                        let tab_size = sf.h_advance(sf.face().glyph_index(' ')) * 8.0;
-                        let stops = (caret / tab_size).floor() + 1.0;
-                        part_len = tab_size * stops - caret;
-                    }
-
-                    let line_len = caret + part_len_no_space;
-                    if wrap && line_len > width_bound && end.2 > 0 {
-                        // Add up to last valid break point then wrap and reset
-                        let slice = &mut parts[0..end.2];
-                        adder.add_line(fonts, level, &self.runs, slice, true);
-
-                        end.2 = 0;
-                        start = end;
-                        parts.clear();
-                        caret = 0.0;
-                        index = start.0;
-                        continue 'a;
-                    }
-                    caret += part_len;
-                    let glyph_range = run.to_glyph_range(last_part..part);
-                    let checkpoint = part < num_parts || allow_break;
-                    if !checkpoint
-                        || (justify && part_len_no_space > 0.0)
-                        || parts
-                            .last()
-                            .map(|part| to_usize(part.run) < index)
-                            .unwrap_or(true)
-                    {
-                        parts.push(PartInfo {
-                            run: to_u32(index),
-                            offset: part_offset,
-                            len: part_len,
-                            len_no_space: part_len_no_space,
-                            glyph_range,
-                            end_space: false, // set later
-                        });
-                    } else {
-                        // Combine with last part (not strictly necessary)
-                        if let Some(part) = parts.last_mut() {
-                            if run.level.is_ltr() {
-                                part.glyph_range.end = glyph_range.end;
-                            } else {
-                                part.offset = part_offset;
-                                part.glyph_range.start = glyph_range.start;
-                            }
-                            debug_assert!(part.glyph_range.start <= part.glyph_range.end);
-                            if part_len_no_space > 0.0 {
-                                part.len_no_space = part.len + part_len_no_space;
-                            }
-                            part.len += part_len;
-                        }
-                    }
-                    if checkpoint {
-                        end = (index, part, parts.len());
-                    }
-                    last_part = part;
-                    part += 1;
-                }
-
-                index += 1;
-                start.1 = 0;
+            if last_hard_break {
+                level = run.level;
+                last_hard_break = false;
             }
 
-            if parts.len() > 0 {
-                // It should not be possible for a line to end with a no-break, so:
-                debug_assert_eq!(parts.len(), end.2);
-                adder.add_line(fonts, level, &self.runs, &mut parts, false);
+            let mut last_part = start.1;
+            let mut part = last_part + 1;
+            while part <= num_parts {
+                let (part_offset, part_len_no_space, mut part_len) =
+                    run.part_lengths(last_part..part);
+                if tab {
+                    // Tab runs have no glyph; instead we calculate part_len
+                    // based on the current line length.
+
+                    // TODO(bidi): we should really calculate this after
+                    // re-ordering the line based on full line contents,
+                    // then use a checkpoint reset if too long.
+
+                    let sf = fonts.get_face(run.face_id).scale_by_dpu(run.dpu);
+                    // TODO: custom tab sizes?
+                    let tab_size = sf.h_advance(sf.face().glyph_index(' ')) * 8.0;
+                    let stops = (caret / tab_size).floor() + 1.0;
+                    part_len = tab_size * stops - caret;
+                }
+
+                let line_len = caret + part_len_no_space;
+                if wrap && line_len > width_bound && end.2 > 0 {
+                    // Add up to last valid break point then wrap and reset
+                    let slice = &mut parts[0..end.2];
+                    adder.add_line(fonts, level, &self.runs, slice, true);
+
+                    end.2 = 0;
+                    start = end;
+                    parts.clear();
+                    caret = 0.0;
+                    index = start.0;
+                    continue 'a;
+                }
+                caret += part_len;
+                let glyph_range = run.to_glyph_range(last_part..part);
+                let checkpoint = part < num_parts || allow_break;
+                if !checkpoint
+                    || (justify && part_len_no_space > 0.0)
+                    || parts
+                        .last()
+                        .map(|part| to_usize(part.run) < index)
+                        .unwrap_or(true)
+                {
+                    parts.push(PartInfo {
+                        run: to_u32(index),
+                        offset: part_offset,
+                        len: part_len,
+                        len_no_space: part_len_no_space,
+                        glyph_range,
+                        end_space: false, // set later
+                    });
+                } else {
+                    // Combine with last part (not strictly necessary)
+                    if let Some(part) = parts.last_mut() {
+                        if run.level.is_ltr() {
+                            part.glyph_range.end = glyph_range.end;
+                        } else {
+                            part.offset = part_offset;
+                            part.glyph_range.start = glyph_range.start;
+                        }
+                        debug_assert!(part.glyph_range.start <= part.glyph_range.end);
+                        if part_len_no_space > 0.0 {
+                            part.len_no_space = part.len + part_len_no_space;
+                        }
+                        part.len += part_len;
+                    }
+                }
+                if checkpoint {
+                    end = (index, part, parts.len());
+                }
+                last_part = part;
+                part += 1;
+            }
+
+            index += 1;
+            start.1 = 0;
+
+            if hard_break || index == end_index {
+                if parts.len() > 0 {
+                    // It should not be possible for a line to end with a no-break, so:
+                    debug_assert_eq!(parts.len(), end.2);
+                    adder.add_line(fonts, level, &self.runs, &mut parts, false);
+                }
+
+                start = (index, 0, 0);
+                end = start;
+                parts.clear();
+
+                caret = 0.0;
+                index = start.0;
+                last_hard_break = true;
             }
         }
 
