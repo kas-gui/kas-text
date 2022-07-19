@@ -528,7 +528,7 @@ lazy_static::lazy_static! {
 
 /// Access the [`FontLibrary`] singleton
 pub fn fonts() -> &'static FontLibrary {
-    &*LIBRARY
+    &LIBRARY
 }
 
 fn calculate_hash<T: std::hash::Hash>(t: &T) -> u64 {
