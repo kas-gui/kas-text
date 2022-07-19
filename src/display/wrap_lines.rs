@@ -75,7 +75,7 @@ impl TextDisplay {
             }
         }
 
-        Ok(max_line_len)
+        Ok(max_line_len.max(line_len))
     }
 
     /// Prepare lines ("wrap")

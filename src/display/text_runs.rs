@@ -137,7 +137,7 @@ impl TextDisplay {
         }
 
         let mut input = shaper::Input {
-            text: text,
+            text,
             dpem,
             face_id: fonts.first_face_for(font_id),
             level,
