@@ -10,9 +10,9 @@
 #![allow(clippy::never_loop)]
 #![allow(clippy::needless_range_loop)]
 
-use super::{NotReady, TextDisplay};
+use super::{Line, NotReady, TextDisplay};
 use crate::conv::to_usize;
-use crate::fonts::{fonts, FaceId, ScaledFaceRef};
+use crate::fonts::{fonts, FaceId};
 use crate::{Glyph, Vec2};
 
 /// Effect formatting marker
@@ -155,10 +155,9 @@ impl TextDisplay {
     ///     line breaks and with bidirectional text). If only a single position
     ///     is desired, usually the latter is preferred (via `next_back()`).
     ///
-    /// Note: if the text's bounding rect does not start at the origin, then
-    /// the coordinates of the top-left corner should be added to the result(s).
-    /// The result is also not guaranteed to be within the expected window
-    /// between 0 and `self.env().bounds`. The user should clamp the result.
+    /// The result is not guaranteed to be within [`Self::bounding_box`].
+    /// Depending on the use-case, the caller may need to clamp the resulting
+    /// position.
     pub fn text_glyph_pos(&self, index: usize) -> Result<MarkerPosIter, NotReady> {
         if !self.action.is_ready() {
             return Err(NotReady);
@@ -477,157 +476,54 @@ impl TextDisplay {
         Ok(())
     }
 
-    /// Yield a sequence of rectangles to highlight a given range, by lines
+    /// Yield a sequence of rectangles to highlight a given text range
     ///
-    /// Rectangles span to end and beginning of lines when wrapping lines.
-    /// (Note: gaps are possible between runs in the first and last lines. This
-    /// is a defect which should be fixed but low priority and trickier than it
-    /// might seem due to bi-directional text allowing re-ordering of runs.)
-    ///
-    /// This locates the ends of a range as with [`TextDisplay::text_glyph_pos`], but
-    /// yields a separate rect for each "run" within this range (where "run" is
-    /// a line or part of a line). Rects are represented by the top-left
-    /// vertex and the bottom-right vertex.
-    ///
-    /// Note: if the text's bounding rect does not start at the origin, then
-    /// the coordinates of the top-left corner should be added to the result(s).
-    /// The result is also not guaranteed to be within the expected window
-    /// between 0 and `self.env().bounds`. The user should clamp the result.
-    pub fn highlight_lines(
+    /// Calls `f(top_left, bottom_right)` for each highlighting rectangle.
+    pub fn highlight_range(
         &self,
         range: std::ops::Range<usize>,
-    ) -> Result<Vec<(Vec2, Vec2)>, NotReady> {
+        f: &mut dyn FnMut(Vec2, Vec2),
+    ) -> Result<(), NotReady> {
         if !self.action.is_ready() {
             return Err(NotReady);
         }
 
-        if range.is_empty() {
-            return Ok(vec![]);
-        }
-
-        let mut lines = self.lines.iter();
-        let mut rects = Vec::with_capacity(self.lines.len());
-
-        // Find the first line
-        let mut cur_line = 'l1: loop {
-            for line in lines.by_ref() {
-                if line.text_range.includes(range.start) {
-                    break 'l1 line;
-                }
-            }
-            return Ok(vec![]);
-        };
-
-        if range.start > cur_line.text_range.start() || range.end <= cur_line.text_range.end() {
-            self.highlight_run_range(range.clone(), cur_line.run_range.to_std(), &mut rects);
-            if !rects.is_empty() && range.end > cur_line.text_range.end() {
-                // find the rect nearest the line's end and extend
-                let mut nearest = 0;
-                let first_run = cur_line.run_range.start();
-                let glyph_run = to_usize(self.wrapped_runs[first_run].glyph_run);
-                if self.runs[glyph_run].level.is_ltr() {
-                    let mut dist = self.r_bound - (rects[0].1).0;
-                    for i in 1..rects.len() {
-                        let d = self.r_bound - (rects[i].1).0;
-                        if d < dist {
-                            nearest = i;
-                            dist = d;
-                        }
-                    }
-                    (rects[nearest].1).0 = self.r_bound;
-                } else {
-                    let mut dist = (rects[0].0).0;
-                    for i in 1..rects.len() {
-                        let d = (rects[i].0).0;
-                        if d < dist {
-                            nearest = i;
-                            dist = d;
-                        }
-                    }
-                    (rects[nearest].0).0 = 0.0;
-                }
-            }
-        } else {
-            let a = Vec2(self.l_bound, cur_line.top);
-            let b = Vec2(self.r_bound, cur_line.bottom);
-            rects.push((a, b));
-        }
-
-        if range.end > cur_line.text_range.end() {
-            for line in lines {
-                if range.end <= line.text_range.end() {
-                    cur_line = line;
-                    break;
-                }
-
-                let a = Vec2(self.l_bound, line.top);
-                let b = Vec2(self.r_bound, line.bottom);
-                rects.push((a, b));
-            }
-
-            if cur_line.text_range.start() < range.end {
-                self.highlight_run_range(range, cur_line.run_range.to_std(), &mut rects);
+        for line in &self.lines {
+            let line_range: std::ops::Range<usize> = line.text_range.into();
+            if line_range.end <= range.start {
+                continue;
+            } else if range.end <= line_range.start {
+                break;
+            } else if range.start <= line_range.start && line_range.end <= range.end {
+                let tl = Vec2(self.l_bound, line.top);
+                let br = Vec2(self.r_bound, line.bottom);
+                f(tl, br);
+            } else {
+                self.highlight_line(line.clone(), range.clone(), f);
             }
         }
 
-        Ok(rects)
-    }
-
-    /// Yield a sequence of rectangles to highlight a given range, by runs
-    ///
-    /// Rectangles tightly fit each "run" (piece) of text highlighted. (As an
-    /// artifact, the highlighting may leave gaps between runs. This may or may
-    /// not change in the future.)
-    ///
-    /// This locates the ends of a range as with [`TextDisplay::text_glyph_pos`], but
-    /// yields a separate rect for each "run" within this range (where "run" is
-    /// is a line or part of a line). Rects are represented by the top-left
-    /// vertex and the bottom-right vertex.
-    ///
-    /// Note: if the text's bounding rect does not start at the origin, then
-    /// the coordinates of the top-left corner should be added to the result(s).
-    /// The result is also not guaranteed to be within the expected window
-    /// between 0 and `self.env().bounds`. The user should clamp the result.
-    #[inline]
-    pub fn highlight_runs(
-        &self,
-        range: std::ops::Range<usize>,
-    ) -> Result<Vec<(Vec2, Vec2)>, NotReady> {
-        if !self.action.is_ready() {
-            return Err(NotReady);
-        }
-
-        if range.is_empty() {
-            return Ok(vec![]);
-        }
-
-        let mut rects = Vec::with_capacity(self.wrapped_runs.len());
-        self.highlight_run_range(range, 0..usize::MAX, &mut rects);
-        Ok(rects)
+        Ok(())
     }
 
     /// Produce highlighting rectangles within a range of runs
     ///
     /// Warning: runs are in logical order which does not correspond to display
     /// order. As a result, the order of results (on a line) is not known.
-    fn highlight_run_range(
+    fn highlight_line(
         &self,
+        line: Line,
         range: std::ops::Range<usize>,
-        run_range: std::ops::Range<usize>,
-        rects: &mut Vec<(Vec2, Vec2)>,
+        f: &mut dyn FnMut(Vec2, Vec2),
     ) {
         let fonts = fonts();
 
-        let mut push_rect = |mut a: Vec2, mut b: Vec2, sf: ScaledFaceRef| {
-            a.1 -= sf.ascent();
-            b.1 -= sf.descent();
-            rects.push((a, b));
-        };
         let mut a;
 
-        let mut i = run_range.start;
+        let mut i = line.run_range.start();
+        let line_range_end = line.run_range.end();
         'b: loop {
-            if i >= run_range.end {
+            if i >= line_range_end {
                 return;
             }
             let run_part = &self.wrapped_runs[i];
@@ -637,53 +533,49 @@ impl TextDisplay {
             }
 
             let glyph_run = &self.runs[to_usize(run_part.glyph_run)];
-            let sf = fonts
-                .get_face(glyph_run.face_id)
-                .scale_by_dpu(glyph_run.dpu);
 
-            // else: range.start < to_usize(run_part.text_end)
             if glyph_run.level.is_ltr() {
                 for glyph in glyph_run.glyphs[run_part.glyph_range.to_std()].iter().rev() {
                     if to_usize(glyph.index) <= range.start {
-                        a = glyph.position;
+                        a = glyph.position.0;
                         break 'b;
                     }
                 }
-                a = Vec2::ZERO;
+                a = 0.0;
             } else {
+                let sf = fonts
+                    .get_face(glyph_run.face_id)
+                    .scale_by_dpu(glyph_run.dpu);
                 for glyph in glyph_run.glyphs[run_part.glyph_range.to_std()].iter() {
                     if to_usize(glyph.index) <= range.start {
-                        a = glyph.position;
-                        a.0 += sf.h_advance(glyph.id);
+                        a = glyph.position.0;
+                        a += sf.h_advance(glyph.id);
                         break 'b;
                     }
                 }
-                a = Vec2(glyph_run.caret, 0.0);
+                a = glyph_run.caret;
             }
             break 'b;
         }
 
         let mut first = true;
-        'a: while i < run_range.end {
+        'a: while i < line_range_end {
             let run_part = &self.wrapped_runs[i];
-            let offset = run_part.offset;
+            let offset = run_part.offset.0;
             let glyph_run = &self.runs[to_usize(run_part.glyph_run)];
-            let sf = fonts
-                .get_face(glyph_run.face_id)
-                .scale_by_dpu(glyph_run.dpu);
 
             if !first {
                 a = if glyph_run.level.is_ltr() {
                     if run_part.glyph_range.start() < glyph_run.glyphs.len() {
-                        glyph_run.glyphs[run_part.glyph_range.start()].position
+                        glyph_run.glyphs[run_part.glyph_range.start()].position.0
                     } else {
-                        Vec2::ZERO
+                        0.0
                     }
                 } else {
                     if run_part.glyph_range.end() < glyph_run.glyphs.len() {
-                        glyph_run.glyphs[run_part.glyph_range.end()].position
+                        glyph_run.glyphs[run_part.glyph_range.end()].position.0
                     } else {
-                        Vec2(glyph_run.caret, 0.0)
+                        glyph_run.caret
                     }
                 };
             }
@@ -693,43 +585,44 @@ impl TextDisplay {
                 let b;
                 if glyph_run.level.is_ltr() {
                     if run_part.glyph_range.end() < glyph_run.glyphs.len() {
-                        b = glyph_run.glyphs[run_part.glyph_range.end()].position;
+                        b = glyph_run.glyphs[run_part.glyph_range.end()].position.0;
                     } else {
-                        b = Vec2(glyph_run.caret, 0.0);
+                        b = glyph_run.caret;
                     }
                 } else {
                     let p = if run_part.glyph_range.start() < glyph_run.glyphs.len() {
-                        glyph_run.glyphs[run_part.glyph_range.start()].position
+                        glyph_run.glyphs[run_part.glyph_range.start()].position.0
                     } else {
                         // NOTE: for RTL we only hit this case if glyphs.len() == 0
-                        Vec2(glyph_run.caret, 0.0)
+                        glyph_run.caret
                     };
-                    b = Vec2(a.0, p.1);
-                    a.0 = p.0;
+                    b = a;
+                    a = p;
                 };
 
-                push_rect(a + offset, b + offset, sf);
+                f(Vec2(a + offset, line.top), Vec2(b + offset, line.bottom));
                 i += 1;
                 continue;
             }
 
-            // else: range.end < to_usize(run_part.text_end)
+            let sf = fonts
+                .get_face(glyph_run.face_id)
+                .scale_by_dpu(glyph_run.dpu);
+
             let b;
             'c: loop {
                 if glyph_run.level.is_ltr() {
                     for glyph in glyph_run.glyphs[run_part.glyph_range.to_std()].iter().rev() {
                         if to_usize(glyph.index) <= range.end {
-                            b = glyph.position;
+                            b = glyph.position.0;
                             break 'c;
                         }
                     }
                 } else {
                     for glyph in glyph_run.glyphs[run_part.glyph_range.to_std()].iter() {
                         if to_usize(glyph.index) <= range.end {
-                            let mut p = glyph.position;
-                            p.0 += sf.h_advance(glyph.id);
-                            b = Vec2(a.0, p.1);
-                            a.0 = p.0;
+                            b = a;
+                            a = glyph.position.0 + sf.h_advance(glyph.id);
                             break 'c;
                         }
                     }
@@ -737,7 +630,7 @@ impl TextDisplay {
                 break 'a;
             }
 
-            push_rect(a + offset, b + offset, sf);
+            f(Vec2(a + offset, line.top), Vec2(b + offset, line.bottom));
             break;
         }
     }
