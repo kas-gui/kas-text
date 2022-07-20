@@ -494,7 +494,7 @@ impl LineAdder {
             }
         };
 
-        self.l_bound = caret;
+        self.l_bound = self.l_bound.min(caret);
         let mut end_caret = caret;
 
         for (i, part) in parts.iter().enumerate() {

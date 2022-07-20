@@ -421,22 +421,14 @@ pub trait TextApiExt: TextApi {
             .glyphs_with_effects(effects, default_aux, f, g)
     }
 
-    /// Yield a sequence of rectangles to highlight a given range, by lines
+    /// Yield a sequence of rectangles to highlight a given text range
     ///
-    /// See [`TextDisplay::highlight_lines`].
-    fn highlight_lines(
-        &self,
-        range: std::ops::Range<usize>,
-    ) -> Result<Vec<(Vec2, Vec2)>, NotReady> {
-        self.display().highlight_lines(range)
-    }
-
-    /// Yield a sequence of rectangles to highlight a given range, by runs
-    ///
-    /// See [`TextDisplay::highlight_runs`].
-    #[inline]
-    fn highlight_runs(&self, range: std::ops::Range<usize>) -> Result<Vec<(Vec2, Vec2)>, NotReady> {
-        self.display().highlight_runs(range)
+    /// Calls `f(top_left, bottom_right)` for each highlighting rectangle.
+    fn highlight_range<F>(&self, range: std::ops::Range<usize>, mut f: F) -> Result<(), NotReady>
+    where
+        F: FnMut(Vec2, Vec2),
+    {
+        self.display().highlight_range(range, &mut f)
     }
 }
 
