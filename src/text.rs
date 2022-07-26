@@ -8,7 +8,7 @@
 use std::convert::{AsMut, AsRef};
 
 use crate::display::{Effect, MarkerPosIter, NotReady, TextDisplay};
-use crate::fonts::FaceId;
+use crate::fonts::{FaceId, InvalidFontId};
 use crate::format::{EditableText, FormattableText};
 use crate::{Action, Glyph, Vec2};
 use crate::{Align, Direction, Environment};
@@ -130,7 +130,7 @@ pub trait TextApi {
     ///
     /// Wraps [`TextDisplay::prepare_runs`], passing parameters from the
     /// environment state.
-    fn prepare_runs(&mut self);
+    fn prepare_runs(&mut self) -> Result<(), InvalidFontId>;
 
     /// Measure required width, up to some `limit`
     ///
@@ -140,7 +140,7 @@ pub trait TextApi {
     ///
     /// The return value is at most `limit` and is unaffected by alignment and
     /// wrap configuration of [`Environment`].
-    fn measure_width(&mut self, limit: f32) -> f32;
+    fn measure_width(&mut self, limit: f32) -> Result<f32, InvalidFontId>;
 
     /// Measure required vertical height, wrapping as configured
     ///
@@ -149,7 +149,7 @@ pub trait TextApi {
     ///
     /// Adjusting only vertical alignment after this method call via
     /// [`TextApiExt::update_env`] or equivalent is fast.
-    fn measure_height(&mut self) -> f32;
+    fn measure_height(&mut self) -> Result<f32, InvalidFontId>;
 
     /// Prepare text for display, as necessary
     ///
@@ -162,7 +162,7 @@ pub trait TextApi {
     ///
     /// Returns true if at least some action is performed *and* the text exceeds
     /// the allocated bounds ([`Environment::bounds`]).
-    fn prepare(&mut self) -> bool;
+    fn prepare(&mut self) -> Result<bool, InvalidFontId>;
 
     /// Get the sequence of effect tokens
     ///
@@ -224,24 +224,24 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
     }
 
     #[inline]
-    fn prepare_runs(&mut self) {
+    fn prepare_runs(&mut self) -> Result<(), InvalidFontId> {
         self.display.prepare_runs(
             &self.text,
             self.env.direction,
             self.env.font_id,
             self.env.dpem,
-        );
+        )
     }
 
-    fn measure_width(&mut self, limit: f32) -> f32 {
+    fn measure_width(&mut self, limit: f32) -> Result<f32, InvalidFontId> {
         if self.display.required_action() > Action::Wrap {
-            self.prepare_runs();
+            self.prepare_runs()?;
         }
 
-        self.display.measure_width(limit).unwrap()
+        Ok(self.display.measure_width(limit).unwrap())
     }
 
-    fn measure_height(&mut self) -> f32 {
+    fn measure_height(&mut self) -> Result<f32, InvalidFontId> {
         if self.env.align.1 != Align::TL {
             self.env.align.1 = Align::TL;
             self.display.require_action(Action::VAlign);
@@ -249,10 +249,10 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
 
         let action = self.display.required_action();
         if action > Action::Wrap {
-            self.prepare_runs();
+            self.prepare_runs()?;
         }
 
-        if action >= Action::Wrap {
+        Ok(if action >= Action::Wrap {
             self.display
                 .prepare_lines(self.env.bounds, self.env.wrap, self.env.align)
                 .unwrap()
@@ -264,12 +264,12 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
                 .1
         } else {
             (self.display.bounding_box().unwrap().1).1
-        }
+        })
     }
 
     #[inline]
-    fn prepare(&mut self) -> bool {
-        self.prepare_runs();
+    fn prepare(&mut self) -> Result<bool, InvalidFontId> {
+        self.prepare_runs()?;
 
         let action = self.display.required_action();
         let bound = if action == Action::Wrap {
@@ -281,10 +281,10 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
                 .vertically_align(self.env.bounds.1, self.env.align.1)
                 .unwrap()
         } else {
-            return false;
+            return Ok(false);
         };
 
-        !(bound.0 <= self.env.bounds.0 && bound.1 <= self.env.bounds.1)
+        Ok(!(bound.0 <= self.env.bounds.0 && bound.1 <= self.env.bounds.1))
     }
 
     #[inline]
@@ -302,7 +302,7 @@ pub trait TextApiExt: TextApi {
     ///
     /// Returns true if at least some action is performed *and* the text exceeds
     /// the allocated bounds ([`Environment::bounds`]).
-    fn update_env(&mut self, env: Environment) -> bool {
+    fn update_env(&mut self, env: Environment) -> Result<bool, InvalidFontId> {
         self.set_env(env);
         self.prepare()
     }

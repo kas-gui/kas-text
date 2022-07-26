@@ -5,7 +5,7 @@
 
 //! KAS Rich-Text library — text-display environment
 
-use crate::fonts::{fonts, FontId};
+use crate::fonts::{fonts, FontId, InvalidFontId};
 use crate::Vec2;
 
 /// Environment in which text is prepared for display
@@ -84,8 +84,10 @@ impl Environment {
     /// the font.
     ///
     /// To use "the standard font", use `font_id = Default::default()`.
-    pub fn line_height(&self, font_id: FontId) -> f32 {
-        fonts().get_first_face(font_id).height(self.dpem)
+    pub fn line_height(&self, font_id: FontId) -> Result<f32, InvalidFontId> {
+        fonts()
+            .get_first_face(font_id)
+            .map(|face| face.height(self.dpem))
     }
 }
 

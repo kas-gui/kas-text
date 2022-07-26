@@ -79,7 +79,7 @@ mod library;
 mod selector;
 
 pub use face::{FaceRef, ScaledFaceRef};
-pub use library::{fonts, FaceData, FaceId, FontId, FontLibrary};
+pub use library::{fonts, FaceData, FaceId, FontId, FontLibrary, InvalidFontId};
 pub use selector::*;
 
 impl From<GlyphId> for ttf_parser::GlyphId {
