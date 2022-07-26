@@ -8,7 +8,7 @@
 use std::convert::{AsMut, AsRef};
 
 use crate::display::{Effect, MarkerPosIter, NotReady, TextDisplay};
-use crate::fonts::{FaceId, InvalidFontId};
+use crate::fonts::{self, FaceId, InvalidFontId};
 use crate::format::{EditableText, FormattableText};
 use crate::{Action, Glyph, Vec2};
 use crate::{Align, Direction, Environment};
@@ -81,6 +81,21 @@ impl<T: FormattableText> Text<T> {
 
         self.text = text;
         self.display.action = Action::All;
+    }
+
+    /// Set the text and prepare (if any fonts are loaded)
+    ///
+    /// Sets `text` regardless of other outcomes.
+    ///
+    /// If fonts are not loaded, this fails fast (see [`fonts::any_loaded`]),
+    /// unlike other preparation methods.
+    ///
+    /// Returns true if at least some action is performed *and* the text exceeds
+    /// the allocated bounds ([`Environment::bounds`]).
+    #[inline]
+    pub fn set_and_try_prepare(&mut self, text: T) -> Result<bool, InvalidFontId> {
+        self.set_text(text);
+        self.try_prepare()
     }
 }
 
@@ -304,6 +319,17 @@ pub trait TextApiExt: TextApi {
     /// the allocated bounds ([`Environment::bounds`]).
     fn update_env(&mut self, env: Environment) -> Result<bool, InvalidFontId> {
         self.set_env(env);
+        self.prepare()
+    }
+
+    /// Prepare text for display, failing fast if fonts are not loaded
+    ///
+    /// This is identical to [`Self::prepare`] except that it will fail fast in
+    /// case no fonts have been loaded yet (see [`fonts::any_loaded`]).
+    fn try_prepare(&mut self) -> Result<bool, InvalidFontId> {
+        if !fonts::any_loaded() {
+            return Err(InvalidFontId);
+        }
         self.prepare()
     }
 
