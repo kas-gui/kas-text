@@ -9,7 +9,7 @@
 
 use super::TextDisplay;
 use crate::conv::{to_u32, to_usize};
-use crate::fonts::{fonts, FontId};
+use crate::fonts::{fonts, FontId, InvalidFontId};
 use crate::format::FormattableText;
 use crate::{shaper, Action, Direction, Range};
 use unicode_bidi::{BidiClass, BidiInfo, Level, LTR_LEVEL, RTL_LEVEL};
@@ -85,13 +85,12 @@ impl TextDisplay {
         direction: Direction,
         mut font_id: FontId,
         mut dpem: f32,
-    ) {
+    ) -> Result<(), InvalidFontId> {
         match self.action {
-            Action::None | Action::VAlign | Action::Wrap => return,
-            Action::Resize => return self.resize_runs(text, dpem),
+            Action::None | Action::VAlign | Action::Wrap => return Ok(()),
+            Action::Resize => return Ok(self.resize_runs(text, dpem)),
             Action::All => (),
         }
-        self.action = Action::Wrap;
 
         // This method constructs a list of "hard lines" (the initial line and any
         // caused by a hard break), each composed of a list of "level runs" (the
@@ -139,7 +138,7 @@ impl TextDisplay {
         let mut input = shaper::Input {
             text,
             dpem,
-            face_id: fonts.first_face_for(font_id),
+            face_id: fonts.first_face_for(font_id)?,
             level,
         };
 
@@ -192,7 +191,7 @@ impl TextDisplay {
             } else {
                 Some(input.face_id)
             };
-            let face_id = fonts.face_for_char_or_first(font_id, opt_last_face, c);
+            let face_id = fonts.face_for_char_or_first(font_id, opt_last_face, c)?;
             let font_break = pos > 0 && face_id != input.face_id;
 
             if hard_break || control_break || bidi_break || fmt_break || font_break {
@@ -279,5 +278,7 @@ impl TextDisplay {
             println!("]");
         }
         */
+        self.action = Action::Wrap;
+        Ok(())
     }
 }

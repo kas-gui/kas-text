@@ -40,6 +40,17 @@ impl From<&'static str> for FontError {
     }
 }
 
+/// Bad [`FontId`] or no font loaded
+///
+/// Since [`FontId`] supports default construction, this error can occur when
+/// text preparation is run before a default font is loaded.
+///
+/// It is safe to ignore this error, though (successful) text preparation will
+/// still be required before display.
+#[derive(Error, Debug)]
+#[error("invalid FontId")]
+pub struct InvalidFontId;
+
 /// Font face identifier
 ///
 /// Identifies a loaded font face within the [`FontLibrary`] by index.
@@ -190,23 +201,23 @@ impl FontLibrary {
     ///
     /// Each font identifier has at least one font face. This resolves the first
     /// (default) one.
-    pub fn first_face_for(&self, font_id: FontId) -> FaceId {
+    pub fn first_face_for(&self, font_id: FontId) -> Result<FaceId, InvalidFontId> {
         let fonts = self.fonts.read().unwrap();
         for (id, list, _) in &fonts.fonts {
             if *id == font_id {
-                return *list.first().unwrap();
+                return Ok(*list.first().unwrap());
             }
         }
-        panic!("FontLibrary::first_face_for: invalid font_id")
+        Err(InvalidFontId)
     }
 
     /// Get the first face for a font
     ///
     /// This is a wrapper around [`FontLibrary::first_face_for`] and [`FontLibrary::get_face`].
     #[inline]
-    pub fn get_first_face(&self, font_id: FontId) -> FaceRef {
-        let face_id = self.first_face_for(font_id);
-        self.get_face(face_id)
+    pub fn get_first_face(&self, font_id: FontId) -> Result<FaceRef, InvalidFontId> {
+        let face_id = self.first_face_for(font_id)?;
+        Ok(self.get_face(face_id))
     }
 
     /// Resolve the font face for a character
@@ -223,7 +234,7 @@ impl FontLibrary {
         font_id: FontId,
         last_face_id: Option<FaceId>,
         c: char,
-    ) -> Option<FaceId> {
+    ) -> Result<Option<FaceId>, InvalidFontId> {
         // TODO: `face.glyph_index` is a bit slow to use like this where several
         // faces may return no result before we find a match. Caching results
         // in a HashMap helps. Perhaps better would be to (somehow) determine
@@ -234,7 +245,7 @@ impl FontLibrary {
             .fonts
             .iter_mut()
             .find(|item| item.0 == font_id)
-            .expect("invalid FontId");
+            .ok_or(InvalidFontId)?;
 
         let faces = self.faces.read().unwrap();
 
@@ -243,12 +254,12 @@ impl FontLibrary {
                 let face = &faces.faces[face_id.get()];
                 // TODO(opt): should we cache this lookup?
                 if face.face.glyph_index(c).is_some() {
-                    return Some(face_id);
+                    return Ok(Some(face_id));
                 }
             }
         }
 
-        match font.2.entry(c) {
+        Ok(match font.2.entry(c) {
             Entry::Occupied(entry) => *entry.get(),
             Entry::Vacant(entry) => {
                 let mut id: Option<FaceId> = None;
@@ -262,7 +273,7 @@ impl FontLibrary {
                 entry.insert(id);
                 id
             }
-        }
+        })
     }
 
     /// Resolve the font face for a character
@@ -280,9 +291,12 @@ impl FontLibrary {
         font_id: FontId,
         last_face_id: Option<FaceId>,
         c: char,
-    ) -> FaceId {
-        self.face_for_char(font_id, last_face_id, c)
-            .unwrap_or_else(|| self.first_face_for(font_id))
+    ) -> Result<FaceId, InvalidFontId> {
+        match self.face_for_char(font_id, last_face_id, c) {
+            Ok(Some(face_id)) => Ok(face_id),
+            Ok(None) => self.first_face_for(font_id),
+            Err(e) => Err(e),
+        }
     }
 
     /// Select the default font
@@ -457,6 +471,7 @@ impl FontLibrary {
         let id = faces.push(Box::new(store), path_hash);
 
         log::debug!("Loaded: {:?} = {},{}", id, path.display(), index);
+        super::set_loaded();
         Ok(id)
     }
 
