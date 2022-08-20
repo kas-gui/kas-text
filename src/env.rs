@@ -241,7 +241,7 @@ pub enum Align {
     /// Align to top or left
     TL,
     /// Align to center
-    Center,
+    Centre,
     /// Align to bottom or right
     BR,
     /// Stretch to fill space
