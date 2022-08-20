@@ -4,33 +4,37 @@ KAS Text
 [![kas](https://img.shields.io/badge/GitHub-kas-blueviolet)](https://github.com/kas-gui/kas/)
 [![Docs](https://docs.rs/kas-text/badge.svg)](https://docs.rs/kas-text/)
 
-A rich-text processing library suitable for KAS and other GUI tools.
+A pure-Rust rich-text processing library suitable for KAS and other GUI tools.
 
 What it does (or may in the future) do:
 
-- [ ] Provides a representation for rich-text
 - [x] Font discovery (very limited; system configuration is ignored)
-- [x] Font fallback for missing glyphs (performance issues)
-- [ ] Emoticons (not really planned)
-- [x] Transforms input text to a sequence of positioned glyphs
-- [x] Performs line-wrapping and alignment
+- [x] Font fallback for missing glyphs
+- [x] Text layout: yield a sequence of positioned glyphs
 - [x] Supports bi-directional text
-- [ ] Vertical text (not planned)
-- [x] Supports font shaping via HarfBuzz (optional: `shaping` feature; requires HarfBuzz library)
-- [x] Simple integrated "shaper" supporting kerning
+- [x] Text shaping (optional) via [rustybuzz](https://github.com/RazrFalcon/rustybuzz) or [harfbuzz](http://harfbuzz.org/)
 - [ ] Handle combining diacritics correctly
-- [x] Provides helpers for text editing / navigation
-- [ ] Visual-order BIDI text navigation
+- [x] Support position navigation / lookup
 - [ ] Sub-ligature navigation
-- [x] Fast line-wrapping when only width changes
-- [ ] Scale well to large documents
-- [x] Raster glyphs
+- [ ] Visual-order BIDI text navigation
+- [ ] Emoticons
+- [x] Rich text: choose font by style/weight/family for a sub-range
+- [x] Text annotations: highlight range, underline
+- [x] Raster glyphs (via `ab_glyph` or `fontdue`)
+- [x] Fast-ish: good enough for snappy GUIs; further optimisation possible
 
 What it does not do:
 
--   Draw text. This may or may not be done via a GPU, and is beyond the scope of this library
--   Directly handle text editing — this is mostly about handling input, however
-    this library does provide helper methods for navigating prepared text
+-   Draw: rastering glyphs yields a sequence of sprites. Caching these in a
+    glyph atlas and rendering to a texture is beyond the scope of this project
+    since it is dependent on the graphics libraries used.
+-   Editing: mapping input actions (e.g. from a winit `WindowEvent`) to text
+    edit operations is beyond the scope of this project. The API *does* cover
+    replacing text ranges and finding the nearest glyph index to a coordinate.
+-   Rich text: there is no packaged format for rich text. A `FormattableText`
+    trait and a (limited) Markdown processor are included.
+-   Full text layout: there is no support for custom inter-paragraph gaps,
+    inter-line gaps, embedded images, or horizontal rules.
 
 For more, see the initial [design document](design/requirements.md) and
 [issue #1](https://github.com/kas-gui/kas-text/issues/1).
@@ -43,6 +47,19 @@ Since `kas-text` only concerns text-layout, all examples here are courtesy of KA
 
 ![BIDI layout and editing](https://github.com/kas-gui/data-dump/blob/master/screenshots/layout.png)
 ![Markdown](https://github.com/kas-gui/data-dump/blob/master/screenshots/markdown.png)
+
+
+Alternatives
+------------
+
+Pure-Rust alternatives for typesetting and rendering text:
+
+-   [Swash](https://github.com/dfrg/swash): font introspection, shaping, character and script analysis, rendering
+-   [fontdue](https://github.com/mooman219/fontdue): rastering and simple layout
+-   [glyph_brush](https://github.com/alexheretic/glyph-brush): rendering and simple layout
+
+Non-pure-Rust alternatives include [font-kit](https://crates.io/crates/font-kit)
+and [piet](https://crates.io/crates/piet) among others.
 
 
 Contributing

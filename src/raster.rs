@@ -263,7 +263,7 @@ fn raster_fontdue(config: &Config, desc: SpriteDescriptor) -> Option<Sprite> {
     let face = desc.face();
     let face = &fonts().get_face_store(face).fontdue;
 
-    let (metrics, data) = face.rasterize_indexed(desc.glyph().0.cast(), desc.dpem(config));
+    let (metrics, data) = face.rasterize_indexed(desc.glyph().0, desc.dpem(config));
 
     let size = (u32::conv(metrics.width), u32::conv(metrics.height));
     let h_off = -metrics.ymin - i32::conv(metrics.height);

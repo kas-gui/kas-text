@@ -159,11 +159,8 @@ pub trait TextApi {
 
     /// Measure required vertical height, wrapping as configured
     ///
-    /// This ensures that the vertical component of [`Environment::align`] is
-    /// [`Align::TL`], then fully prepares text for display.
-    ///
-    /// Adjusting only vertical alignment after this method call via
-    /// [`TextApiExt::update_env`] or equivalent is fast.
+    /// This partially prepares text for display. Remaining prepartion should be
+    /// fast.
     fn measure_height(&mut self) -> Result<f32, InvalidFontId>;
 
     /// Prepare text for display, as necessary
@@ -257,7 +254,8 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
     }
 
     fn measure_height(&mut self) -> Result<f32, InvalidFontId> {
-        if self.env.align.1 != Align::TL {
+        let v_align = self.env.align.1;
+        if v_align != Align::TL {
             self.env.align.1 = Align::TL;
             self.display.require_action(Action::VAlign);
         }
@@ -267,7 +265,7 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
             self.prepare_runs()?;
         }
 
-        Ok(if action >= Action::Wrap {
+        let height = if action >= Action::Wrap {
             self.display
                 .prepare_lines(self.env.bounds, self.env.wrap, self.env.align)
                 .unwrap()
@@ -279,7 +277,14 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
                 .1
         } else {
             (self.display.bounding_box().unwrap().1).1
-        })
+        };
+
+        if v_align != Align::TL {
+            self.env.align.1 = v_align;
+            self.display.require_action(Action::VAlign);
+        }
+
+        Ok(height)
     }
 
     #[inline]
