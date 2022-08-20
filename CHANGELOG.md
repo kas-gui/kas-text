@@ -2,16 +2,14 @@
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.5.0] — unreleased
+## [0.5.0] — 2022-08-20
 
-CI: test stable and check Clippy lints.
-
-Error handling:
+Error handling (#65):
 
 -   Add `NotReady` error type
 -   Most methods now return `Result<T, NotReady>` instead of panicking
 
-Text environment:
+Text environment (#68):
 
 -   Remove `UpdateEnv` type
 -   Rename `Text::new` to `new_env`, `Text::new_multi` to `Text::new` and
@@ -39,9 +37,9 @@ Text preparation:
 -   All `TextApi` and `TextApiExt` methods doing any preparation now do all
     required preparation, and avoid unnecessary steps.
 
-Text measurements:
+Text measurements (#68):
 
--   Add `TextDisplay::bounding_box` and `TextApiExt::bounding_box`
+-   Add `TextDisplay::bounding_box` and `TextApiExt::bounding_box` (#68, #69)
 -   Add `TextDisplay::measure_width` and `TextDisplay::vertically_align`
 -   Add `TextApi::measure_width` and `TextApi::measure_height`
 -   Remove `TextDisplay::line_is_ltr` and `TextApiExt::line_is_ltr`
@@ -62,11 +60,20 @@ Font fallback:
 
 Misc:
 
+-   CI: test stable and check Clippy lints (#69).
 -   Add `Range::is_empty`
+-   Add `num_glyphs` feature flag (#69)
+-   Memory optimisations for `TextDisplay`: remove `line_runs` (#71)
+-   Replace `highlight_lines` with `highlight_range` (#72)
+-   Add `fonts::any_loaded` (#73)
+
+Fixes:
+
 -   Do not add "line gap" before first line. (In practice this is often 0 anyway.)
 -   Do not vertically align text too tall for the input bounds.
--   Fix position of text highlights on vertically aligned text.
 -   Markdown formatter: use heading level sizes as defined by CSS
+-   Fix position of text highlights on vertically aligned text (#67).
+-   Fix `r_bound` for trailing space (#71)
 
 ## [0.4.2] — 2022-02-10
 
