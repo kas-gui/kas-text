@@ -38,7 +38,7 @@ enum State {
 fn to_uppercase<'a>(c: Cow<'a, str>) -> Cow<'a, str> {
     match c {
         Cow::Borrowed(b) if !b.chars().any(|c| c.is_lowercase()) => Cow::Borrowed(b),
-        c => Cow::Owned(c.to_owned().to_uppercase()),
+        c => Cow::Owned(c.to_uppercase()),
     }
 }
 
