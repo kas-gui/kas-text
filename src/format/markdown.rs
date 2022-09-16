@@ -8,8 +8,6 @@
 use super::{EditableText, FontToken, FormattableText};
 use crate::conv::to_u32;
 use crate::fonts::{self, FontId, FontSelector, Style, Weight};
-#[cfg(not(feature = "gat"))]
-use crate::OwningVecIter;
 use crate::{Effect, EffectFlags};
 use pulldown_cmark::{Event, HeadingLevel, Tag};
 use std::fmt::Write;
@@ -108,7 +106,6 @@ impl<'a> ExactSizeIterator for FontTokenIter<'a> {}
 impl<'a> FusedIterator for FontTokenIter<'a> {}
 
 impl FormattableText for Markdown {
-    #[cfg(feature = "gat")]
     type FontTokenIter<'a> = FontTokenIter<'a>;
 
     #[inline]
@@ -116,16 +113,9 @@ impl FormattableText for Markdown {
         &self.text
     }
 
-    #[cfg(feature = "gat")]
     #[inline]
     fn font_tokens<'a>(&'a self, dpem: f32) -> Self::FontTokenIter<'a> {
         FontTokenIter::new(&self.fmt, dpem)
-    }
-    #[cfg(not(feature = "gat"))]
-    #[inline]
-    fn font_tokens(&self, dpem: f32) -> OwningVecIter<FontToken> {
-        let iter = FontTokenIter::new(&self.fmt, dpem);
-        OwningVecIter::new(iter.collect())
     }
 
     fn effect_tokens(&self) -> &[Effect<()>] {

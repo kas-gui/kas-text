@@ -21,15 +21,7 @@ pub use markdown::{Error as MarkdownError, Markdown};
 ///
 /// Any `F: FormattableText` automatically support [`FormattableTextDyn`].
 /// Implement either this or [`FormattableTextDyn`], not both.
-///
-/// This trait can only be written as intended using Generic Associated Types
-/// (`gat`, unstable nightly feature), thus `font_tokens` has a different
-/// signature with/without feature `gat` and the associated type
-/// `FontTokenIter` is only present with feature `gat`.
 pub trait FormattableText: std::fmt::Debug {
-    #[cfg_attr(doc_cfg, doc(cfg(feature = "gat")))]
-    #[cfg(feature = "gat")]
-    // TODO: rename → Iter
     type FontTokenIter<'a>: Iterator<Item = FontToken>
     where
         Self: 'a;
@@ -53,19 +45,7 @@ pub trait FormattableText: std::fmt::Debug {
     /// The `dpem` parameter is font size as in [`crate::Environment`].
     ///
     /// For plain text this iterator will be empty.
-    #[cfg(feature = "gat")]
     fn font_tokens<'a>(&'a self, dpem: f32) -> Self::FontTokenIter<'a>;
-
-    /// Construct an iterator over formatting items
-    ///
-    /// It is expected that [`FontToken::start`] of yielded items is strictly
-    /// increasing; if not, formatting may not be applied correctly.
-    ///
-    /// The `dpem` parameter is font size as in [`crate::Environment`].
-    ///
-    /// For plain text this iterator will be empty.
-    #[cfg(not(feature = "gat"))]
-    fn font_tokens(&self, dpem: f32) -> OwningVecIter<FontToken>;
 
     /// Get the sequence of effect tokens
     ///
@@ -117,7 +97,6 @@ pub trait FormattableTextDyn: std::fmt::Debug {
     fn effect_tokens(&self) -> &[Effect<()>];
 }
 
-// #[cfg(feature = "gat")]
 impl<F: FormattableText + Clone + 'static> FormattableTextDyn for F {
     fn clone_boxed(&self) -> Box<dyn FormattableTextDyn> {
         Box::new(self.clone())
@@ -132,14 +111,7 @@ impl<F: FormattableText + Clone + 'static> FormattableTextDyn for F {
 
     fn font_tokens(&self, dpem: f32) -> OwningVecIter<FontToken> {
         let iter = FormattableText::font_tokens(self, dpem);
-        #[cfg(feature = "gat")]
-        {
-            OwningVecIter::new(iter.collect())
-        }
-        #[cfg(not(feature = "gat"))]
-        {
-            iter
-        }
+        OwningVecIter::new(iter.collect())
     }
 
     fn effect_tokens(&self) -> &[Effect<()>] {
@@ -148,11 +120,9 @@ impl<F: FormattableText + Clone + 'static> FormattableTextDyn for F {
 }
 
 impl<'t> FormattableText for &'t dyn FormattableTextDyn {
-    #[cfg(feature = "gat")]
-    type FontTokenIter<'a>
+    type FontTokenIter<'a> = OwningVecIter<FontToken>
     where
-        Self: 'a,
-    = OwningVecIter<FontToken>;
+        Self: 'a,;
 
     #[inline]
     fn str_len(&self) -> usize {
