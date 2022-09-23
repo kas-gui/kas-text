@@ -130,6 +130,9 @@ impl<'a> FaceStore<'a> {
 
 #[derive(Default)]
 struct FaceList {
+    // Safety: unsafe code depends on entries never moving (hence the otherwise
+    // redundant use of Box). See e.g. FontLibrary::get_face().
+    #[allow(clippy::vec_box)]
     faces: Vec<Box<FaceStore<'static>>>,
     // These are vec-maps. Why? Because length should be short.
     path_hash: Vec<(u64, FaceId)>,

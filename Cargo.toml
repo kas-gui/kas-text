@@ -30,9 +30,6 @@ harfbuzz = ["harfbuzz_rs"]
 # Enable Markdown parsing
 markdown = ["pulldown-cmark"]
 
-# Use Generic Associated Types (experimental)
-gat = []
-
 # Serialization is optionally supported for some types:
 # serde
 

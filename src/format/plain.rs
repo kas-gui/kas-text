@@ -7,27 +7,18 @@
 
 use super::{EditableText, FontToken, FormattableText};
 use crate::Effect;
-#[cfg(not(feature = "gat"))]
-use crate::OwningVecIter;
 
 impl<'t> FormattableText for &'t str {
-    #[cfg(feature = "gat")]
-    type FontTokenIter<'a>
+    type FontTokenIter<'a> = std::iter::Empty<FontToken>
     where
-        Self: 'a,
-    = std::iter::Empty<FontToken>;
+        Self: 'a;
 
     fn as_str(&self) -> &str {
         self
     }
 
-    #[cfg(feature = "gat")]
     fn font_tokens<'a>(&'a self, _: f32) -> Self::FontTokenIter<'a> {
         std::iter::empty()
-    }
-    #[cfg(not(feature = "gat"))]
-    fn font_tokens(&self, _: f32) -> OwningVecIter<FontToken> {
-        OwningVecIter::new(Vec::new())
     }
 
     fn effect_tokens(&self) -> &[Effect<()>] {
@@ -36,20 +27,14 @@ impl<'t> FormattableText for &'t str {
 }
 
 impl FormattableText for String {
-    #[cfg(feature = "gat")]
     type FontTokenIter<'a> = std::iter::Empty<FontToken>;
 
     fn as_str(&self) -> &str {
         self
     }
 
-    #[cfg(feature = "gat")]
     fn font_tokens<'a>(&'a self, _: f32) -> Self::FontTokenIter<'a> {
         std::iter::empty()
-    }
-    #[cfg(not(feature = "gat"))]
-    fn font_tokens(&self, _: f32) -> OwningVecIter<FontToken> {
-        OwningVecIter::new(Vec::new())
     }
 
     fn effect_tokens(&self) -> &[Effect<()>] {
