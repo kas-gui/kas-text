@@ -103,7 +103,7 @@ impl<'a> FaceStore<'a> {
     ///
     /// The `path` is to be stored; its contents are already loaded in `data`.
     fn new(path: PathBuf, data: &'a [u8], index: u32) -> Result<Self, FontError> {
-        let face = Face::from_slice(data, index)?;
+        let face = Face::parse(data, index)?;
         #[cfg(all(not(feature = "harfbuzz_rs"), feature = "rustybuzz"))]
         let rustybuzz = rustybuzz::Face::from_face(face.clone()).ok_or(FontError::UnitsPerEm)?;
         Ok(FaceStore {
