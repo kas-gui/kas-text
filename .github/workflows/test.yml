@@ -40,8 +40,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [macos-latest, windows-latest]
-        # TODO: use stable once GATs reach stable
-        toolchain: [beta]
+        toolchain: [stable]
         include:
           - os: ubuntu-latest
             toolchain: "1.65.0"
