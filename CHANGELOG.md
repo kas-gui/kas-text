@@ -2,6 +2,14 @@
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] — 2022-12-13
+
+Stabilise support for Generic Associated Types (GATs). This requires Rust 1.65.0,
+removes the `gat` feature flag and affects the `FormattableText` trait. #75
+
+Bump dependency versions: `ttf-parser` v0.17.1, `rustybuzz` v0.6.0 (#76),
+`fontdb` v0.10.0 (#77).
+
 ## [0.5.0] — 2022-08-20
 
 Error handling (#65):
