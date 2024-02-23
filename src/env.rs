@@ -13,11 +13,12 @@ use crate::Vec2;
 /// An `Environment` can be default-constructed (without line-wrapping).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Environment {
-    /// Text direction
+    /// Base text direction
     ///
-    /// By default, text direction (LTR or RTL) is automatically detected with
-    /// full bi-directional text support (Unicode Technical Report #9).
+    /// Texts may be bi-directional as specified by Unicode Technical Report #9.
+    /// This value controls the base paragraph direction (TR9 HL1).
     pub direction: Direction,
+
     /// Line wrapping
     ///
     /// By default, this is true and long text lines are wrapped based on the
@@ -28,8 +29,8 @@ pub struct Environment {
     /// Alignment (`horiz`, `vert`)
     ///
     /// By default, horizontal alignment is left or right depending on the
-    /// text direction (see [`Self::direction`]), and vertical alignment is
-    /// to the top.
+    /// text direction (see [`Self::direction`]), and vertical alignment
+    /// is to the top.
     pub align: (Align, Align),
     /// Default font
     ///
@@ -126,22 +127,17 @@ pub enum Align {
 }
 
 /// Directionality of text
-///
-/// This can be used to force the text direction.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Ord, PartialOrd, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[repr(u8)]
 pub enum Direction {
-    /// Auto-detect with bi-directional support
+    /// Auto-detect direction
     #[default]
-    Bidi,
-    /// Auto-detect with bi-directional support, defaulting to right-to-left
-    BidiRtl,
-    /// Auto-detect, single line direction only
-    Single,
-    /// Force left-to-right text direction
-    Ltr,
-    /// Force right-to-left text direction
-    Rtl,
+    Auto = 2,
+    /// Left-to-right text
+    Ltr = 0,
+    /// Right-to-left text
+    Rtl = 1,
 }
 
 #[test]

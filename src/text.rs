@@ -378,7 +378,7 @@ pub trait TextApiExt: TextApi {
     /// Get the directionality of the first line
     fn text_is_rtl(&self) -> Result<bool, NotReady> {
         Ok(match self.display().line_is_rtl(0)? {
-            None => matches!(self.env().direction, Direction::BidiRtl | Direction::Rtl),
+            None => self.env().direction == Direction::Rtl,
             Some(is_rtl) => is_rtl,
         })
     }

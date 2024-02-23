@@ -12,7 +12,7 @@ use crate::conv::{to_u32, to_usize};
 use crate::fonts::{fonts, FontId, InvalidFontId};
 use crate::format::FormattableText;
 use crate::{shaper, Action, Direction, Range};
-use unicode_bidi::{BidiClass, BidiInfo, Level, LTR_LEVEL, RTL_LEVEL};
+use unicode_bidi::{BidiClass, BidiInfo, LTR_LEVEL, RTL_LEVEL};
 use xi_unicode::LineBreakIterator;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -113,33 +113,21 @@ impl TextDisplay {
         let fonts = fonts();
         let text = text.as_str();
 
-        let (bidi, default_para_level) = match direction {
-            Direction::Bidi => (true, None),
-            Direction::BidiRtl => (true, Some(RTL_LEVEL)),
-            Direction::Single => (false, None),
-            Direction::Ltr => (false, Some(LTR_LEVEL)),
-            Direction::Rtl => (false, Some(RTL_LEVEL)),
+        let default_para_level = match direction {
+            Direction::Auto => None,
+            Direction::Ltr => Some(LTR_LEVEL),
+            Direction::Rtl => Some(RTL_LEVEL),
         };
-        let level: Level;
-        let levels;
-        let classes;
-        if bidi || default_para_level.is_none() {
-            let info = BidiInfo::new(text, default_para_level);
-            levels = info.levels;
-            assert_eq!(text.len(), levels.len());
-            level = levels.first().cloned().unwrap_or(LTR_LEVEL);
-            classes = info.original_classes;
-        } else {
-            level = default_para_level.unwrap();
-            levels = vec![];
-            classes = vec![];
-        }
+        let info = BidiInfo::new(text, default_para_level);
+        let levels = info.levels;
+        assert_eq!(text.len(), levels.len());
+        let classes = info.original_classes;
 
         let mut input = shaper::Input {
             text,
             dpem,
             face_id: fonts.first_face_for(font_id)?,
-            level,
+            level: levels.first().cloned().unwrap_or(LTR_LEVEL),
         };
 
         let mut start = 0;
@@ -171,7 +159,7 @@ impl TextDisplay {
             }
 
             // Force end of current run?
-            let bidi_break = bidi && levels[pos] != input.level;
+            let bidi_break = levels[pos] != input.level;
 
             let mut fmt_break = false;
             if let Some(fmt) = next_fmt.as_ref() {
@@ -211,9 +199,7 @@ impl TextDisplay {
 
                 start = pos;
                 non_control_end = pos;
-                if bidi {
-                    input.level = levels[pos];
-                }
+                input.level = levels[pos];
                 breaks = Default::default();
             } else if is_break && !is_control {
                 // We do break runs when hitting control chars, but only when
@@ -263,7 +249,7 @@ impl TextDisplay {
             );
             match run.special {
                 RunSpecial::None => (),
-                RunSpecial::HardBreak => println!("HardBreak, "),
+                RunSpecial::HardBreak => print!("HardBreak, "),
                 RunSpecial::NoBreak => print!("NoBreak, "),
                 RunSpecial::HTab => print!("HTab, "),
             }
