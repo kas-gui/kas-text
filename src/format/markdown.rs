@@ -9,7 +9,7 @@ use super::{EditableText, FontToken, FormattableText};
 use crate::conv::to_u32;
 use crate::fonts::{self, FontId, FontSelector, Style, Weight};
 use crate::{Effect, EffectFlags};
-use pulldown_cmark::{Event, HeadingLevel, Tag};
+use pulldown_cmark::{Event, HeadingLevel, Tag, TagEnd};
 use std::fmt::Write;
 use std::iter::FusedIterator;
 use thiserror::Error;
@@ -228,7 +228,9 @@ fn parse(input: &str) -> Result<Markdown, Error> {
                 item.start = to_u32(text.len());
                 set_last(&item);
             }
-            Event::Html(_) => return Err(Error::NotSupported("embedded HTML")),
+            Event::Html(_) | Event::InlineHtml(_) => {
+                return Err(Error::NotSupported("embedded HTML"))
+            }
             Event::FootnoteReference(_) => return Err(Error::NotSupported("footnote")),
             Event::SoftBreak => state.soft_break(&mut text),
             Event::HardBreak => state.hard_break(&mut text),
@@ -357,7 +359,7 @@ impl StackItem {
                 state.start_block(text);
                 None
             }
-            Tag::Heading(level, _, _) => {
+            Tag::Heading { level, .. } => {
                 state.start_block(text);
                 self.start = to_u32(text.len());
                 with_clone(self, |item| {
@@ -378,6 +380,7 @@ impl StackItem {
                 with_clone(self, |item| item.sel.set_families(vec!["monospace".into()]))
                 // TODO: within a code block, the last \n should be suppressed?
             }
+            Tag::HtmlBlock => return Err(Error::NotSupported("embedded HTML")),
             Tag::List(start) => {
                 state.start_block(text);
                 self.list = start;
@@ -406,23 +409,24 @@ impl StackItem {
             Tag::Table(_) | Tag::TableHead | Tag::TableRow | Tag::TableCell => {
                 return Err(Error::NotSupported("table"))
             }
-            Tag::Link(..) => return Err(Error::NotSupported("link")),
-            Tag::Image(..) => return Err(Error::NotSupported("image")),
+            Tag::Link { .. } => return Err(Error::NotSupported("link")),
+            Tag::Image { .. } => return Err(Error::NotSupported("image")),
+            Tag::MetadataBlock(_) => return Err(Error::NotSupported("metadata block")),
         })
     }
     // returns true if stack must be popped
-    fn end_tag(&self, state: &mut State, tag: Tag) -> bool {
+    fn end_tag(&self, state: &mut State, tag: TagEnd) -> bool {
         match tag {
-            Tag::Paragraph | Tag::List(_) => {
+            TagEnd::Paragraph | TagEnd::List(_) => {
                 state.end_block();
                 false
             }
-            Tag::Heading(_, _, _) | Tag::CodeBlock(_) => {
+            TagEnd::Heading(_) | TagEnd::CodeBlock => {
                 state.end_block();
                 true
             }
-            Tag::Item => false,
-            Tag::Emphasis | Tag::Strong | Tag::Strikethrough => true,
+            TagEnd::Item => false,
+            TagEnd::Emphasis | TagEnd::Strong | TagEnd::Strikethrough => true,
             tag => unimplemented!("{:?}", tag),
         }
     }
