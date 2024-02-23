@@ -117,7 +117,7 @@ pub struct TextDisplay {
 #[test]
 fn size_of_elts() {
     use std::mem::size_of;
-    assert_eq!(size_of::<SmallVec<[u8; 0]>>(), 32);
+    assert_eq!(size_of::<SmallVec<[u8; 0]>>(), 24);
     assert_eq!(size_of::<shaper::GlyphRun>(), 128);
     assert_eq!(size_of::<RunPart>(), 24);
     assert_eq!(size_of::<Line>(), 24);
