@@ -2,6 +2,13 @@
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Update dependencies:
+
+-   Rust (MSRV): 1.70.0
+-   `fontdb`: 0.16.2
+
 ## [0.6.0] — 2022-12-13
 
 Stabilise support for Generic Associated Types (GATs). This requires Rust 1.65.0,

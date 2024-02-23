@@ -65,7 +65,7 @@ and [piet](https://crates.io/crates/piet) among others.
 MSRV
 ---
 
-The Minium Supported Rust Version is 1.65.0.
+The Minium Supported Rust Version is 1.70.0.
 
 
 Contributing
