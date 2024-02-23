@@ -327,7 +327,7 @@ pub trait TextApiExt: TextApi {
 
     /// Prepare text for display, failing fast if fonts are not loaded
     ///
-    /// This is identical to [`Self::prepare`] except that it will fail fast in
+    /// This is identical to [`TextApi::prepare`] except that it will fail fast in
     /// case no fonts have been loaded yet (see [`fonts::any_loaded`]).
     fn try_prepare(&mut self) -> Result<bool, InvalidFontId> {
         if !fonts::any_loaded() {
