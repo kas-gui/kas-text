@@ -8,7 +8,7 @@
 //! Many items are copied from font-kit to avoid any public dependency.
 
 use super::families;
-use fontdb::{FaceInfo, Source};
+use fontdb::{FaceInfo, Source, ID};
 pub use fontdb::{Stretch, Style, Weight};
 use log::{debug, info, trace, warn};
 #[cfg(feature = "serde")]
@@ -55,7 +55,7 @@ fn to_uppercase<'a>(c: Cow<'a, str>) -> Cow<'a, str> {
 pub struct Database {
     state: State,
     db: fontdb::Database,
-    families_upper: HashMap<String, Vec<usize>>,
+    families_upper: HashMap<String, Vec<ID>>,
     // contract: all keys and values are uppercase
     aliases: HashMap<Cow<'static, str>, Vec<Cow<'static, str>>>,
 }
@@ -148,8 +148,8 @@ impl Database {
             .get(family)
             .and_then(|list| list.iter().next())
             .map(|name| {
-                let index = families_upper.get(name.as_ref()).unwrap()[0];
-                db.faces()[index].family.clone()
+                let id = families_upper.get(name.as_ref()).unwrap()[0];
+                db.face(id).unwrap().families.first().unwrap().0.clone()
             })
     }
 
@@ -258,12 +258,16 @@ impl Database {
             info!("Found {} fonts", self.db.len());
 
             let families_upper = &mut self.families_upper;
-            for (i, face) in self.db.faces().iter().enumerate() {
+            for face in self.db.faces() {
                 trace!("Discovered: {}", DisplayFaceInfo(face));
-                families_upper
-                    .entry(face.family.to_uppercase())
-                    .or_default()
-                    .push(i);
+                // Use the first name, which according to docs is always en_US
+                // (unless missing from the font).
+                if let Some(family_name) = face.families.first().map(|pair| &pair.0) {
+                    families_upper
+                        .entry(family_name.to_uppercase())
+                        .or_default()
+                        .push(face.id);
+                }
             }
 
             for aliases in self.aliases.values_mut() {
@@ -434,9 +438,9 @@ impl<'a> FontSelector<'a> {
         let mut candidates = Vec::new();
         // Step 3: find any matching font faces, case-insensitively
         for family in families {
-            if let Some(indices) = db.families_upper.get(family.as_ref()) {
-                for index in indices {
-                    let candidate = &db.db.faces()[*index];
+            if let Some(ids) = db.families_upper.get(family.as_ref()) {
+                for id in ids {
+                    let candidate = db.db.face(*id).unwrap();
                     trace!("candidate: {}", DisplayFaceInfo(candidate));
                     candidates.push(candidate);
                 }
@@ -591,6 +595,7 @@ impl<'a> FontSelector<'a> {
 struct DisplayFaceInfo<'a>(&'a FaceInfo);
 impl<'a> fmt::Display for DisplayFaceInfo<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        let family = &self.0.families.first().unwrap().0;
         let path = match &self.0.source {
             Source::Binary(_) => None,
             Source::File(path) => Some(path.display()),
@@ -599,7 +604,7 @@ impl<'a> fmt::Display for DisplayFaceInfo<'a> {
         write!(
             f,
             "family=\"{}\", source={:?},{}",
-            self.0.family, path, self.0.index
+            family, path, self.0.index
         )
     }
 }
