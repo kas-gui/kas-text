@@ -96,6 +96,24 @@ impl<T: FormattableText> Text<T> {
     }
 }
 
+impl<T: FormattableText + ?Sized> Text<T> {
+    #[inline]
+    fn prepare_runs(&mut self) -> Result<(), InvalidFontId> {
+        match self.display.required_action() {
+            Action::All => self.display.prepare_runs(
+                &self.text,
+                self.env.direction,
+                self.env.font_id,
+                self.env.dpem,
+            )?,
+            Action::Resize => self.display.resize_runs(&self.text, self.env.dpem),
+            _ => (),
+        }
+
+        Ok(())
+    }
+}
+
 /// Trait over a sub-set of [`Text`] functionality
 ///
 /// This allows dynamic dispatch over [`Text`]'s type parameters.
@@ -133,17 +151,12 @@ pub trait TextApi {
     /// Read the [`TextDisplay`]
     fn display(&self) -> &TextDisplay;
 
-    /// Prepare text runs
-    ///
-    /// Wraps [`TextDisplay::prepare_runs`], passing parameters from the
-    /// environment state.
-    fn prepare_runs(&mut self) -> Result<(), InvalidFontId>;
-
     /// Measure required width, up to some `limit`
     ///
-    /// This calls [`Self::prepare_runs`] where necessary, but does not fully
-    /// prepare text for display. It is a significantly faster way to calculate
-    /// the required line length than by fully preparing text.
+    /// This method partially prepares the [`TextDisplay`] as required.
+    /// This method uses a heavily reduced variant of the full line-wrapping
+    /// algorithm, allowing fast calculation of the width required by short
+    /// texts up to `limit`.
     ///
     /// The return value is at most `limit` and is unaffected by alignment and
     /// wrap configuration of [`Environment`].
@@ -151,8 +164,8 @@ pub trait TextApi {
 
     /// Measure required vertical height, wrapping as configured
     ///
-    /// This partially prepares text for display. Remaining prepartion should be
-    /// fast.
+    /// This method performs most required preparation steps of the
+    /// [`TextDisplay`]. Remaining prepartion should be fast.
     fn measure_height(&mut self) -> Result<f32, InvalidFontId>;
 
     /// Prepare text for display, as necessary
@@ -218,20 +231,8 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
         self.env = env;
     }
 
-    #[inline]
-    fn prepare_runs(&mut self) -> Result<(), InvalidFontId> {
-        self.display.prepare_runs(
-            &self.text,
-            self.env.direction,
-            self.env.font_id,
-            self.env.dpem,
-        )
-    }
-
     fn measure_width(&mut self, limit: f32) -> Result<f32, InvalidFontId> {
-        if self.display.required_action() > Action::Wrap {
-            self.prepare_runs()?;
-        }
+        self.prepare_runs()?;
 
         Ok(self.display.measure_width(limit).unwrap())
     }
@@ -243,11 +244,9 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
             self.display.require_action(Action::VAlign);
         }
 
-        let action = self.display.required_action();
-        if action > Action::Wrap {
-            self.prepare_runs()?;
-        }
+        self.prepare_runs()?;
 
+        let action = self.display.required_action();
         let height = if action >= Action::Wrap {
             self.display
                 .prepare_lines(self.env.bounds, self.env.wrap, self.env.align)
