@@ -121,6 +121,7 @@ impl<'a> FaceStore<'a> {
                 let settings = fontdue::FontSettings {
                     collection_index: index,
                     scale: 40.0, // TODO: max expected font size in dpem
+                    load_substitutions: true,
                 };
                 fontdue::Font::from_bytes(data, settings)?
             },
