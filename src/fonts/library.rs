@@ -22,9 +22,6 @@ enum FontError {
     NotFound,
     #[error("font load error")]
     TtfParser(#[from] ttf_parser::FaceParsingError),
-    #[cfg(all(not(feature = "harfbuzz_rs"), feature = "rustybuzz"))]
-    #[error("invalid units per EM")]
-    UnitsPerEm,
     #[cfg(feature = "ab_glyph")]
     #[error("font load error")]
     AbGlyph(#[from] ab_glyph::InvalidFont),
@@ -105,7 +102,7 @@ impl<'a> FaceStore<'a> {
     fn new(path: PathBuf, data: &'a [u8], index: u32) -> Result<Self, FontError> {
         let face = Face::parse(data, index)?;
         #[cfg(all(not(feature = "harfbuzz_rs"), feature = "rustybuzz"))]
-        let rustybuzz = rustybuzz::Face::from_face(face.clone()).ok_or(FontError::UnitsPerEm)?;
+        let rustybuzz = rustybuzz::Face::from_face(face.clone());
         Ok(FaceStore {
             path,
             index,
