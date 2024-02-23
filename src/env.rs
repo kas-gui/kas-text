@@ -104,13 +104,14 @@ impl Environment {
 /// Alignment of contents
 ///
 /// Note that alignment information is often passed as a `(horiz, vert)` pair.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Ord, PartialOrd, Hash)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Ord, PartialOrd, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Align {
     /// Default alignment
     ///
     /// This is context dependent. For example, for Left-To-Right text it means
     /// `TL`; for things which want to stretch it may mean `Stretch`.
+    #[default]
     Default,
     /// Align to top or left
     TL,
@@ -124,19 +125,14 @@ pub enum Align {
     Stretch,
 }
 
-impl Default for Align {
-    fn default() -> Self {
-        Align::Default
-    }
-}
-
 /// Directionality of text
 ///
 /// This can be used to force the text direction.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Ord, PartialOrd, Hash)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Ord, PartialOrd, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Direction {
-    /// Auto-detect with bi-directional support (default)
+    /// Auto-detect with bi-directional support
+    #[default]
     Bidi,
     /// Auto-detect with bi-directional support, defaulting to right-to-left
     BidiRtl,
@@ -146,12 +142,6 @@ pub enum Direction {
     Ltr,
     /// Force right-to-left text direction
     Rtl,
-}
-
-impl Default for Direction {
-    fn default() -> Self {
-        Direction::Bidi
-    }
 }
 
 #[test]

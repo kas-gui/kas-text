@@ -127,7 +127,7 @@ impl TextDisplay {
             let info = BidiInfo::new(text, default_para_level);
             levels = info.levels;
             assert_eq!(text.len(), levels.len());
-            level = levels.get(0).cloned().unwrap_or(LTR_LEVEL);
+            level = levels.first().cloned().unwrap_or(LTR_LEVEL);
             classes = info.original_classes;
         } else {
             level = default_para_level.unwrap();

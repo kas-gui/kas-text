@@ -324,7 +324,6 @@ fn shape_harfbuzz(
     level: Level,
     breaks: &mut [GlyphBreak],
 ) -> (Vec<Glyph>, f32, f32) {
-    let dpem = dpem;
     let mut font = fonts().get_harfbuzz(face_id);
 
     // ppem affects hinting but does not scale layout, so this has little effect:
@@ -412,7 +411,6 @@ fn shape_rustybuzz(
     level: Level,
     breaks: &mut [GlyphBreak],
 ) -> (Vec<Glyph>, f32, f32) {
-    let dpem = dpem;
     let fonts = fonts();
     let dpu = fonts.get_face(face_id).dpu(dpem);
     let face = fonts.get_rustybuzz(face_id);
