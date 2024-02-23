@@ -45,7 +45,7 @@ pub enum Error {
 /// -   Links
 /// -   Tables
 /// -   Task lists
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Markdown {
     text: String,
     fmt: Vec<Fmt>,
