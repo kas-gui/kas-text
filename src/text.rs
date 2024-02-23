@@ -5,8 +5,6 @@
 
 //! Text object
 
-use std::convert::{AsMut, AsRef};
-
 use crate::display::{Effect, MarkerPosIter, NotReady, TextDisplay};
 use crate::fonts::{self, FaceId, InvalidFontId};
 use crate::format::{EditableText, FormattableText};
