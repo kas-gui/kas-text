@@ -43,7 +43,7 @@ impl<X> Effect<X> {
 
 bitflags::bitflags! {
     /// Text effects
-    #[derive(Default)]
+    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
     #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
     pub struct EffectFlags: u32 {
         /// Glyph is underlined

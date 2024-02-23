@@ -248,8 +248,7 @@ fn raster_ab(config: &Config, desc: SpriteDescriptor) -> Option<Sprite> {
         return None; // nothing to draw
     }
 
-    let mut data = Vec::new();
-    data.resize(usize::conv(size.0 * size.1), 0u8);
+    let mut data = vec![0; usize::conv(size.0 * size.1)];
     outline.draw(|x, y, c| {
         // Convert to u8 with saturating conversion, rounding down:
         data[usize::conv((y * size.0) + x)] = (c * 256.0) as u8;
