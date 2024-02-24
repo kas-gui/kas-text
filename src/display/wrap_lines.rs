@@ -11,7 +11,7 @@ use crate::fonts::{fonts, FontLibrary};
 use crate::shaper::GlyphRun;
 use crate::{Action, Align, Range, Vec2};
 use smallvec::SmallVec;
-use unicode_bidi::Level;
+use unicode_bidi::{Level, LTR_LEVEL};
 
 #[derive(Clone, Debug)]
 pub struct RunPart {
@@ -103,11 +103,6 @@ impl TextDisplay {
         let justify = align.0 == Align::Stretch;
         let mut parts = Vec::with_capacity(16);
 
-        // Almost everything in "this" method depends on the line direction, so
-        // we determine that then call the appropriate implementation.
-        let mut level = unicode_bidi::LTR_LEVEL;
-        let mut last_hard_break = true;
-
         // Tuples: (index, part, num_parts)
         let mut start = (0, 0, 0);
         let mut end = start;
@@ -123,11 +118,6 @@ impl TextDisplay {
             let hard_break = run.special == RunSpecial::HardBreak;
             let allow_break = run.special != RunSpecial::NoBreak;
             let tab = run.special == RunSpecial::HTab;
-
-            if last_hard_break {
-                level = run.level;
-                last_hard_break = false;
-            }
 
             let mut last_part = start.1;
             let mut part = last_part + 1;
@@ -153,7 +143,7 @@ impl TextDisplay {
                 if wrap && line_len > width_bound && end.2 > 0 {
                     // Add up to last valid break point then wrap and reset
                     let slice = &mut parts[0..end.2];
-                    adder.add_line(fonts, level, &self.runs, slice, true);
+                    adder.add_line(fonts, &self.runs, slice, true);
 
                     end.2 = 0;
                     start = end;
@@ -210,7 +200,7 @@ impl TextDisplay {
                 if parts.len() > 0 {
                     // It should not be possible for a line to end with a no-break, so:
                     debug_assert_eq!(parts.len(), end.2);
-                    adder.add_line(fonts, level, &self.runs, &mut parts, false);
+                    adder.add_line(fonts, &self.runs, &mut parts, false);
                 }
 
                 start = (index, 0, 0);
@@ -219,7 +209,6 @@ impl TextDisplay {
 
                 caret = 0.0;
                 index = start.0;
-                last_hard_break = true;
             }
         }
 
@@ -298,19 +287,18 @@ impl LineAdder {
     fn add_line(
         &mut self,
         fonts: &FontLibrary,
-        line_level: Level,
         runs: &[GlyphRun],
         parts: &mut [PartInfo],
         is_wrap: bool,
     ) {
         assert!(parts.len() > 0);
         let line_start = self.runs.len();
-        let line_is_rtl = line_level.is_rtl();
 
         // Iterate runs to determine max ascent, level, etc.
         let mut last_run = u32::MAX;
         let (mut ascent, mut descent, mut line_gap) = (0f32, 0f32, 0f32);
-        let mut max_level = line_level;
+        let mut line_level = Level::new(Level::max_implicit_depth()).unwrap();
+        let mut max_level = LTR_LEVEL;
         for part in parts.iter() {
             if last_run == part.run {
                 continue;
@@ -323,9 +311,10 @@ impl LineAdder {
             descent = descent.min(scale_font.descent());
             line_gap = line_gap.max(scale_font.line_gap());
 
-            debug_assert!(run.level >= line_level);
+            line_level = line_level.min(run.level);
             max_level = max_level.max(run.level);
         }
+        let line_is_rtl = line_level.is_rtl();
 
         if !self.lines.is_empty() {
             self.vcaret += line_gap.max(self.line_gap);
