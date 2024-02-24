@@ -82,7 +82,7 @@ impl TextDisplay {
         mut font_id: FontId,
         mut dpem: f32,
     ) -> Result<(), InvalidFontId> {
-        assert_eq!(self.action, Action::All);
+        assert_eq!(self.action, Action::Break);
 
         // This method constructs a list of "hard lines" (the initial line and any
         // caused by a hard break), each composed of a list of "level runs" (the

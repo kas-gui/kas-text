@@ -5,10 +5,10 @@
 
 //! Text prepared for display
 
-use smallvec::SmallVec;
-
 use crate::conv::to_usize;
+use crate::fonts::InvalidFontId;
 use crate::{shaper, Action, Direction, Vec2};
+use smallvec::SmallVec;
 
 mod glyph_pos;
 mod text_runs;
@@ -127,7 +127,7 @@ impl Default for TextDisplay {
     fn default() -> Self {
         TextDisplay {
             runs: Default::default(),
-            action: Action::All, // highest value
+            action: Action::Configure, // highest value
             wrapped_runs: Default::default(),
             lines: Default::default(),
             #[cfg(feature = "num_glyphs")]
@@ -153,6 +153,15 @@ impl TextDisplay {
     #[inline]
     pub fn require_action(&mut self, action: Action) {
         self.action = self.action.max(action);
+    }
+
+    /// Configure text
+    ///
+    /// Text objects must be configured before used.
+    #[inline]
+    pub fn configure(&mut self) -> Result<(), InvalidFontId> {
+        self.action = self.action.min(Action::Break);
+        Ok(())
     }
 
     /// Get the number of lines (after wrapping)

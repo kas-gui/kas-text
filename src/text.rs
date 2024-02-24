@@ -6,9 +6,10 @@
 //! Text object
 
 use crate::display::{Effect, MarkerPosIter, NotReady, TextDisplay};
-use crate::fonts::{self, FaceId, InvalidFontId};
+use crate::fonts::{FaceId, InvalidFontId};
 use crate::format::{EditableText, FormattableText};
 use crate::{Action, Align, Environment, Glyph, Vec2};
+use log::warn;
 use std::ops::{Deref, DerefMut};
 
 /// Text, prepared for display in a given environment
@@ -85,45 +86,51 @@ impl<T: FormattableText> Text<T> {
     pub fn set_text(&mut self, text: T) {
         /* TODO: enable if we have a way of testing equality (a hash?)
         if self.text == text {
-            return self.action.into(); // no change
+            return; // no change
         }
          */
 
         self.text = text;
-        self.display.require_action(Action::All);
+        self.display.require_action(Action::Break);
     }
 
     /// Set the text and prepare (if any fonts are loaded)
     ///
     /// Sets `text` regardless of other outcomes.
     ///
-    /// If fonts are not loaded, this fails fast (see [`fonts::any_loaded`]),
-    /// unlike other preparation methods.
+    /// If the text has not yet been configured, this fails with `Err(NotReady)`
+    /// after setting the text. This error can be ignored when the `Text` object
+    /// is scheduled to be configured and prepared later.
     ///
     /// Returns true if at least some action is performed *and* the text exceeds
     /// the allocated bounds ([`Environment::bounds`]).
     #[inline]
-    pub fn set_and_try_prepare(&mut self, text: T) -> Result<bool, InvalidFontId> {
+    pub fn set_and_prepare(&mut self, text: T) -> Result<bool, NotReady> {
         self.set_text(text);
-        self.try_prepare()
+        self.prepare()
     }
 }
 
 impl<T: FormattableText + ?Sized> Text<T> {
     #[inline]
-    fn prepare_runs(&mut self) -> Result<(), InvalidFontId> {
+    fn prepare_runs(&mut self) -> Result<(), NotReady> {
         match self.display.required_action() {
-            Action::All => self.display.prepare_runs(
-                &self.text,
-                self.env.direction,
-                self.env.font_id,
-                self.env.dpem,
-            )?,
-            Action::Resize => self.display.resize_runs(&self.text, self.env.dpem),
-            _ => (),
+            Action::Configure => Err(NotReady),
+            Action::Break => self
+                .display
+                .prepare_runs(
+                    &self.text,
+                    self.env.direction,
+                    self.env.font_id,
+                    self.env.dpem,
+                )
+                .map_err(|_| {
+                    warn!("prepare_runs: invalid font Id (possibly not ready)");
+                    NotReady
+                }),
+            Action::Resize => Ok(self.display.resize_runs(&self.text, self.env.dpem)),
+            _ => Ok(()),
         }
-
-        Ok(())
     }
 }
 
@@ -164,7 +171,14 @@ pub trait TextApi {
     /// Read the [`TextDisplay`]
     fn display(&self) -> &TextDisplay;
 
+    /// Configure text
+    ///
+    /// Text objects must be configured before used.
+    fn configure(&mut self) -> Result<(), InvalidFontId>;
+
     /// Measure required width, up to some `max_width`
+    ///
+    /// [`configure`][Self::configure] must be called before this method.
     ///
     /// This method partially prepares the [`TextDisplay`] as required.
     ///
@@ -173,22 +187,26 @@ pub trait TextApi {
     /// exceeds `max_width`, the algorithm stops early, returning `max_width`.
     ///
     /// The return value is unaffected by alignment and wrap configuration.
-    fn measure_width(&mut self, max_width: f32) -> Result<f32, InvalidFontId>;
+    fn measure_width(&mut self, max_width: f32) -> Result<f32, NotReady>;
 
     /// Measure required vertical height, wrapping as configured
     ///
+    /// [`configure`][Self::configure] must be called before this method.
+    ///
     /// This method performs most required preparation steps of the
     /// [`TextDisplay`]. Remaining prepartion should be fast.
-    fn measure_height(&mut self) -> Result<f32, InvalidFontId>;
+    fn measure_height(&mut self) -> Result<f32, NotReady>;
 
     /// Prepare text for display, as necessary
+    ///
+    /// [`configure`][Self::configure] must be called before this method.
     ///
     /// Does all preparation steps necessary in order to display or query the
     /// layout of this text.
     ///
     /// Returns true if at least some action is performed *and* the text exceeds
     /// the allocated bounds ([`Environment::bounds`]).
-    fn prepare(&mut self) -> Result<bool, InvalidFontId>;
+    fn prepare(&mut self) -> Result<bool, NotReady>;
 
     /// Get the sequence of effect tokens
     ///
@@ -226,7 +244,7 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
     fn set_env(&mut self, env: Environment) {
         let action;
         if env.font_id != self.env.font_id || env.direction != self.env.direction {
-            action = Action::All;
+            action = Action::Break;
         } else if env.dpem != self.env.dpem {
             action = Action::Resize;
         } else if env.bounds.0 != self.env.bounds.0
@@ -244,13 +262,18 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
         self.env = env;
     }
 
-    fn measure_width(&mut self, max_width: f32) -> Result<f32, InvalidFontId> {
+    #[inline]
+    fn configure(&mut self) -> Result<(), InvalidFontId> {
+        self.display.configure()
+    }
+
+    fn measure_width(&mut self, max_width: f32) -> Result<f32, NotReady> {
         self.prepare_runs()?;
 
         Ok(self.display.measure_width(max_width).unwrap())
     }
 
-    fn measure_height(&mut self) -> Result<f32, InvalidFontId> {
+    fn measure_height(&mut self) -> Result<f32, NotReady> {
         let v_align = self.env.align.1;
         if v_align != Align::TL {
             self.env.align.1 = Align::TL;
@@ -283,7 +306,7 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
     }
 
     #[inline]
-    fn prepare(&mut self) -> Result<bool, InvalidFontId> {
+    fn prepare(&mut self) -> Result<bool, NotReady> {
         self.prepare_runs()?;
 
         let action = self.display.required_action();
@@ -323,19 +346,8 @@ pub trait TextApiExt: TextApi {
     ///
     /// Returns true if at least some action is performed *and* the text exceeds
     /// the allocated bounds ([`Environment::bounds`]).
-    fn update_env(&mut self, env: Environment) -> Result<bool, InvalidFontId> {
+    fn update_env(&mut self, env: Environment) -> Result<bool, NotReady> {
         self.set_env(env);
-        self.prepare()
-    }
-
-    /// Prepare text for display, failing fast if fonts are not loaded
-    ///
-    /// This is identical to [`TextApi::prepare`] except that it will fail fast in
-    /// case no fonts have been loaded yet (see [`fonts::any_loaded`]).
-    fn try_prepare(&mut self) -> Result<bool, InvalidFontId> {
-        if !fonts::any_loaded() {
-            return Err(InvalidFontId);
-        }
         self.prepare()
     }
 
@@ -515,25 +527,25 @@ impl<T: EditableText + ?Sized> EditableTextApi for Text<T> {
     #[inline]
     fn insert_char(&mut self, index: usize, c: char) {
         self.text.insert_char(index, c);
-        self.display.require_action(Action::All);
+        self.display.require_action(Action::Break);
     }
 
     #[inline]
     fn replace_range(&mut self, range: std::ops::Range<usize>, replace_with: &str) {
         self.text.replace_range(range, replace_with);
-        self.display.require_action(Action::All);
+        self.display.require_action(Action::Break);
     }
 
     #[inline]
     fn set_string(&mut self, string: String) {
         self.text.set_string(string);
-        self.display.require_action(Action::All);
+        self.display.require_action(Action::Break);
     }
 
     #[inline]
     fn swap_string(&mut self, string: &mut String) {
         self.text.swap_string(string);
-        self.display.require_action(Action::All);
+        self.display.require_action(Action::Break);
     }
 }
 

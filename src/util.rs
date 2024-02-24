@@ -17,7 +17,9 @@ pub enum Action {
     /// Resize text, and above
     Resize,
     /// Break text into runs, associate fonts, and above
-    All,
+    Break,
+    /// Configure text
+    Configure,
 }
 
 impl Action {
