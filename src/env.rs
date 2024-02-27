@@ -12,13 +12,6 @@ use crate::Vec2;
 /// An `Environment` can be default-constructed (without line-wrapping).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Environment {
-    /// Line wrapping
-    ///
-    /// By default, this is true and long text lines are wrapped based on the
-    /// width bounds. If set to false, lines are not wrapped at the width
-    /// boundary, but explicit line-breaks such as `\n` still result in new
-    /// lines.
-    pub wrap: bool,
     /// Alignment (`horiz`, `vert`)
     ///
     /// By default, horizontal alignment is left or right depending on the
@@ -37,7 +30,6 @@ pub struct Environment {
 impl Default for Environment {
     fn default() -> Self {
         Environment {
-            wrap: true,
             bounds: Vec2::INFINITY,
             align: Default::default(),
         }

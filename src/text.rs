@@ -24,6 +24,7 @@ pub struct Text<T: FormattableText + ?Sized> {
     font_id: FontId,
     dpem: f32,
     direction: Direction,
+    wrap: bool,
     display: TextDisplay,
     text: T,
 }
@@ -47,6 +48,7 @@ impl<T: FormattableText> Text<T> {
             font_id: FontId::default(),
             dpem: 16.0,
             direction: Direction::default(),
+            wrap: true,
             text,
             display: Default::default(),
         }
@@ -207,6 +209,29 @@ pub trait TextApi {
     /// It is necessary to [`prepare`][Self::prepare] the text after calling this.
     fn set_direction(&mut self, direction: Direction);
 
+    /// Get the text wrapping mode
+    fn get_wrap(&self) -> bool;
+
+    /// Enable or disable line wrapping
+    ///
+    /// By default, this is true and long text lines are wrapped based on the
+    /// width bounds. If set to false, lines are not wrapped at the width
+    /// boundary, but explicit line-breaks such as `\n` still result in new
+    /// lines.
+    ///
+    /// It is necessary to [`prepare`][Self::prepare] the text after calling this.
+    fn set_wrap(&mut self, wrap: bool);
+
+    /// Set font properties
+    ///
+    /// This has the same effect as calling the following functions separately:
+    ///
+    /// -   [`Self::set_direction`]
+    /// -   [`Self::set_font`]
+    /// -   [`Self::set_font_size`]
+    /// -   [`Self::set_wrap`]
+    fn set_font_properties(&mut self, direction: Direction, font_id: FontId, dpem: f32, wrap: bool);
+
     /// Read the [`TextDisplay`]
     fn display(&self) -> &TextDisplay;
 
@@ -282,10 +307,7 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
     #[inline]
     fn set_env(&mut self, env: Environment) {
         let action;
-        if env.bounds.0 != self.env.bounds.0
-            || env.align.0 != self.env.align.0
-            || env.wrap != self.env.wrap
-        {
+        if env.bounds.0 != self.env.bounds.0 || env.align.0 != self.env.align.0 {
             action = Action::Wrap;
         } else if env.bounds.1 != self.env.bounds.1 || env.align.1 != self.env.align.1 {
             action = Action::VAlign;
@@ -337,6 +359,32 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
     }
 
     #[inline]
+    fn get_wrap(&self) -> bool {
+        self.wrap
+    }
+
+    #[inline]
+    fn set_wrap(&mut self, wrap: bool) {
+        if wrap != self.wrap {
+            self.wrap = wrap;
+            self.require_action(Action::Wrap);
+        }
+    }
+
+    fn set_font_properties(
+        &mut self,
+        direction: Direction,
+        font_id: FontId,
+        dpem: f32,
+        wrap: bool,
+    ) {
+        self.set_font(font_id);
+        self.set_font_size(dpem);
+        self.set_direction(direction);
+        self.set_wrap(wrap);
+    }
+
+    #[inline]
     fn configure(&mut self) -> Result<(), InvalidFontId> {
         // Validate default_font_id
         let _ = fonts().first_face_for(self.font_id)?;
@@ -362,7 +410,7 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
         let action = self.display.required_action();
         let height = if action >= Action::Wrap {
             self.display
-                .prepare_lines(self.env.bounds, self.env.wrap, self.env.align)
+                .prepare_lines(self.env.bounds, self.wrap, self.env.align)
                 .unwrap()
                 .1
         } else if action == Action::VAlign {
@@ -389,7 +437,7 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
         let action = self.display.required_action();
         let bound = if action == Action::Wrap {
             self.display
-                .prepare_lines(self.env.bounds, self.env.wrap, self.env.align)
+                .prepare_lines(self.env.bounds, self.wrap, self.env.align)
                 .unwrap()
         } else if action == Action::VAlign {
             self.display
