@@ -22,6 +22,7 @@ use std::ops::{Deref, DerefMut};
 pub struct Text<T: FormattableText + ?Sized> {
     env: Environment,
     font_id: FontId,
+    dpem: f32,
     display: TextDisplay,
     text: T,
 }
@@ -43,6 +44,7 @@ impl<T: FormattableText> Text<T> {
         Text {
             env,
             font_id: FontId::default(),
+            dpem: 16.0,
             text,
             display: Default::default(),
         }
@@ -123,12 +125,12 @@ impl<T: FormattableText + ?Sized> Text<T> {
             Action::Configure => Err(NotReady),
             Action::Break => self
                 .display
-                .prepare_runs(&self.text, self.env.direction, self.font_id, self.env.dpem)
+                .prepare_runs(&self.text, self.env.direction, self.font_id, self.dpem)
                 .map_err(|_| {
                     debug_assert!(false, "font_id should be validated by configure");
                     NotReady
                 }),
-            Action::Resize => Ok(self.display.resize_runs(&self.text, self.env.dpem)),
+            Action::Resize => Ok(self.display.resize_runs(&self.text, self.dpem)),
             _ => Ok(()),
         }
     }
@@ -178,6 +180,22 @@ pub trait TextApi {
     ///
     /// It is necessary to [`prepare`][Self::prepare] the text after calling this.
     fn set_font(&mut self, font_id: FontId);
+
+    /// Get the default font size (pixels)
+    fn get_font_size(&self) -> f32;
+
+    /// Set the default font size (pixels)
+    ///
+    /// This is a scaling factor used to convert font sizes, with units
+    /// `pixels/Em`. Equivalently, this is the line-height in pixels.
+    /// See [`crate::fonts`] documentation.
+    ///
+    /// To calculate this from text size in Points, use `dpem = dpp * pt_size`
+    /// where the dots-per-point is usually `dpp = scale_factor * 96.0 / 72.0`
+    /// on PC platforms, or `dpp = 1` on MacOS (or 2 for retina displays).
+    ///
+    /// It is necessary to [`prepare`][Self::prepare] the text after calling this.
+    fn set_font_size(&mut self, dpem: f32);
 
     /// Read the [`TextDisplay`]
     fn display(&self) -> &TextDisplay;
@@ -256,8 +274,6 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
         let action;
         if env.direction != self.env.direction {
             action = Action::Break;
-        } else if env.dpem != self.env.dpem {
-            action = Action::Resize;
         } else if env.bounds.0 != self.env.bounds.0
             || env.align.0 != self.env.align.0
             || env.wrap != self.env.wrap
@@ -283,6 +299,19 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
         if font_id != self.font_id {
             self.font_id = font_id;
             self.require_action(Action::Break);
+        }
+    }
+
+    #[inline]
+    fn get_font_size(&self) -> f32 {
+        self.dpem
+    }
+
+    #[inline]
+    fn set_font_size(&mut self, dpem: f32) {
+        if dpem != self.dpem {
+            self.dpem = dpem;
+            self.require_action(Action::Resize);
         }
     }
 
@@ -364,6 +393,35 @@ pub trait TextApiExt: TextApi {
     #[inline]
     fn is_prepared(&self) -> bool {
         self.display().required_action().is_ready()
+    }
+
+    /// Set font size
+    ///
+    /// This is an alternative to [`TextApi::set_font_size`]. It is assumed
+    /// that 72 Points = 1 Inch and the base screen resolution is 96 DPI.
+    /// (Note: MacOS uses a different definition where 1 Point = 1 Pixel.)
+    fn set_font_size_pt(&mut self, pt_size: f32, scale_factor: f32) {
+        self.set_font_size(pt_size * scale_factor * (96.0 / 72.0));
+    }
+
+    /// Returns the height of horizontal text
+    ///
+    /// Returns an error if called before [`configure`][TextApi::configure].
+    ///
+    /// This depends on the font and font size, but is independent of the text.
+    #[inline]
+    fn line_height(&self) -> Result<f32, NotReady> {
+        if self.display().required_action() >= Action::Configure {
+            return Err(NotReady);
+        }
+
+        fonts()
+            .get_first_face(self.get_font())
+            .map(|face| face.height(self.get_font_size()))
+            .map_err(|_| {
+                debug_assert!(false, "font_id should be validated by configure");
+                NotReady
+            })
     }
 
     /// Update the environment and do full preparation

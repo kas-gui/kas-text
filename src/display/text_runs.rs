@@ -34,7 +34,6 @@ impl TextDisplay {
     ///
     /// Prerequisites: prepared runs: requires action is no greater than `Action::Wrap`.
     /// Post-requirements: prepare lines (requires action `Action::Wrap`).  
-    /// Parameters: see [`crate::Environment`] documentation.
     pub fn resize_runs<F: FormattableText + ?Sized>(&mut self, text: &F, dpem: f32) {
         assert_eq!(self.action, Action::Resize);
         self.action = Action::Wrap;
@@ -75,8 +74,6 @@ impl TextDisplay {
     ///
     /// This is the first step of preparation: breaking text into runs according
     /// to font properties, bidi-levels and line-wrap points.
-    ///
-    /// Parameters: see [`crate::Environment`] documentation.
     pub fn prepare_runs<F: FormattableText + ?Sized>(
         &mut self,
         text: &F,
