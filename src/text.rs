@@ -6,10 +6,9 @@
 //! Text object
 
 use crate::display::{Effect, MarkerPosIter, NotReady, TextDisplay};
-use crate::fonts::{FaceId, InvalidFontId};
+use crate::fonts::{fonts, FaceId, FontId, InvalidFontId};
 use crate::format::{EditableText, FormattableText};
 use crate::{Action, Align, Environment, Glyph, Vec2};
-use log::warn;
 use std::ops::{Deref, DerefMut};
 
 /// Text, prepared for display in a given environment
@@ -22,6 +21,7 @@ use std::ops::{Deref, DerefMut};
 #[derive(Clone, Debug, Default)]
 pub struct Text<T: FormattableText + ?Sized> {
     env: Environment,
+    font_id: FontId,
     display: TextDisplay,
     text: T,
 }
@@ -42,6 +42,7 @@ impl<T: FormattableText> Text<T> {
     pub fn new_env(env: Environment, text: T) -> Self {
         Text {
             env,
+            font_id: FontId::default(),
             text,
             display: Default::default(),
         }
@@ -122,14 +123,9 @@ impl<T: FormattableText + ?Sized> Text<T> {
             Action::Configure => Err(NotReady),
             Action::Break => self
                 .display
-                .prepare_runs(
-                    &self.text,
-                    self.env.direction,
-                    self.env.font_id,
-                    self.env.dpem,
-                )
+                .prepare_runs(&self.text, self.env.direction, self.font_id, self.env.dpem)
                 .map_err(|_| {
-                    warn!("prepare_runs: invalid font Id (possibly not ready)");
+                    debug_assert!(false, "font_id should be validated by configure");
                     NotReady
                 }),
             Action::Resize => Ok(self.display.resize_runs(&self.text, self.env.dpem)),
@@ -171,6 +167,17 @@ pub trait TextApi {
     /// Call [`TextApiExt::update_env`] instead to perform such actions
     /// with a single method call.
     fn set_env(&mut self, env: Environment);
+
+    /// Get the default font
+    fn get_font(&self) -> FontId;
+
+    /// Set the default [`FontId`]
+    ///
+    /// This `font_id` is used by all unformatted texts and by any formatted
+    /// texts which don't immediately set formatting.
+    ///
+    /// It is necessary to [`prepare`][Self::prepare] the text after calling this.
+    fn set_font(&mut self, font_id: FontId);
 
     /// Read the [`TextDisplay`]
     fn display(&self) -> &TextDisplay;
@@ -247,7 +254,7 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
     #[inline]
     fn set_env(&mut self, env: Environment) {
         let action;
-        if env.font_id != self.env.font_id || env.direction != self.env.direction {
+        if env.direction != self.env.direction {
             action = Action::Break;
         } else if env.dpem != self.env.dpem {
             action = Action::Resize;
@@ -267,7 +274,23 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
     }
 
     #[inline]
+    fn get_font(&self) -> FontId {
+        self.font_id
+    }
+
+    #[inline]
+    fn set_font(&mut self, font_id: FontId) {
+        if font_id != self.font_id {
+            self.font_id = font_id;
+            self.require_action(Action::Break);
+        }
+    }
+
+    #[inline]
     fn configure(&mut self) -> Result<(), InvalidFontId> {
+        // Validate default_font_id
+        let _ = fonts().first_face_for(self.font_id)?;
+
         self.display.configure()
     }
 

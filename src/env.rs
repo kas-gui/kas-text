@@ -32,11 +32,6 @@ pub struct Environment {
     /// text direction (see [`Self::direction`]), and vertical alignment
     /// is to the top.
     pub align: (Align, Align),
-    /// Default font
-    ///
-    /// This font is used unless a formatting token (see [`crate::format`])
-    /// is used.
-    pub font_id: FontId,
     /// Font size: pixels per Em
     ///
     /// This is a scaling factor used to convert font sizes, with units
@@ -61,7 +56,6 @@ impl Default for Environment {
         Environment {
             direction: Direction::default(),
             wrap: true,
-            font_id: Default::default(),
             dpem: 16.0,
             bounds: Vec2::INFINITY,
             align: Default::default(),
@@ -164,9 +158,4 @@ pub enum Direction {
     ///
     /// This uses Unicode TR9 HL1 to set an explicit paragraph embedding level of 1.
     Rtl = 1,
-}
-
-#[test]
-fn size() {
-    assert_eq!(std::mem::size_of::<Environment>(), 20);
 }

@@ -71,6 +71,8 @@ impl TextDisplay {
 
     /// Prepare text runs
     ///
+    /// Prerequisite: assign to or assert validity of `self.default_font_id`.
+    ///
     /// This is the first step of preparation: breaking text into runs according
     /// to font properties, bidi-levels and line-wrap points.
     ///
