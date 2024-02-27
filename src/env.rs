@@ -61,7 +61,7 @@ impl Default for Environment {
             direction: Direction::default(),
             wrap: true,
             font_id: Default::default(),
-            dpem: 11.0 * 96.0 / 72.0,
+            dpem: 16.0,
             bounds: Vec2::INFINITY,
             align: Default::default(),
         }
