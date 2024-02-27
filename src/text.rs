@@ -8,7 +8,7 @@
 use crate::display::{Effect, MarkerPosIter, NotReady, TextDisplay};
 use crate::fonts::{fonts, FaceId, FontId, InvalidFontId};
 use crate::format::{EditableText, FormattableText};
-use crate::{Action, Align, Environment, Glyph, Vec2};
+use crate::{Action, Align, Direction, Environment, Glyph, Vec2};
 use std::ops::{Deref, DerefMut};
 
 /// Text, prepared for display in a given environment
@@ -23,6 +23,7 @@ pub struct Text<T: FormattableText + ?Sized> {
     env: Environment,
     font_id: FontId,
     dpem: f32,
+    direction: Direction,
     display: TextDisplay,
     text: T,
 }
@@ -45,6 +46,7 @@ impl<T: FormattableText> Text<T> {
             env,
             font_id: FontId::default(),
             dpem: 16.0,
+            direction: Direction::default(),
             text,
             display: Default::default(),
         }
@@ -125,7 +127,7 @@ impl<T: FormattableText + ?Sized> Text<T> {
             Action::Configure => Err(NotReady),
             Action::Break => self
                 .display
-                .prepare_runs(&self.text, self.env.direction, self.font_id, self.dpem)
+                .prepare_runs(&self.text, self.direction, self.font_id, self.dpem)
                 .map_err(|_| {
                     debug_assert!(false, "font_id should be validated by configure");
                     NotReady
@@ -196,6 +198,14 @@ pub trait TextApi {
     ///
     /// It is necessary to [`prepare`][Self::prepare] the text after calling this.
     fn set_font_size(&mut self, dpem: f32);
+
+    /// Get the base text direction
+    fn get_direction(&self) -> Direction;
+
+    /// Set the base text direction
+    ///
+    /// It is necessary to [`prepare`][Self::prepare] the text after calling this.
+    fn set_direction(&mut self, direction: Direction);
 
     /// Read the [`TextDisplay`]
     fn display(&self) -> &TextDisplay;
@@ -272,9 +282,7 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
     #[inline]
     fn set_env(&mut self, env: Environment) {
         let action;
-        if env.direction != self.env.direction {
-            action = Action::Break;
-        } else if env.bounds.0 != self.env.bounds.0
+        if env.bounds.0 != self.env.bounds.0
             || env.align.0 != self.env.align.0
             || env.wrap != self.env.wrap
         {
@@ -312,6 +320,19 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
         if dpem != self.dpem {
             self.dpem = dpem;
             self.require_action(Action::Resize);
+        }
+    }
+
+    #[inline]
+    fn get_direction(&self) -> Direction {
+        self.direction
+    }
+
+    #[inline]
+    fn set_direction(&mut self, direction: Direction) {
+        if direction != self.direction {
+            self.direction = direction;
+            self.require_action(Action::Break);
         }
     }
 
@@ -475,7 +496,7 @@ pub trait TextApiExt: TextApi {
     #[inline]
     fn text_is_rtl(&self) -> bool {
         self.display()
-            .text_is_rtl(self.as_str(), self.env().direction)
+            .text_is_rtl(self.as_str(), self.get_direction())
     }
 
     /// Get the directionality of the current line

@@ -12,12 +12,6 @@ use crate::Vec2;
 /// An `Environment` can be default-constructed (without line-wrapping).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Environment {
-    /// Base text direction
-    ///
-    /// Texts may be bi-directional as specified by Unicode Technical Report #9.
-    /// This value controls the base paragraph direction (TR9 HL1).
-    pub direction: Direction,
-
     /// Line wrapping
     ///
     /// By default, this is true and long text lines are wrapped based on the
@@ -43,7 +37,6 @@ pub struct Environment {
 impl Default for Environment {
     fn default() -> Self {
         Environment {
-            direction: Direction::default(),
             wrap: true,
             bounds: Vec2::INFINITY,
             align: Default::default(),
