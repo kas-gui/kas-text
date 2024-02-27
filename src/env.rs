@@ -127,16 +127,42 @@ pub enum Align {
 }
 
 /// Directionality of text
+///
+/// Texts may be bi-directional as specified by Unicode Technical Report #9.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Ord, PartialOrd, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(u8)]
 pub enum Direction {
     /// Auto-detect direction
+    ///
+    /// The text direction is inferred from the first strongly-directional
+    /// character. In case no such character is found, the text will be
+    /// left-to-right.
     #[default]
     Auto = 2,
-    /// Left-to-right text
+    /// Auto-detect, default right-to-left
+    ///
+    /// The text direction is inferred from the first strongly-directional
+    /// character. In case no such character is found, the text will be
+    /// right-to-left.
+    AutoRtl = 3,
+    /// The base text direction is left-to-right
+    ///
+    /// If the text contains right-to-left content, this will be considered an
+    /// embedded right-to-left run. Non-directional leading and trailing
+    /// characters (e.g. a full stop) will normally not be included within this
+    /// right-to-left section.
+    ///
+    /// This uses Unicode TR9 HL1 to set an explicit paragraph embedding level of 0.
     Ltr = 0,
-    /// Right-to-left text
+    /// The base text direction is right-to-left
+    ///
+    /// If the text contains left-to-right content, this will be considered an
+    /// embedded left-to-right run. Non-directional leading and trailing
+    /// characters (e.g. a full stop) will normally not be included within this
+    /// left-to-right section.
+    ///
+    /// This uses Unicode TR9 HL1 to set an explicit paragraph embedding level of 1.
     Rtl = 1,
 }
 

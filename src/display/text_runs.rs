@@ -115,6 +115,13 @@ impl TextDisplay {
 
         let default_para_level = match direction {
             Direction::Auto => None,
+            Direction::AutoRtl => {
+                use unicode_bidi::Direction::*;
+                match unicode_bidi::get_base_direction(text) {
+                    Ltr | Rtl => None,
+                    Mixed => Some(RTL_LEVEL),
+                }
+            }
             Direction::Ltr => Some(LTR_LEVEL),
             Direction::Rtl => Some(RTL_LEVEL),
         };
