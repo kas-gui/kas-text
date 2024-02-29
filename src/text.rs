@@ -9,6 +9,7 @@ use crate::display::{Effect, MarkerPosIter, NotReady, TextDisplay};
 use crate::fonts::{self, FaceId, InvalidFontId};
 use crate::format::{EditableText, FormattableText};
 use crate::{Action, Align, Environment, Glyph, Vec2};
+use std::ops::{Deref, DerefMut};
 
 /// Text, prepared for display in a given environment
 ///
@@ -521,6 +522,20 @@ impl<T: EditableText + ?Sized> EditableTextApi for Text<T> {
     fn swap_string(&mut self, string: &mut String) {
         self.text.swap_string(string);
         self.display.require_action(Action::All);
+    }
+}
+
+impl<T: FormattableText + ?Sized> Deref for Text<T> {
+    type Target = TextDisplay;
+
+    fn deref(&self) -> &TextDisplay {
+        &self.display
+    }
+}
+
+impl<T: FormattableText + ?Sized> DerefMut for Text<T> {
+    fn deref_mut(&mut self) -> &mut TextDisplay {
+        &mut self.display
     }
 }
 
