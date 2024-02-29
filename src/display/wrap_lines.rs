@@ -78,29 +78,52 @@ impl TextDisplay {
         Ok(max_line_len.max(line_len))
     }
 
+    /// Measure required vertical height, wrapping as configured
+    ///
+    /// This method performs most required preparation steps of the
+    /// [`TextDisplay`]. Remaining prepartion should be fast.
+    pub fn measure_height(
+        &mut self,
+        width_bound: f32,
+        wrap: bool,
+        h_align: Align,
+    ) -> Result<f32, NotReady> {
+        if self.action > Action::Wrap {
+            return Err(NotReady);
+        }
+
+        if self.action == Action::Wrap {
+            return self.prepare_lines(width_bound, wrap, h_align).map(|v| v.1);
+        }
+
+        self.bounding_box().map(|(tl, br)| br.1 - tl.1)
+    }
+
     /// Prepare lines ("wrap")
     ///
-    /// This does text layout, with wrapping if enabled.
+    /// This does text layout, including wrapping and horizontal alignment but
+    /// excluding vertical alignment.
     ///
     /// Returns:
     ///
     /// -   `Err(NotReady)` if required action is greater than [`Action::Wrap`]
-    /// -   `Ok(bounding_corner)` on success
+    /// -   `Ok(bounding_corner)` on success: the vertical component is the
+    ///     required height while the horizontal component depends on alignment
     pub fn prepare_lines(
         &mut self,
-        bounds: Vec2,
+        width_bound: f32,
         wrap: bool,
-        align: (Align, Align),
+        h_align: Align,
     ) -> Result<Vec2, NotReady> {
         if self.action > Action::Wrap {
             return Err(NotReady);
         }
-        self.action = Action::None;
+        self.action = Action::VAlign;
 
         let fonts = fonts();
-        let mut adder = LineAdder::new(bounds, align);
+        let mut adder = LineAdder::new(width_bound, h_align);
         let width_bound = adder.width_bound;
-        let justify = align.0 == Align::Stretch;
+        let justify = h_align == Align::Stretch;
         let mut parts = Vec::with_capacity(16);
 
         // Tuples: (index, part, num_parts)
@@ -212,7 +235,6 @@ impl TextDisplay {
             }
         }
 
-        let bounding_corner = adder.finish(bounds, align);
         self.wrapped_runs = adder.runs;
         self.lines = adder.lines;
         #[cfg(feature = "num_glyphs")]
@@ -220,8 +242,8 @@ impl TextDisplay {
             self.num_glyphs = adder.num_glyphs;
         }
         self.l_bound = adder.l_bound.min(adder.r_bound);
-        self.r_bound = bounding_corner.0;
-        Ok(bounding_corner)
+        self.r_bound = adder.r_bound;
+        Ok(Vec2(adder.r_bound, adder.vcaret))
     }
 
     /// Vertically align lines
@@ -272,15 +294,15 @@ struct LineAdder {
     vcaret: f32,
     #[cfg(feature = "num_glyphs")]
     num_glyphs: u32,
-    halign: Align,
+    h_align: Align,
     width_bound: f32,
 }
 impl LineAdder {
-    fn new(bounds: Vec2, align: (Align, Align)) -> Self {
+    fn new(width_bound: f32, h_align: Align) -> Self {
         LineAdder {
-            l_bound: bounds.0,
-            halign: align.0,
-            width_bound: bounds.0,
+            l_bound: width_bound,
+            h_align,
+            width_bound,
             ..Default::default()
         }
     }
@@ -428,7 +450,7 @@ impl LineAdder {
         let spare = self.width_bound - line_len;
         let mut is_gap = SmallVec::<[bool; 16]>::new();
         let mut per_gap = 0.0;
-        let mut caret = match self.halign {
+        let mut caret = match self.h_align {
             Align::Default => match line_is_rtl {
                 false => 0.0,
                 true => spare,
@@ -552,27 +574,5 @@ impl LineAdder {
             top,
             bottom: self.vcaret,
         });
-    }
-
-    /// Returns the bottom-right bounding corner.
-    fn finish(&mut self, bounds: Vec2, align: (Align, Align)) -> Vec2 {
-        let height = self.vcaret;
-        let offset = match align.1 {
-            _ if !(height < bounds.1) => 0.0,
-            Align::Default | Align::TL | Align::Stretch => 0.0, // nothing to do
-            Align::Center => 0.5 * (bounds.1 - height),
-            Align::BR => bounds.1 - height,
-        };
-        if offset != 0.0 {
-            for run in &mut self.runs {
-                run.offset.1 += offset;
-            }
-            for line in &mut self.lines {
-                line.top += offset;
-                line.bottom += offset;
-            }
-        }
-
-        Vec2(self.r_bound, height + offset)
     }
 }

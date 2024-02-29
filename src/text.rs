@@ -8,7 +8,7 @@
 use crate::display::{Effect, MarkerPosIter, NotReady, TextDisplay};
 use crate::fonts::{fonts, FaceId, FontId, InvalidFontId};
 use crate::format::{EditableText, FormattableText};
-use crate::{Action, Align, Direction, Environment, Glyph, Vec2};
+use crate::{Action, Direction, Environment, Glyph, Vec2};
 use std::ops::{Deref, DerefMut};
 
 /// Text, prepared for display in a given environment
@@ -399,35 +399,9 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
     }
 
     fn measure_height(&mut self) -> Result<f32, NotReady> {
-        let v_align = self.env.align.1;
-        if v_align != Align::TL {
-            self.env.align.1 = Align::TL;
-            self.display.require_action(Action::VAlign);
-        }
-
         self.prepare_runs()?;
-
-        let action = self.display.required_action();
-        let height = if action >= Action::Wrap {
-            self.display
-                .prepare_lines(self.env.bounds, self.wrap, self.env.align)
-                .unwrap()
-                .1
-        } else if action == Action::VAlign {
-            self.display
-                .vertically_align(self.env.bounds.1, self.env.align.1)
-                .unwrap()
-                .1
-        } else {
-            (self.display.bounding_box().unwrap().1).1
-        };
-
-        if v_align != Align::TL {
-            self.env.align.1 = v_align;
-            self.display.require_action(Action::VAlign);
-        }
-
-        Ok(height)
+        self.display
+            .measure_height(self.env.bounds.0, self.wrap, self.env.align.0)
     }
 
     #[inline]
@@ -435,19 +409,21 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
         self.prepare_runs()?;
 
         let action = self.display.required_action();
-        let bound = if action == Action::Wrap {
-            self.display
-                .prepare_lines(self.env.bounds, self.wrap, self.env.align)
-                .unwrap()
-        } else if action == Action::VAlign {
-            self.display
-                .vertically_align(self.env.bounds.1, self.env.align.1)
-                .unwrap()
-        } else {
-            return Ok(false);
-        };
+        debug_assert!(action <= Action::Wrap);
 
-        Ok(!(bound.0 <= self.env.bounds.0 && bound.1 <= self.env.bounds.1))
+        if action == Action::Wrap {
+            self.display
+                .prepare_lines(self.env.bounds.0, self.wrap, self.env.align.0)?;
+        }
+
+        Ok(if action >= Action::VAlign {
+            let bound = self
+                .display
+                .vertically_align(self.env.bounds.1, self.env.align.1)?;
+            !(bound.0 <= self.env.bounds.0 && bound.1 <= self.env.bounds.1)
+        } else {
+            false
+        })
     }
 
     #[inline]
