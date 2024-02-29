@@ -250,6 +250,7 @@ impl TextDisplay {
     ///
     /// Returns the bottom-right bounding corner.
     pub fn vertically_align(&mut self, bound: f32, v_align: Align) -> Result<Vec2, NotReady> {
+        debug_assert!(bound.is_finite());
         if self.action > Action::VAlign {
             return Err(NotReady);
         }

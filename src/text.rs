@@ -8,7 +8,7 @@
 use crate::display::{Effect, MarkerPosIter, NotReady, TextDisplay};
 use crate::fonts::{fonts, FaceId, FontId, InvalidFontId};
 use crate::format::{EditableText, FormattableText};
-use crate::{Action, Direction, Environment, Glyph, Vec2};
+use crate::{Action, Align, Direction, Environment, Glyph, Vec2};
 use std::ops::{Deref, DerefMut};
 
 /// Text, prepared for display in a given environment
@@ -25,6 +25,13 @@ pub struct Text<T: FormattableText + ?Sized> {
     dpem: f32,
     direction: Direction,
     wrap: bool,
+    /// Alignment (`horiz`, `vert`)
+    ///
+    /// By default, horizontal alignment is left or right depending on the
+    /// text direction (see [`Self::direction`]), and vertical alignment
+    /// is to the top.
+    align: (Align, Align),
+
     display: TextDisplay,
     text: T,
 }
@@ -49,6 +56,7 @@ impl<T: FormattableText> Text<T> {
             dpem: 16.0,
             direction: Direction::default(),
             wrap: true,
+            align: Default::default(),
             text,
             display: Default::default(),
         }
@@ -176,6 +184,14 @@ pub trait TextApi {
 
     /// Get the default font
     fn get_font(&self) -> FontId;
+
+    /// Get text (horizontal, vertical) alignment
+    fn get_align(&self) -> (Align, Align);
+
+    /// Set text alignment
+    ///
+    /// It is necessary to [`prepare`][Self::prepare] the text after calling this.
+    fn set_align(&mut self, align: (Align, Align));
 
     /// Set the default [`FontId`]
     ///
@@ -307,9 +323,9 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
     #[inline]
     fn set_env(&mut self, env: Environment) {
         let action;
-        if env.bounds.0 != self.env.bounds.0 || env.align.0 != self.env.align.0 {
+        if env.bounds.0 != self.env.bounds.0 {
             action = Action::Wrap;
-        } else if env.bounds.1 != self.env.bounds.1 || env.align.1 != self.env.align.1 {
+        } else if env.bounds.1 != self.env.bounds.1 {
             action = Action::VAlign;
         } else {
             debug_assert_eq!(env, self.env);
@@ -371,6 +387,23 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
         }
     }
 
+    #[inline]
+    fn get_align(&self) -> (Align, Align) {
+        self.align
+    }
+
+    #[inline]
+    fn set_align(&mut self, align: (Align, Align)) {
+        if align != self.align {
+            if align.0 == self.align.0 {
+                self.require_action(Action::VAlign);
+            } else {
+                self.require_action(Action::Wrap);
+            }
+            self.align = align;
+        }
+    }
+
     fn set_font_properties(
         &mut self,
         direction: Direction,
@@ -401,7 +434,7 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
     fn measure_height(&mut self) -> Result<f32, NotReady> {
         self.prepare_runs()?;
         self.display
-            .measure_height(self.env.bounds.0, self.wrap, self.env.align.0)
+            .measure_height(self.env.bounds.0, self.wrap, self.align.0)
     }
 
     #[inline]
@@ -413,13 +446,13 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
 
         if action == Action::Wrap {
             self.display
-                .prepare_lines(self.env.bounds.0, self.wrap, self.env.align.0)?;
+                .prepare_lines(self.env.bounds.0, self.wrap, self.align.0)?;
         }
 
         Ok(if action >= Action::VAlign {
             let bound = self
                 .display
-                .vertically_align(self.env.bounds.1, self.env.align.1)?;
+                .vertically_align(self.env.bounds.1, self.align.1)?;
             !(bound.0 <= self.env.bounds.0 && bound.1 <= self.env.bounds.1)
         } else {
             false

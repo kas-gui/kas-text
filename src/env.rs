@@ -12,12 +12,6 @@ use crate::Vec2;
 /// An `Environment` can be default-constructed (without line-wrapping).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Environment {
-    /// Alignment (`horiz`, `vert`)
-    ///
-    /// By default, horizontal alignment is left or right depending on the
-    /// text direction (see [`Self::direction`]), and vertical alignment
-    /// is to the top.
-    pub align: (Align, Align),
     /// The available (horizontal and vertical) space
     ///
     /// This defaults to infinity (implying no bounds). To enable line-wrapping
@@ -31,7 +25,6 @@ impl Default for Environment {
     fn default() -> Self {
         Environment {
             bounds: Vec2::INFINITY,
-            align: Default::default(),
         }
     }
 }
