@@ -5,30 +5,6 @@
 
 //! KAS Rich-Text library — text-display environment
 
-use crate::Vec2;
-
-/// Environment in which text is prepared for display
-///
-/// An `Environment` can be default-constructed (without line-wrapping).
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Environment {
-    /// The available (horizontal and vertical) space
-    ///
-    /// This defaults to infinity (implying no bounds). To enable line-wrapping
-    /// set at least a horizontal bound. The vertical bound is required for
-    /// alignment (when aligning to the center or bottom).
-    /// Glyphs outside of these bounds may not be drawn.
-    pub bounds: Vec2,
-}
-
-impl Default for Environment {
-    fn default() -> Self {
-        Environment {
-            bounds: Vec2::INFINITY,
-        }
-    }
-}
-
 /// Alignment of contents
 ///
 /// Note that alignment information is often passed as a `(horiz, vert)` pair.

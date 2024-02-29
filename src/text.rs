@@ -8,19 +8,18 @@
 use crate::display::{Effect, MarkerPosIter, NotReady, TextDisplay};
 use crate::fonts::{fonts, FaceId, FontId, InvalidFontId};
 use crate::format::{EditableText, FormattableText};
-use crate::{Action, Align, Direction, Environment, Glyph, Vec2};
+use crate::{Action, Align, Direction, Glyph, Vec2};
 use std::ops::{Deref, DerefMut};
 
 /// Text, prepared for display in a given environment
 ///
-/// This struct is composed of three parts: an [`Environment`], a representation
+/// This struct is composed of two parts: a representation
 /// of the [`FormattableText`] being displayed, and a [`TextDisplay`] object.
 ///
 /// Most Functionality is implemented via the [`TextApi`] and [`TextApiExt`]
 /// traits.
 #[derive(Clone, Debug, Default)]
 pub struct Text<T: FormattableText + ?Sized> {
-    env: Environment,
     font_id: FontId,
     dpem: f32,
     direction: Direction,
@@ -31,6 +30,8 @@ pub struct Text<T: FormattableText + ?Sized> {
     /// text direction (see [`Self::direction`]), and vertical alignment
     /// is to the top.
     align: (Align, Align),
+    /// Bounds to use for alignment
+    bounds: Vec2,
 
     display: TextDisplay,
     text: T,
@@ -42,21 +43,13 @@ impl<T: FormattableText> Text<T> {
     /// This struct must be made ready for usage by calling [`Text::prepare`].
     #[inline]
     pub fn new(text: T) -> Self {
-        Text::new_env(Default::default(), text)
-    }
-
-    /// Construct from a text model and environment
-    ///
-    /// This struct must be made ready for usage by calling [`Text::prepare`].
-    #[inline]
-    pub fn new_env(env: Environment, text: T) -> Self {
         Text {
-            env,
             font_id: FontId::default(),
             dpem: 16.0,
             direction: Direction::default(),
             wrap_width: f32::INFINITY,
             align: Default::default(),
+            bounds: Vec2::INFINITY,
             text,
             display: Default::default(),
         }
@@ -74,8 +67,8 @@ impl<T: FormattableText> Text<T> {
 
     /// Decompose into parts
     #[inline]
-    pub fn into_parts(self) -> (Environment, TextDisplay, T) {
-        (self.env, self.display, self.text)
+    pub fn into_parts(self) -> (TextDisplay, T) {
+        (self.display, self.text)
     }
 
     /// Clone the formatted text
@@ -111,22 +104,6 @@ impl<T: FormattableText> Text<T> {
 
         self.text = text;
         self.display.require_action(Action::Break);
-    }
-
-    /// Set the text and prepare (if any fonts are loaded)
-    ///
-    /// Sets `text` regardless of other outcomes.
-    ///
-    /// If the text has not yet been configured, this fails with `Err(NotReady)`
-    /// after setting the text. This error can be ignored when the `Text` object
-    /// is scheduled to be configured and prepared later.
-    ///
-    /// Returns true if at least some action is performed *and* the text exceeds
-    /// the allocated bounds ([`Environment::bounds`]).
-    #[inline]
-    pub fn set_and_prepare(&mut self, text: T) -> Result<bool, NotReady> {
-        self.set_text(text);
-        self.prepare()
     }
 }
 
@@ -171,16 +148,6 @@ pub trait TextApi {
 
     /// Clone the unformatted text as a `String`
     fn clone_string(&self) -> String;
-
-    /// Read the environment
-    fn env(&self) -> Environment;
-
-    /// Set the environment
-    ///
-    /// Use of this method may require new preparation actions.
-    /// Call [`TextApiExt::update_env`] instead to perform such actions
-    /// with a single method call.
-    fn set_env(&mut self, env: Environment);
 
     /// Get the default font
     fn get_font(&self) -> FontId;
@@ -239,6 +206,17 @@ pub trait TextApi {
     /// It is necessary to [`prepare`][Self::prepare] the text after calling this.
     fn set_wrap_width(&mut self, wrap_width: f32);
 
+    /// Get text bounds
+    fn get_bounds(&self) -> Vec2;
+
+    /// Set text bounds
+    ///
+    /// These are used for alignment. They are not used for wrapping; see
+    /// instead [`Self::set_wrap_width`].
+    ///
+    /// It is expected that `bounds` are finite.
+    fn set_bounds(&mut self, bounds: Vec2);
+
     /// Set font properties
     ///
     /// This has the same effect as calling the following functions separately:
@@ -283,13 +261,14 @@ pub trait TextApi {
 
     /// Prepare text for display, as necessary
     ///
-    /// [`configure`][Self::configure] must be called before this method.
+    /// [`Self::configure`] and [`Self::set_bounds`] must be called before this
+    /// method.
     ///
     /// Does all preparation steps necessary in order to display or query the
-    /// layout of this text.
+    /// layout of this text. Text is aligned within the given `bounds`.
     ///
     /// Returns true if at least some action is performed *and* the text exceeds
-    /// the allocated bounds ([`Environment::bounds`]).
+    /// the [bounds][Self::set_bounds].
     fn prepare(&mut self) -> Result<bool, NotReady>;
 
     /// Get the sequence of effect tokens
@@ -317,26 +296,6 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
     #[inline]
     fn clone_string(&self) -> String {
         self.text.as_str().to_string()
-    }
-
-    #[inline]
-    fn env(&self) -> Environment {
-        self.env
-    }
-
-    #[inline]
-    fn set_env(&mut self, env: Environment) {
-        let action;
-        if env.bounds.0 != self.env.bounds.0 {
-            action = Action::Wrap;
-        } else if env.bounds.1 != self.env.bounds.1 {
-            action = Action::VAlign;
-        } else {
-            debug_assert_eq!(env, self.env);
-            action = Action::None;
-        }
-        self.display.require_action(action);
-        self.env = env;
     }
 
     #[inline]
@@ -409,6 +368,24 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
         }
     }
 
+    #[inline]
+    fn get_bounds(&self) -> Vec2 {
+        self.bounds
+    }
+
+    #[inline]
+    fn set_bounds(&mut self, bounds: Vec2) {
+        debug_assert!(bounds.is_finite());
+        if bounds != self.bounds {
+            if bounds.0 != self.bounds.0 {
+                self.require_action(Action::Wrap);
+            } else {
+                self.require_action(Action::VAlign);
+            }
+            self.bounds = bounds;
+        }
+    }
+
     fn set_font_properties(
         &mut self,
         direction: Direction,
@@ -450,14 +427,12 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
 
         if action == Action::Wrap {
             self.display
-                .prepare_lines(self.wrap_width, self.env.bounds.0, self.align.0)?;
+                .prepare_lines(self.wrap_width, self.bounds.0, self.align.0)?;
         }
 
         Ok(if action >= Action::VAlign {
-            let bound = self
-                .display
-                .vertically_align(self.env.bounds.1, self.align.1)?;
-            !(bound.0 <= self.env.bounds.0 && bound.1 <= self.env.bounds.1)
+            let bound = self.display.vertically_align(self.bounds.1, self.align.1)?;
+            !(bound.0 <= self.bounds.0 && bound.1 <= self.bounds.1)
         } else {
             false
         })
@@ -504,18 +479,6 @@ pub trait TextApiExt: TextApi {
                 debug_assert!(false, "font_id should be validated by configure");
                 NotReady
             })
-    }
-
-    /// Update the environment and do full preparation
-    ///
-    /// Fully prepares the text. This is equivalent to calling
-    /// [`TextApi::set_env`] followed by [`TextApi::prepare`].
-    ///
-    /// Returns true if at least some action is performed *and* the text exceeds
-    /// the allocated bounds ([`Environment::bounds`]).
-    fn update_env(&mut self, env: Environment) -> Result<bool, NotReady> {
-        self.set_env(env);
-        self.prepare()
     }
 
     /// Get the size of the required bounding box
