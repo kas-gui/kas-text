@@ -164,16 +164,16 @@ pub trait TextApi {
     /// Read the [`TextDisplay`]
     fn display(&self) -> &TextDisplay;
 
-    /// Measure required width, up to some `limit`
+    /// Measure required width, up to some `max_width`
     ///
     /// This method partially prepares the [`TextDisplay`] as required.
-    /// This method uses a heavily reduced variant of the full line-wrapping
-    /// algorithm, allowing fast calculation of the width required by short
-    /// texts up to `limit`.
     ///
-    /// The return value is at most `limit` and is unaffected by alignment and
-    /// wrap configuration of [`Environment`].
-    fn measure_width(&mut self, limit: f32) -> Result<f32, InvalidFontId>;
+    /// This method allows calculation of the width requirement of a text object
+    /// without full wrapping and glyph placement. Whenever the requirement
+    /// exceeds `max_width`, the algorithm stops early, returning `max_width`.
+    ///
+    /// The return value is unaffected by alignment and wrap configuration.
+    fn measure_width(&mut self, max_width: f32) -> Result<f32, InvalidFontId>;
 
     /// Measure required vertical height, wrapping as configured
     ///
@@ -244,10 +244,10 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
         self.env = env;
     }
 
-    fn measure_width(&mut self, limit: f32) -> Result<f32, InvalidFontId> {
+    fn measure_width(&mut self, max_width: f32) -> Result<f32, InvalidFontId> {
         self.prepare_runs()?;
 
-        Ok(self.display.measure_width(limit).unwrap())
+        Ok(self.display.measure_width(max_width).unwrap())
     }
 
     fn measure_height(&mut self) -> Result<f32, InvalidFontId> {
