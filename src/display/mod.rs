@@ -19,8 +19,8 @@ use wrap_lines::{Line, RunPart};
 
 /// Error returned on operations if not ready
 ///
-/// This error is returned if `prepare` must be called.
-#[derive(Clone, Copy, Default, Debug, thiserror::Error)]
+/// This error is returned if `configure` or `prepare` must be called.
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq, thiserror::Error)]
 #[error("not ready")]
 pub struct NotReady;
 
@@ -100,7 +100,7 @@ pub struct TextDisplay {
     //
     /// Level runs within the text, in logical order
     runs: SmallVec<[shaper::GlyphRun; 1]>,
-    pub(crate) action: Action,
+    action: Action,
     /// Contiguous runs, in logical order
     ///
     /// Within a line, runs may not be in visual order due to BIDI reversals.

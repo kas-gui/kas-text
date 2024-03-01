@@ -8,8 +8,7 @@
 use crate::display::{Effect, MarkerPosIter, NotReady, TextDisplay};
 use crate::fonts::{self, FaceId, InvalidFontId};
 use crate::format::{EditableText, FormattableText};
-use crate::{Action, Glyph, Vec2};
-use crate::{Align, Environment};
+use crate::{Action, Align, Environment, Glyph, Vec2};
 
 /// Text, prepared for display in a given environment
 ///
@@ -78,7 +77,7 @@ impl<T: FormattableText> Text<T> {
          */
 
         self.text = text;
-        self.display.action = Action::All;
+        self.display.require_action(Action::All);
     }
 
     /// Set the text and prepare (if any fonts are loaded)
@@ -134,11 +133,6 @@ pub trait TextApi {
     /// Read the [`TextDisplay`]
     fn display(&self) -> &TextDisplay;
 
-    /// Require an action
-    ///
-    /// See [`TextDisplay::require_action`].
-    fn require_action(&mut self, action: Action);
-
     /// Prepare text runs
     ///
     /// Wraps [`TextDisplay::prepare_runs`], passing parameters from the
@@ -165,10 +159,6 @@ pub trait TextApi {
     ///
     /// Does all preparation steps necessary in order to display or query the
     /// layout of this text.
-    ///
-    /// Required preparation actions are tracked internally, but cannot
-    /// notice changes in the environment. In case the environment has changed
-    /// one should either call [`TextDisplay::require_action`] before this method.
     ///
     /// Returns true if at least some action is performed *and* the text exceeds
     /// the allocated bounds ([`Environment::bounds`]).
@@ -226,11 +216,6 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
         }
         self.display.require_action(action);
         self.env = env;
-    }
-
-    #[inline]
-    fn require_action(&mut self, action: Action) {
-        self.display.require_action(action);
     }
 
     #[inline]
@@ -313,6 +298,12 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
 
 /// Extension trait over [`TextApi`]
 pub trait TextApiExt: TextApi {
+    /// Check whether the text is fully prepared and ready for usage
+    #[inline]
+    fn is_prepared(&self) -> bool {
+        self.display().required_action().is_ready()
+    }
+
     /// Update the environment and do full preparation
     ///
     /// Fully prepares the text. This is equivalent to calling
@@ -343,12 +334,6 @@ pub trait TextApiExt: TextApi {
     /// Alignment and input bounds do affect the result.
     fn bounding_box(&self) -> Result<(Vec2, Vec2), NotReady> {
         self.display().bounding_box()
-    }
-
-    /// Get required action
-    #[inline]
-    fn required_action(&self) -> Action {
-        self.display().action
     }
 
     /// Get the number of lines (after wrapping)
@@ -518,25 +503,25 @@ impl<T: EditableText + ?Sized> EditableTextApi for Text<T> {
     #[inline]
     fn insert_char(&mut self, index: usize, c: char) {
         self.text.insert_char(index, c);
-        self.display.action = Action::All;
+        self.display.require_action(Action::All);
     }
 
     #[inline]
     fn replace_range(&mut self, range: std::ops::Range<usize>, replace_with: &str) {
         self.text.replace_range(range, replace_with);
-        self.display.action = Action::All;
+        self.display.require_action(Action::All);
     }
 
     #[inline]
     fn set_string(&mut self, string: String) {
         self.text.set_string(string);
-        self.display.action = Action::All;
+        self.display.require_action(Action::All);
     }
 
     #[inline]
     fn swap_string(&mut self, string: &mut String) {
         self.text.swap_string(string);
-        self.display.action = Action::All;
+        self.display.require_action(Action::All);
     }
 }
 
