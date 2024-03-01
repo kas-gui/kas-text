@@ -9,7 +9,7 @@ use crate::display::{Effect, MarkerPosIter, NotReady, TextDisplay};
 use crate::fonts::{self, FaceId, InvalidFontId};
 use crate::format::{EditableText, FormattableText};
 use crate::{Action, Glyph, Vec2};
-use crate::{Align, Direction, Environment};
+use crate::{Align, Environment};
 
 /// Text, prepared for display in a given environment
 ///
@@ -375,12 +375,13 @@ pub trait TextApiExt: TextApi {
         self.display().line_range(line)
     }
 
-    /// Get the directionality of the first line
-    fn text_is_rtl(&self) -> Result<bool, NotReady> {
-        Ok(match self.display().line_is_rtl(0)? {
-            None => matches!(self.env().direction, Direction::BidiRtl | Direction::Rtl),
-            Some(is_rtl) => is_rtl,
-        })
+    /// Get the base directionality of the text
+    ///
+    /// This does not require that the text is prepared.
+    #[inline]
+    fn text_is_rtl(&self) -> bool {
+        self.display()
+            .text_is_rtl(self.as_str(), self.env().direction)
     }
 
     /// Get the directionality of the current line

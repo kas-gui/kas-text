@@ -13,11 +13,12 @@ use crate::Vec2;
 /// An `Environment` can be default-constructed (without line-wrapping).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Environment {
-    /// Text direction
+    /// Base text direction
     ///
-    /// By default, text direction (LTR or RTL) is automatically detected with
-    /// full bi-directional text support (Unicode Technical Report #9).
+    /// Texts may be bi-directional as specified by Unicode Technical Report #9.
+    /// This value controls the base paragraph direction (TR9 HL1).
     pub direction: Direction,
+
     /// Line wrapping
     ///
     /// By default, this is true and long text lines are wrapped based on the
@@ -28,8 +29,8 @@ pub struct Environment {
     /// Alignment (`horiz`, `vert`)
     ///
     /// By default, horizontal alignment is left or right depending on the
-    /// text direction (see [`Self::direction`]), and vertical alignment is
-    /// to the top.
+    /// text direction (see [`Self::direction`]), and vertical alignment
+    /// is to the top.
     pub align: (Align, Align),
     /// Default font
     ///
@@ -61,7 +62,7 @@ impl Default for Environment {
             direction: Direction::default(),
             wrap: true,
             font_id: Default::default(),
-            dpem: 11.0 * 96.0 / 72.0,
+            dpem: 16.0,
             bounds: Vec2::INFINITY,
             align: Default::default(),
         }
@@ -127,21 +128,42 @@ pub enum Align {
 
 /// Directionality of text
 ///
-/// This can be used to force the text direction.
+/// Texts may be bi-directional as specified by Unicode Technical Report #9.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Ord, PartialOrd, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[repr(u8)]
 pub enum Direction {
-    /// Auto-detect with bi-directional support
+    /// Auto-detect direction
+    ///
+    /// The text direction is inferred from the first strongly-directional
+    /// character. In case no such character is found, the text will be
+    /// left-to-right.
     #[default]
-    Bidi,
-    /// Auto-detect with bi-directional support, defaulting to right-to-left
-    BidiRtl,
-    /// Auto-detect, single line direction only
-    Single,
-    /// Force left-to-right text direction
-    Ltr,
-    /// Force right-to-left text direction
-    Rtl,
+    Auto = 2,
+    /// Auto-detect, default right-to-left
+    ///
+    /// The text direction is inferred from the first strongly-directional
+    /// character. In case no such character is found, the text will be
+    /// right-to-left.
+    AutoRtl = 3,
+    /// The base text direction is left-to-right
+    ///
+    /// If the text contains right-to-left content, this will be considered an
+    /// embedded right-to-left run. Non-directional leading and trailing
+    /// characters (e.g. a full stop) will normally not be included within this
+    /// right-to-left section.
+    ///
+    /// This uses Unicode TR9 HL1 to set an explicit paragraph embedding level of 0.
+    Ltr = 0,
+    /// The base text direction is right-to-left
+    ///
+    /// If the text contains left-to-right content, this will be considered an
+    /// embedded left-to-right run. Non-directional leading and trailing
+    /// characters (e.g. a full stop) will normally not be included within this
+    /// left-to-right section.
+    ///
+    /// This uses Unicode TR9 HL1 to set an explicit paragraph embedding level of 1.
+    Rtl = 1,
 }
 
 #[test]

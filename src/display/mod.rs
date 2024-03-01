@@ -8,7 +8,7 @@
 use smallvec::SmallVec;
 
 use crate::conv::to_usize;
-use crate::{shaper, Action, Vec2};
+use crate::{shaper, Action, Direction, Vec2};
 
 mod glyph_pos;
 mod text_runs;
@@ -217,6 +217,42 @@ impl TextDisplay {
             return Err(NotReady);
         }
         Ok(self.lines.get(line).map(|line| line.text_range.to_std()))
+    }
+
+    /// Get the base directionality of the text
+    ///
+    /// This does not require that the text is prepared.
+    pub fn text_is_rtl(&self, text: &str, direction: Direction) -> bool {
+        let cached_is_rtl = match self.line_is_rtl(0) {
+            Ok(None) => Some(direction == Direction::Rtl),
+            Ok(Some(is_rtl)) => Some(is_rtl),
+            Err(NotReady) => None,
+        };
+
+        #[cfg(not(debug_assertions))]
+        if let Some(cached) = cached_is_rtl {
+            return cached;
+        }
+
+        let (is_auto, mut is_rtl) = match direction {
+            Direction::Ltr => (false, false),
+            Direction::Rtl => (false, true),
+            Direction::Auto => (true, false),
+            Direction::AutoRtl => (true, true),
+        };
+
+        if is_auto {
+            match unicode_bidi::get_base_direction(text) {
+                unicode_bidi::Direction::Ltr => is_rtl = false,
+                unicode_bidi::Direction::Rtl => is_rtl = true,
+                unicode_bidi::Direction::Mixed => (),
+            }
+        }
+
+        if let Some(cached) = cached_is_rtl {
+            debug_assert_eq!(cached, is_rtl);
+        }
+        is_rtl
     }
 
     /// Get the directionality of the current line

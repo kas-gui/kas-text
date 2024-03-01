@@ -73,7 +73,7 @@ impl FaceId {
 /// access a font with a (default-constructed) `FontId` will cause a panic in
 /// the [`FontLibrary`] method used.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
-pub struct FontId(pub u32);
+pub struct FontId(u32);
 impl FontId {
     /// Get as `usize`
     pub fn get(self) -> usize {
