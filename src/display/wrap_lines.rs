@@ -219,7 +219,7 @@ impl TextDisplay {
         {
             self.num_glyphs = adder.num_glyphs;
         }
-        self.l_bound = adder.l_bound;
+        self.l_bound = adder.l_bound.min(adder.r_bound);
         self.r_bound = bounding_corner.0;
         Ok(bounding_corner)
     }
@@ -278,6 +278,7 @@ struct LineAdder {
 impl LineAdder {
     fn new(bounds: Vec2, align: (Align, Align)) -> Self {
         LineAdder {
+            l_bound: bounds.0,
             halign: align.0,
             width_bound: bounds.0,
             ..Default::default()
