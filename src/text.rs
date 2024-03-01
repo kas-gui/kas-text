@@ -46,6 +46,18 @@ impl<T: FormattableText> Text<T> {
         }
     }
 
+    /// Construct from parts
+    #[inline]
+    pub fn from_parts(env: Environment, display: TextDisplay, text: T) -> Self {
+        Text { env, display, text }
+    }
+
+    /// Decompose into parts
+    #[inline]
+    pub fn into_parts(self) -> (Environment, TextDisplay, T) {
+        (self.env, self.display, self.text)
+    }
+
     /// Clone the formatted text
     pub fn clone_text(&self) -> T
     where
