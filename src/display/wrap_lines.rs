@@ -58,15 +58,15 @@ impl TextDisplay {
 
         for run in self.runs.iter() {
             let num_parts = run.num_parts();
-            let (_, part_len_no_space, part_len) = run.part_lengths(0..num_parts);
+            let part = run.part_lengths(0..num_parts);
 
-            if part_len_no_space > 0.0 {
-                line_len = caret + part_len_no_space;
+            if part.len_no_space > 0.0 {
+                line_len = caret + part.len_no_space;
                 if line_len >= max_width {
                     return Ok(max_width);
                 }
             }
-            caret += part_len;
+            caret += part.len;
 
             if run.special == RunSpecial::HardBreak {
                 max_line_len = max_line_len.max(line_len);
@@ -130,16 +130,16 @@ impl TextDisplay {
         let justify = h_align == Align::Stretch;
         let mut parts = Vec::with_capacity(16);
 
-        // Tuples: (index, part, num_parts)
+        // Tuples: (index, part_index, num_parts)
         let mut start = (0, 0, 0);
         let mut end = start;
 
         let mut caret = 0.0;
-        let mut index = start.0;
+        let mut run_index = start.0;
 
         let end_index = self.runs.len();
-        'a: while index < end_index {
-            let run = &self.runs[index];
+        'a: while run_index < end_index {
+            let run = &self.runs[run_index];
             let num_parts = run.num_parts();
 
             let hard_break = run.special == RunSpecial::HardBreak;
@@ -147,12 +147,11 @@ impl TextDisplay {
             let tab = run.special == RunSpecial::HTab;
 
             let mut last_part = start.1;
-            let mut part = last_part + 1;
-            while part <= num_parts {
-                let (part_offset, part_len_no_space, mut part_len) =
-                    run.part_lengths(last_part..part);
+            let mut part_index = last_part + 1;
+            while part_index <= num_parts {
+                let mut part = run.part_lengths(last_part..part_index);
                 if tab {
-                    // Tab runs have no glyph; instead we calculate part_len
+                    // Tab runs have no glyph; instead we calculate part.len
                     // based on the current line length.
 
                     // TODO(bidi): we should really calculate this after
@@ -163,10 +162,10 @@ impl TextDisplay {
                     // TODO: custom tab sizes?
                     let tab_size = sf.h_advance(sf.face().glyph_index(' ')) * 8.0;
                     let stops = (caret / tab_size).floor() + 1.0;
-                    part_len = tab_size * stops - caret;
+                    part.len = tab_size * stops - caret;
                 }
 
-                let line_len = caret + part_len_no_space;
+                let line_len = caret + part.len_no_space;
                 if line_len > wrap_width && end.2 > 0 {
                     // Add up to last valid break point then wrap and reset
                     let slice = &mut parts[0..end.2];
@@ -176,66 +175,66 @@ impl TextDisplay {
                     start = end;
                     parts.clear();
                     caret = 0.0;
-                    index = start.0;
+                    run_index = start.0;
                     continue 'a;
                 }
-                caret += part_len;
-                let glyph_range = run.to_glyph_range(last_part..part);
-                let checkpoint = part < num_parts || allow_break;
+                caret += part.len;
+                let glyph_range = run.to_glyph_range(last_part..part_index);
+                let checkpoint = part_index < num_parts || allow_break;
                 if !checkpoint
-                    || (justify && part_len_no_space > 0.0)
+                    || (justify && part.len_no_space > 0.0)
                     || parts
                         .last()
-                        .map(|part| to_usize(part.run) < index)
+                        .map(|info| to_usize(info.run) < run_index)
                         .unwrap_or(true)
                 {
                     parts.push(PartInfo {
-                        run: to_u32(index),
-                        offset: part_offset,
-                        len: part_len,
-                        len_no_space: part_len_no_space,
+                        run: to_u32(run_index),
+                        offset: part.offset,
+                        len: part.len,
+                        len_no_space: part.len_no_space,
                         glyph_range,
                         end_space: false, // set later
                     });
                 } else {
-                    // Combine with last part (not strictly necessary)
-                    if let Some(part) = parts.last_mut() {
+                    // Combine with last part info (not strictly necessary)
+                    if let Some(info) = parts.last_mut() {
                         if run.level.is_ltr() {
-                            part.glyph_range.end = glyph_range.end;
+                            info.glyph_range.end = glyph_range.end;
                         } else {
-                            part.offset = part_offset;
-                            part.glyph_range.start = glyph_range.start;
+                            info.offset = part.offset;
+                            info.glyph_range.start = glyph_range.start;
                         }
-                        debug_assert!(part.glyph_range.start <= part.glyph_range.end);
-                        if part_len_no_space > 0.0 {
-                            part.len_no_space = part.len + part_len_no_space;
+                        debug_assert!(info.glyph_range.start <= info.glyph_range.end);
+                        if part.len_no_space > 0.0 {
+                            info.len_no_space = info.len + part.len_no_space;
                         }
-                        part.len += part_len;
+                        info.len += part.len;
                     }
                 }
                 if checkpoint {
-                    end = (index, part, parts.len());
+                    end = (run_index, part_index, parts.len());
                 }
-                last_part = part;
-                part += 1;
+                last_part = part_index;
+                part_index += 1;
             }
 
-            index += 1;
+            run_index += 1;
             start.1 = 0;
 
-            if hard_break || index == end_index {
+            if hard_break || run_index == end_index {
                 if parts.len() > 0 {
                     // It should not be possible for a line to end with a no-break, so:
                     debug_assert_eq!(parts.len(), end.2);
                     adder.add_line(fonts, &self.runs, &mut parts, false);
                 }
 
-                start = (index, 0, 0);
+                start = (run_index, 0, 0);
                 end = start;
                 parts.clear();
 
                 caret = 0.0;
-                index = start.0;
+                run_index = start.0;
             }
         }
 

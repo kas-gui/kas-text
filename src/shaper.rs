@@ -62,6 +62,16 @@ impl GlyphBreak {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct PartMetrics {
+    /// The distance from the origin to the start of the left-most part
+    pub offset: f32,
+    /// Length (excluding whitespace)
+    pub len_no_space: f32,
+    /// Length (including trailing whitespace)
+    pub len: f32,
+}
+
 /// A glyph run
 ///
 /// A glyph run is a sequence of glyphs, starting from the origin: 0.0.
@@ -115,63 +125,59 @@ impl GlyphRun {
     ///
     /// Parts are identified in logical order with end index up to
     /// `self.num_parts()`.
-    ///
-    /// Returns `(offset, len_no_space, len)` where `offset` is the distance to
-    /// from the origin to the start of the left-most part, `len` is the
-    /// horizontal length of the given parts, and `len_no_space` is `len` but
-    /// excluding whitespace at the logical end.
-    pub fn part_lengths(&self, range: std::ops::Range<usize>) -> (f32, f32, f32) {
+    pub fn part_lengths(&self, range: std::ops::Range<usize>) -> PartMetrics {
         // TODO: maybe we should adjust self.breaks to clean this up?
         assert!(range.start <= range.end);
 
-        let (mut offset, mut len_no_space, mut len) = (0.0, 0.0, 0.0);
+        let mut part = PartMetrics::default();
         if self.level.is_ltr() {
             if range.end > 0 {
-                len_no_space = self.no_space_end;
-                len = self.caret;
+                part.len_no_space = self.no_space_end;
+                part.len = self.caret;
                 if range.end <= self.breaks.len() {
                     let b = self.breaks[range.end - 1];
-                    len_no_space = b.no_space_end;
+                    part.len_no_space = b.no_space_end;
                     if to_usize(b.pos) < self.glyphs.len() {
-                        len = self.glyphs[to_usize(b.pos)].position.0
+                        part.len = self.glyphs[to_usize(b.pos)].position.0
                     }
                 }
             }
 
             if range.start > 0 {
                 let glyph = to_usize(self.breaks[range.start - 1].pos);
-                offset = self.glyphs[glyph].position.0;
-                len_no_space -= offset;
-                len -= offset;
+                part.offset = self.glyphs[glyph].position.0;
+                part.len_no_space -= part.offset;
+                part.len -= part.offset;
             }
         } else {
             if range.start <= self.breaks.len() {
-                len = self.caret;
+                part.len = self.caret;
                 if range.start > 0 {
                     let b = self.breaks.len() - range.start;
                     let pos = to_usize(self.breaks[b].pos);
                     if pos < self.glyphs.len() {
-                        len = self.glyphs[pos].position.0;
+                        part.len = self.glyphs[pos].position.0;
                     }
                 }
-                len_no_space = len;
+                part.len_no_space = part.len;
             }
             if range.end <= self.breaks.len() {
-                offset = self.caret;
+                part.offset = self.caret;
                 if range.end == 0 {
-                    len_no_space = 0.0;
+                    part.len_no_space = 0.0;
                 } else {
                     let b = self.breaks.len() - range.end;
                     let b = self.breaks[b];
-                    len_no_space -= b.no_space_end;
+                    part.len_no_space -= b.no_space_end;
                     if to_usize(b.pos) < self.glyphs.len() {
-                        offset = self.glyphs[to_usize(b.pos)].position.0;
+                        part.offset = self.glyphs[to_usize(b.pos)].position.0;
                     }
                 }
-                len -= offset;
+                part.len -= part.offset;
             }
         }
-        (offset, len_no_space, len)
+
+        part
     }
 
     /// Get glyph index from part index
