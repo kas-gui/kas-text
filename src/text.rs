@@ -279,9 +279,6 @@ pub trait TextApi {
     /// Measure required vertical height, wrapping as configured
     ///
     /// [`configure`][Self::configure] must be called before this method.
-    ///
-    /// This method performs most required preparation steps of the
-    /// [`TextDisplay`]. Remaining prepartion should be fast.
     fn measure_height(&mut self) -> Result<f32, NotReady>;
 
     /// Prepare text for display, as necessary
@@ -441,8 +438,7 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
 
     fn measure_height(&mut self) -> Result<f32, NotReady> {
         self.prepare_runs()?;
-        self.display
-            .measure_height(self.env.bounds.0, self.wrap_width, self.align.0)
+        self.display.measure_height(self.wrap_width)
     }
 
     #[inline]
@@ -454,7 +450,7 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
 
         if action == Action::Wrap {
             self.display
-                .prepare_lines(self.env.bounds.0, self.wrap_width, self.align.0)?;
+                .prepare_lines(self.wrap_width, self.env.bounds.0, self.align.0)?;
         }
 
         Ok(if action >= Action::VAlign {

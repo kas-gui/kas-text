@@ -72,26 +72,90 @@ impl TextDisplay {
     ///
     /// This method performs most required preparation steps of the
     /// [`TextDisplay`]. Remaining prepartion should be fast.
-    ///
-    /// The `width_bound` is used for alignment and should match the horizontal
-    /// component passed to [`Self::prepare`].
-    pub fn measure_height(
-        &mut self,
-        width_bound: f32,
-        wrap_width: f32,
-        h_align: Align,
-    ) -> Result<f32, NotReady> {
+    pub fn measure_height(&self, wrap_width: f32) -> Result<f32, NotReady> {
         if self.action > Action::Wrap {
             return Err(NotReady);
         }
 
-        if self.action == Action::Wrap {
-            return self
-                .prepare_lines(width_bound, wrap_width, h_align)
-                .map(|v| v.1);
+        if self.action < Action::Wrap {
+            return self.bounding_box().map(|(tl, br)| br.1 - tl.1);
         }
 
-        self.bounding_box().map(|(tl, br)| br.1 - tl.1)
+        #[derive(Default)]
+        struct MeasureAdder {
+            parts: Vec<usize>, // run index for each part
+            has_any_lines: bool,
+            line_gap: f32,
+            vcaret: f32,
+        }
+
+        impl PartAccumulator for MeasureAdder {
+            fn num_parts(&self) -> usize {
+                self.parts.len()
+            }
+
+            fn add_part(
+                &mut self,
+                _: &[GlyphRun],
+                run_index: usize,
+                _: std::ops::Range<usize>,
+                _: PartMetrics,
+                checkpoint: bool,
+            ) {
+                if checkpoint {
+                    if let Some(index) = self.parts.last().cloned() {
+                        if index == run_index {
+                            return;
+                        }
+                    }
+                }
+
+                self.parts.push(run_index);
+            }
+
+            fn add_line(
+                &mut self,
+                fonts: &FontLibrary,
+                runs: &[GlyphRun],
+                parts_end: usize,
+                _: bool,
+            ) {
+                debug_assert!(parts_end > 0);
+                let parts = &mut self.parts[..parts_end];
+
+                // Iterate runs to determine max ascent, level, etc.
+                let mut last_run = usize::MAX;
+                let (mut ascent, mut descent, mut line_gap) = (0f32, 0f32, 0f32);
+                for run_index in parts.iter().cloned() {
+                    if last_run == run_index {
+                        continue;
+                    }
+                    last_run = run_index;
+                    let run = &runs[last_run];
+
+                    let scale_font = fonts.get_face(run.face_id).scale_by_dpu(run.dpu);
+                    ascent = ascent.max(scale_font.ascent());
+                    descent = descent.min(scale_font.descent());
+                    line_gap = line_gap.max(scale_font.line_gap());
+                }
+
+                if self.has_any_lines {
+                    self.vcaret += line_gap.max(self.line_gap);
+                }
+                self.vcaret += ascent - descent;
+                self.line_gap = line_gap;
+
+                // Vertically align lines to the nearest pixel (improves rendering):
+                self.vcaret = self.vcaret.round();
+
+                self.has_any_lines = true;
+                self.parts.clear();
+            }
+        }
+
+        let mut adder = MeasureAdder::default();
+        self.wrap_lines(&mut adder, wrap_width);
+        Ok(adder.vcaret)
     }
 
     /// Prepare lines ("wrap")
@@ -106,8 +170,8 @@ impl TextDisplay {
     ///     required height while the horizontal component depends on alignment
     pub fn prepare_lines(
         &mut self,
-        width_bound: f32,
         wrap_width: f32,
+        width_bound: f32,
         h_align: Align,
     ) -> Result<Vec2, NotReady> {
         if self.action > Action::Wrap {
@@ -117,7 +181,7 @@ impl TextDisplay {
 
         let mut adder = LineAdder::new(width_bound, h_align);
 
-        self.wrap_lines(&mut adder);
+        self.wrap_lines(&mut adder, wrap_width);
 
         self.wrapped_runs = adder.wrapped_runs;
         self.lines = adder.lines;
@@ -130,7 +194,7 @@ impl TextDisplay {
         Ok(Vec2(adder.r_bound, adder.vcaret))
     }
 
-    fn wrap_lines(&self, accumulator: &mut impl PartAccumulator) {
+    fn wrap_lines(&self, accumulator: &mut impl PartAccumulator, wrap_width: f32) {
         let fonts = fonts();
 
         // Tuples: (index, part_index, num_parts)
