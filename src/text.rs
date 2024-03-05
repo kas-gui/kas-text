@@ -24,7 +24,7 @@ pub struct Text<T: FormattableText + ?Sized> {
     font_id: FontId,
     dpem: f32,
     direction: Direction,
-    wrap: bool,
+    wrap_width: f32,
     /// Alignment (`horiz`, `vert`)
     ///
     /// By default, horizontal alignment is left or right depending on the
@@ -55,7 +55,7 @@ impl<T: FormattableText> Text<T> {
             font_id: FontId::default(),
             dpem: 16.0,
             direction: Direction::default(),
-            wrap: true,
+            wrap_width: f32::INFINITY,
             align: Default::default(),
             text,
             display: Default::default(),
@@ -225,18 +225,19 @@ pub trait TextApi {
     /// It is necessary to [`prepare`][Self::prepare] the text after calling this.
     fn set_direction(&mut self, direction: Direction);
 
-    /// Get the text wrapping mode
-    fn get_wrap(&self) -> bool;
+    /// Get the text wrap width
+    fn get_wrap_width(&self) -> f32;
 
-    /// Enable or disable line wrapping
+    /// Set wrap width or disable line wrapping
     ///
-    /// By default, this is true and long text lines are wrapped based on the
-    /// width bounds. If set to false, lines are not wrapped at the width
-    /// boundary, but explicit line-breaks such as `\n` still result in new
-    /// lines.
+    /// By default, this is [`f32::INFINITY`] and text lines are not wrapped.
+    /// If set to some positive finite value, text lines will be wrapped at that
+    /// width.
+    ///
+    /// Either way, explicit line-breaks such as `\n` still result in new lines.
     ///
     /// It is necessary to [`prepare`][Self::prepare] the text after calling this.
-    fn set_wrap(&mut self, wrap: bool);
+    fn set_wrap_width(&mut self, wrap_width: f32);
 
     /// Set font properties
     ///
@@ -245,8 +246,14 @@ pub trait TextApi {
     /// -   [`Self::set_direction`]
     /// -   [`Self::set_font`]
     /// -   [`Self::set_font_size`]
-    /// -   [`Self::set_wrap`]
-    fn set_font_properties(&mut self, direction: Direction, font_id: FontId, dpem: f32, wrap: bool);
+    /// -   [`Self::set_wrap_width`]
+    fn set_font_properties(
+        &mut self,
+        direction: Direction,
+        font_id: FontId,
+        dpem: f32,
+        wrap_width: f32,
+    );
 
     /// Read the [`TextDisplay`]
     fn display(&self) -> &TextDisplay;
@@ -375,14 +382,15 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
     }
 
     #[inline]
-    fn get_wrap(&self) -> bool {
-        self.wrap
+    fn get_wrap_width(&self) -> f32 {
+        self.wrap_width
     }
 
     #[inline]
-    fn set_wrap(&mut self, wrap: bool) {
-        if wrap != self.wrap {
-            self.wrap = wrap;
+    fn set_wrap_width(&mut self, wrap_width: f32) {
+        assert!(self.wrap_width >= 0.0);
+        if wrap_width != self.wrap_width {
+            self.wrap_width = wrap_width;
             self.require_action(Action::Wrap);
         }
     }
@@ -409,12 +417,12 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
         direction: Direction,
         font_id: FontId,
         dpem: f32,
-        wrap: bool,
+        wrap_width: f32,
     ) {
         self.set_font(font_id);
         self.set_font_size(dpem);
         self.set_direction(direction);
-        self.set_wrap(wrap);
+        self.set_wrap_width(wrap_width);
     }
 
     #[inline]
@@ -434,7 +442,7 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
     fn measure_height(&mut self) -> Result<f32, NotReady> {
         self.prepare_runs()?;
         self.display
-            .measure_height(self.env.bounds.0, self.wrap, self.align.0)
+            .measure_height(self.env.bounds.0, self.wrap_width, self.align.0)
     }
 
     #[inline]
@@ -446,7 +454,7 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
 
         if action == Action::Wrap {
             self.display
-                .prepare_lines(self.env.bounds.0, self.wrap, self.align.0)?;
+                .prepare_lines(self.env.bounds.0, self.wrap_width, self.align.0)?;
         }
 
         Ok(if action >= Action::VAlign {

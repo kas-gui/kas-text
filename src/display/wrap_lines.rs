@@ -82,10 +82,13 @@ impl TextDisplay {
     ///
     /// This method performs most required preparation steps of the
     /// [`TextDisplay`]. Remaining prepartion should be fast.
+    ///
+    /// The `width_bound` is used for alignment and should match the horizontal
+    /// component passed to [`Self::prepare`].
     pub fn measure_height(
         &mut self,
         width_bound: f32,
-        wrap: bool,
+        wrap_width: f32,
         h_align: Align,
     ) -> Result<f32, NotReady> {
         if self.action > Action::Wrap {
@@ -93,7 +96,9 @@ impl TextDisplay {
         }
 
         if self.action == Action::Wrap {
-            return self.prepare_lines(width_bound, wrap, h_align).map(|v| v.1);
+            return self
+                .prepare_lines(width_bound, wrap_width, h_align)
+                .map(|v| v.1);
         }
 
         self.bounding_box().map(|(tl, br)| br.1 - tl.1)
@@ -112,7 +117,7 @@ impl TextDisplay {
     pub fn prepare_lines(
         &mut self,
         width_bound: f32,
-        wrap: bool,
+        wrap_width: f32,
         h_align: Align,
     ) -> Result<Vec2, NotReady> {
         if self.action > Action::Wrap {
@@ -122,7 +127,6 @@ impl TextDisplay {
 
         let fonts = fonts();
         let mut adder = LineAdder::new(width_bound, h_align);
-        let width_bound = adder.width_bound;
         let justify = h_align == Align::Stretch;
         let mut parts = Vec::with_capacity(16);
 
@@ -163,7 +167,7 @@ impl TextDisplay {
                 }
 
                 let line_len = caret + part_len_no_space;
-                if wrap && line_len > width_bound && end.2 > 0 {
+                if line_len > wrap_width && end.2 > 0 {
                     // Add up to last valid break point then wrap and reset
                     let slice = &mut parts[0..end.2];
                     adder.add_line(fonts, &self.runs, slice, true);
