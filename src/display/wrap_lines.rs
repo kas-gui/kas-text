@@ -8,7 +8,7 @@
 use super::{NotReady, RunSpecial, TextDisplay};
 use crate::conv::{to_u32, to_usize};
 use crate::fonts::{fonts, FontLibrary};
-use crate::shaper::GlyphRun;
+use crate::shaper::{GlyphRun, PartMetrics};
 use crate::{Action, Align, Range, Vec2};
 use smallvec::SmallVec;
 use unicode_bidi::{Level, LTR_LEVEL};
@@ -27,16 +27,6 @@ pub struct Line {
     pub run_range: Range,  // range in wrapped_runs
     pub top: f32,
     pub bottom: f32,
-}
-
-#[derive(Clone, Debug)]
-struct PartInfo {
-    run: u32,
-    offset: f32,
-    len: f32,
-    len_no_space: f32,
-    glyph_range: Range,
-    end_space: bool,
 }
 
 impl TextDisplay {
@@ -127,8 +117,6 @@ impl TextDisplay {
 
         let fonts = fonts();
         let mut adder = LineAdder::new(width_bound, h_align);
-        let justify = h_align == Align::Stretch;
-        let mut parts = Vec::with_capacity(16);
 
         // Tuples: (index, part_index, num_parts)
         let mut start = (0, 0, 0);
@@ -168,52 +156,25 @@ impl TextDisplay {
                 let line_len = caret + part.len_no_space;
                 if line_len > wrap_width && end.2 > 0 {
                     // Add up to last valid break point then wrap and reset
-                    let slice = &mut parts[0..end.2];
-                    adder.add_line(fonts, &self.runs, slice, true);
+                    adder.add_line(fonts, &self.runs, end.2, true);
 
                     end.2 = 0;
                     start = end;
-                    parts.clear();
                     caret = 0.0;
                     run_index = start.0;
                     continue 'a;
                 }
                 caret += part.len;
-                let glyph_range = run.to_glyph_range(last_part..part_index);
                 let checkpoint = part_index < num_parts || allow_break;
-                if !checkpoint
-                    || (justify && part.len_no_space > 0.0)
-                    || parts
-                        .last()
-                        .map(|info| to_usize(info.run) < run_index)
-                        .unwrap_or(true)
-                {
-                    parts.push(PartInfo {
-                        run: to_u32(run_index),
-                        offset: part.offset,
-                        len: part.len,
-                        len_no_space: part.len_no_space,
-                        glyph_range,
-                        end_space: false, // set later
-                    });
-                } else {
-                    // Combine with last part info (not strictly necessary)
-                    if let Some(info) = parts.last_mut() {
-                        if run.level.is_ltr() {
-                            info.glyph_range.end = glyph_range.end;
-                        } else {
-                            info.offset = part.offset;
-                            info.glyph_range.start = glyph_range.start;
-                        }
-                        debug_assert!(info.glyph_range.start <= info.glyph_range.end);
-                        if part.len_no_space > 0.0 {
-                            info.len_no_space = info.len + part.len_no_space;
-                        }
-                        info.len += part.len;
-                    }
-                }
+                adder.add_part(
+                    &self.runs,
+                    run_index,
+                    last_part..part_index,
+                    part,
+                    checkpoint,
+                );
                 if checkpoint {
-                    end = (run_index, part_index, parts.len());
+                    end = (run_index, part_index, adder.parts.len());
                 }
                 last_part = part_index;
                 part_index += 1;
@@ -223,22 +184,22 @@ impl TextDisplay {
             start.1 = 0;
 
             if hard_break || run_index == end_index {
-                if parts.len() > 0 {
+                if adder.parts.len() > 0 {
                     // It should not be possible for a line to end with a no-break, so:
-                    debug_assert_eq!(parts.len(), end.2);
-                    adder.add_line(fonts, &self.runs, &mut parts, false);
+                    debug_assert_eq!(adder.parts.len(), end.2);
+
+                    adder.add_line(fonts, &self.runs, adder.parts.len(), false);
                 }
 
                 start = (run_index, 0, 0);
                 end = start;
-                parts.clear();
 
                 caret = 0.0;
                 run_index = start.0;
             }
         }
 
-        self.wrapped_runs = adder.runs;
+        self.wrapped_runs = adder.wrapped_runs;
         self.lines = adder.lines;
         #[cfg(feature = "num_glyphs")]
         {
@@ -288,9 +249,20 @@ impl TextDisplay {
     }
 }
 
+#[derive(Clone, Debug)]
+struct PartInfo {
+    run: u32,
+    offset: f32,
+    len: f32,
+    len_no_space: f32,
+    glyph_range: Range,
+    end_space: bool,
+}
+
 #[derive(Default)]
 struct LineAdder {
-    runs: SmallVec<[RunPart; 1]>,
+    wrapped_runs: SmallVec<[RunPart; 1]>,
+    parts: Vec<PartInfo>,
     lines: SmallVec<[Line; 1]>,
     line_gap: f32,
     l_bound: f32,
@@ -304,6 +276,7 @@ struct LineAdder {
 impl LineAdder {
     fn new(width_bound: f32, h_align: Align) -> Self {
         LineAdder {
+            parts: Vec::with_capacity(16),
             l_bound: width_bound,
             h_align,
             width_bound,
@@ -311,15 +284,62 @@ impl LineAdder {
         }
     }
 
+    fn add_part(
+        &mut self,
+        runs: &[GlyphRun],
+        run_index: usize,
+        part_range: std::ops::Range<usize>,
+        part: PartMetrics,
+        checkpoint: bool,
+    ) {
+        let glyph_run = &runs[run_index];
+        let run = to_u32(run_index);
+        let glyph_range = glyph_run.to_glyph_range(part_range);
+
+        let justify = self.h_align == Align::Stretch && part.len_no_space > 0.0;
+        if checkpoint && !justify {
+            if let Some(info) = self.parts.last_mut() {
+                if info.run == run {
+                    // Merge into last part info (not strictly necessary)
+
+                    if glyph_run.level.is_ltr() {
+                        info.glyph_range.end = glyph_range.end;
+                    } else {
+                        info.offset = part.offset;
+                        info.glyph_range.start = glyph_range.start;
+                    }
+                    debug_assert!(info.glyph_range.start <= info.glyph_range.end);
+
+                    if part.len_no_space > 0.0 {
+                        info.len_no_space = info.len + part.len_no_space;
+                    }
+                    info.len += part.len;
+
+                    return;
+                }
+            }
+        }
+
+        self.parts.push(PartInfo {
+            run,
+            offset: part.offset,
+            len: part.len,
+            len_no_space: part.len_no_space,
+            glyph_range,
+            end_space: false, // set later
+        });
+    }
+
     fn add_line(
         &mut self,
         fonts: &FontLibrary,
         runs: &[GlyphRun],
-        parts: &mut [PartInfo],
+        parts_end: usize,
         is_wrap: bool,
     ) {
-        assert!(parts.len() > 0);
-        let line_start = self.runs.len();
+        debug_assert!(parts_end > 0);
+        let line_start = self.wrapped_runs.len();
+        let parts = &mut self.parts[..parts_end];
 
         // Iterate runs to determine max ascent, level, etc.
         let mut last_run = u32::MAX;
@@ -540,7 +560,7 @@ impl LineAdder {
             } else {
                 caret - part.offset
             };
-            self.runs.push(RunPart {
+            self.wrapped_runs.push(RunPart {
                 text_end,
                 glyph_run: part.run,
                 glyph_range: part.glyph_range,
@@ -565,7 +585,7 @@ impl LineAdder {
         // Other parts of this library expect runs to be in logical order, so
         // we re-order now (does not affect display position).
         // TODO: should we change this, e.g. for visual-order navigation?
-        self.runs[line_start..].sort_by_key(|run| run.text_end);
+        self.wrapped_runs[line_start..].sort_by_key(|run| run.text_end);
 
         let top = self.vcaret - ascent;
         self.vcaret -= descent;
@@ -574,9 +594,10 @@ impl LineAdder {
 
         self.lines.push(Line {
             text_range: Range::from(line_text_start..line_text_end),
-            run_range: (line_start..self.runs.len()).into(),
+            run_range: (line_start..self.wrapped_runs.len()).into(),
             top,
             bottom: self.vcaret,
         });
+        self.parts.clear();
     }
 }
