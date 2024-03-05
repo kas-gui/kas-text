@@ -115,8 +115,23 @@ impl TextDisplay {
         }
         self.action = Action::VAlign;
 
-        let fonts = fonts();
         let mut adder = LineAdder::new(width_bound, h_align);
+
+        self.wrap_lines(&mut adder);
+
+        self.wrapped_runs = adder.wrapped_runs;
+        self.lines = adder.lines;
+        #[cfg(feature = "num_glyphs")]
+        {
+            self.num_glyphs = adder.num_glyphs;
+        }
+        self.l_bound = adder.l_bound.min(adder.r_bound);
+        self.r_bound = adder.r_bound;
+        Ok(Vec2(adder.r_bound, adder.vcaret))
+    }
+
+    fn wrap_lines(&self, accumulator: &mut impl PartAccumulator) {
+        let fonts = fonts();
 
         // Tuples: (index, part_index, num_parts)
         let mut start = (0, 0, 0);
@@ -156,7 +171,7 @@ impl TextDisplay {
                 let line_len = caret + part.len_no_space;
                 if line_len > wrap_width && end.2 > 0 {
                     // Add up to last valid break point then wrap and reset
-                    adder.add_line(fonts, &self.runs, end.2, true);
+                    accumulator.add_line(fonts, &self.runs, end.2, true);
 
                     end.2 = 0;
                     start = end;
@@ -166,7 +181,7 @@ impl TextDisplay {
                 }
                 caret += part.len;
                 let checkpoint = part_index < num_parts || allow_break;
-                adder.add_part(
+                accumulator.add_part(
                     &self.runs,
                     run_index,
                     last_part..part_index,
@@ -174,7 +189,7 @@ impl TextDisplay {
                     checkpoint,
                 );
                 if checkpoint {
-                    end = (run_index, part_index, adder.parts.len());
+                    end = (run_index, part_index, accumulator.num_parts());
                 }
                 last_part = part_index;
                 part_index += 1;
@@ -184,11 +199,12 @@ impl TextDisplay {
             start.1 = 0;
 
             if hard_break || run_index == end_index {
-                if adder.parts.len() > 0 {
+                let num_parts = accumulator.num_parts();
+                if num_parts > 0 {
                     // It should not be possible for a line to end with a no-break, so:
-                    debug_assert_eq!(adder.parts.len(), end.2);
+                    debug_assert_eq!(num_parts, end.2);
 
-                    adder.add_line(fonts, &self.runs, adder.parts.len(), false);
+                    accumulator.add_line(fonts, &self.runs, num_parts, false);
                 }
 
                 start = (run_index, 0, 0);
@@ -198,16 +214,6 @@ impl TextDisplay {
                 run_index = start.0;
             }
         }
-
-        self.wrapped_runs = adder.wrapped_runs;
-        self.lines = adder.lines;
-        #[cfg(feature = "num_glyphs")]
-        {
-            self.num_glyphs = adder.num_glyphs;
-        }
-        self.l_bound = adder.l_bound.min(adder.r_bound);
-        self.r_bound = adder.r_bound;
-        Ok(Vec2(adder.r_bound, adder.vcaret))
     }
 
     /// Vertically align lines
@@ -249,6 +255,21 @@ impl TextDisplay {
     }
 }
 
+trait PartAccumulator {
+    fn num_parts(&self) -> usize;
+
+    fn add_part(
+        &mut self,
+        runs: &[GlyphRun],
+        run_index: usize,
+        part_range: std::ops::Range<usize>,
+        part: PartMetrics,
+        checkpoint: bool,
+    );
+
+    fn add_line(&mut self, fonts: &FontLibrary, runs: &[GlyphRun], parts_end: usize, is_wrap: bool);
+}
+
 #[derive(Clone, Debug)]
 struct PartInfo {
     run: u32,
@@ -282,6 +303,12 @@ impl LineAdder {
             width_bound,
             ..Default::default()
         }
+    }
+}
+
+impl PartAccumulator for LineAdder {
+    fn num_parts(&self) -> usize {
+        self.parts.len()
     }
 
     fn add_part(
