@@ -8,8 +8,8 @@
 use crate::display::{Effect, MarkerPosIter, NotReady, TextDisplay};
 use crate::fonts::{self, FaceId, InvalidFontId};
 use crate::format::{EditableText, FormattableText};
-use crate::{Action, Glyph, Vec2};
-use crate::{Align, Environment};
+use crate::{Action, Align, Environment, Glyph, Vec2};
+use std::ops::{Deref, DerefMut};
 
 /// Text, prepared for display in a given environment
 ///
@@ -46,6 +46,18 @@ impl<T: FormattableText> Text<T> {
         }
     }
 
+    /// Construct from parts
+    #[inline]
+    pub fn from_parts(env: Environment, display: TextDisplay, text: T) -> Self {
+        Text { env, display, text }
+    }
+
+    /// Decompose into parts
+    #[inline]
+    pub fn into_parts(self) -> (Environment, TextDisplay, T) {
+        (self.env, self.display, self.text)
+    }
+
     /// Clone the formatted text
     pub fn clone_text(&self) -> T
     where
@@ -78,7 +90,7 @@ impl<T: FormattableText> Text<T> {
          */
 
         self.text = text;
-        self.display.action = Action::All;
+        self.display.require_action(Action::All);
     }
 
     /// Set the text and prepare (if any fonts are loaded)
@@ -94,6 +106,24 @@ impl<T: FormattableText> Text<T> {
     pub fn set_and_try_prepare(&mut self, text: T) -> Result<bool, InvalidFontId> {
         self.set_text(text);
         self.try_prepare()
+    }
+}
+
+impl<T: FormattableText + ?Sized> Text<T> {
+    #[inline]
+    fn prepare_runs(&mut self) -> Result<(), InvalidFontId> {
+        match self.display.required_action() {
+            Action::All => self.display.prepare_runs(
+                &self.text,
+                self.env.direction,
+                self.env.font_id,
+                self.env.dpem,
+            )?,
+            Action::Resize => self.display.resize_runs(&self.text, self.env.dpem),
+            _ => (),
+        }
+
+        Ok(())
     }
 }
 
@@ -134,41 +164,27 @@ pub trait TextApi {
     /// Read the [`TextDisplay`]
     fn display(&self) -> &TextDisplay;
 
-    /// Require an action
+    /// Measure required width, up to some `max_width`
     ///
-    /// See [`TextDisplay::require_action`].
-    fn require_action(&mut self, action: Action);
-
-    /// Prepare text runs
+    /// This method partially prepares the [`TextDisplay`] as required.
     ///
-    /// Wraps [`TextDisplay::prepare_runs`], passing parameters from the
-    /// environment state.
-    fn prepare_runs(&mut self) -> Result<(), InvalidFontId>;
-
-    /// Measure required width, up to some `limit`
+    /// This method allows calculation of the width requirement of a text object
+    /// without full wrapping and glyph placement. Whenever the requirement
+    /// exceeds `max_width`, the algorithm stops early, returning `max_width`.
     ///
-    /// This calls [`Self::prepare_runs`] where necessary, but does not fully
-    /// prepare text for display. It is a significantly faster way to calculate
-    /// the required line length than by fully preparing text.
-    ///
-    /// The return value is at most `limit` and is unaffected by alignment and
-    /// wrap configuration of [`Environment`].
-    fn measure_width(&mut self, limit: f32) -> Result<f32, InvalidFontId>;
+    /// The return value is unaffected by alignment and wrap configuration.
+    fn measure_width(&mut self, max_width: f32) -> Result<f32, InvalidFontId>;
 
     /// Measure required vertical height, wrapping as configured
     ///
-    /// This partially prepares text for display. Remaining prepartion should be
-    /// fast.
+    /// This method performs most required preparation steps of the
+    /// [`TextDisplay`]. Remaining prepartion should be fast.
     fn measure_height(&mut self) -> Result<f32, InvalidFontId>;
 
     /// Prepare text for display, as necessary
     ///
     /// Does all preparation steps necessary in order to display or query the
     /// layout of this text.
-    ///
-    /// Required preparation actions are tracked internally, but cannot
-    /// notice changes in the environment. In case the environment has changed
-    /// one should either call [`TextDisplay::require_action`] before this method.
     ///
     /// Returns true if at least some action is performed *and* the text exceeds
     /// the allocated bounds ([`Environment::bounds`]).
@@ -228,27 +244,10 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
         self.env = env;
     }
 
-    #[inline]
-    fn require_action(&mut self, action: Action) {
-        self.display.require_action(action);
-    }
+    fn measure_width(&mut self, max_width: f32) -> Result<f32, InvalidFontId> {
+        self.prepare_runs()?;
 
-    #[inline]
-    fn prepare_runs(&mut self) -> Result<(), InvalidFontId> {
-        self.display.prepare_runs(
-            &self.text,
-            self.env.direction,
-            self.env.font_id,
-            self.env.dpem,
-        )
-    }
-
-    fn measure_width(&mut self, limit: f32) -> Result<f32, InvalidFontId> {
-        if self.display.required_action() > Action::Wrap {
-            self.prepare_runs()?;
-        }
-
-        Ok(self.display.measure_width(limit).unwrap())
+        Ok(self.display.measure_width(max_width).unwrap())
     }
 
     fn measure_height(&mut self) -> Result<f32, InvalidFontId> {
@@ -258,11 +257,9 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
             self.display.require_action(Action::VAlign);
         }
 
-        let action = self.display.required_action();
-        if action > Action::Wrap {
-            self.prepare_runs()?;
-        }
+        self.prepare_runs()?;
 
+        let action = self.display.required_action();
         let height = if action >= Action::Wrap {
             self.display
                 .prepare_lines(self.env.bounds, self.env.wrap, self.env.align)
@@ -313,6 +310,12 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
 
 /// Extension trait over [`TextApi`]
 pub trait TextApiExt: TextApi {
+    /// Check whether the text is fully prepared and ready for usage
+    #[inline]
+    fn is_prepared(&self) -> bool {
+        self.display().required_action().is_ready()
+    }
+
     /// Update the environment and do full preparation
     ///
     /// Fully prepares the text. This is equivalent to calling
@@ -343,12 +346,6 @@ pub trait TextApiExt: TextApi {
     /// Alignment and input bounds do affect the result.
     fn bounding_box(&self) -> Result<(Vec2, Vec2), NotReady> {
         self.display().bounding_box()
-    }
-
-    /// Get required action
-    #[inline]
-    fn required_action(&self) -> Action {
-        self.display().action
     }
 
     /// Get the number of lines (after wrapping)
@@ -518,25 +515,39 @@ impl<T: EditableText + ?Sized> EditableTextApi for Text<T> {
     #[inline]
     fn insert_char(&mut self, index: usize, c: char) {
         self.text.insert_char(index, c);
-        self.display.action = Action::All;
+        self.display.require_action(Action::All);
     }
 
     #[inline]
     fn replace_range(&mut self, range: std::ops::Range<usize>, replace_with: &str) {
         self.text.replace_range(range, replace_with);
-        self.display.action = Action::All;
+        self.display.require_action(Action::All);
     }
 
     #[inline]
     fn set_string(&mut self, string: String) {
         self.text.set_string(string);
-        self.display.action = Action::All;
+        self.display.require_action(Action::All);
     }
 
     #[inline]
     fn swap_string(&mut self, string: &mut String) {
         self.text.swap_string(string);
-        self.display.action = Action::All;
+        self.display.require_action(Action::All);
+    }
+}
+
+impl<T: FormattableText + ?Sized> Deref for Text<T> {
+    type Target = TextDisplay;
+
+    fn deref(&self) -> &TextDisplay {
+        &self.display
+    }
+}
+
+impl<T: FormattableText + ?Sized> DerefMut for Text<T> {
+    fn deref_mut(&mut self) -> &mut TextDisplay {
+        &mut self.display
     }
 }
 

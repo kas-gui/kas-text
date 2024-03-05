@@ -40,14 +40,14 @@ struct PartInfo {
 }
 
 impl TextDisplay {
-    /// Measure the maximum line length without wrapping
+    /// Measure required width, up to some `max_width`
     ///
-    /// This is a significantly faster way to calculate the required line length
-    /// than [`Self::prepare_lines`].
+    /// This method allows calculation of the width requirement of a text object
+    /// without full wrapping and glyph placement. Whenever the requirement
+    /// exceeds `max_width`, the algorithm stops early, returning `max_width`.
     ///
-    /// The return value is at most `limit` and is unaffected by alignment and
-    /// wrap configuration of [`crate::Environment`].
-    pub fn measure_width(&self, limit: f32) -> Result<f32, NotReady> {
+    /// The return value is unaffected by alignment and wrap configuration.
+    pub fn measure_width(&self, max_width: f32) -> Result<f32, NotReady> {
         if self.action > Action::Wrap {
             return Err(NotReady);
         }
@@ -62,8 +62,8 @@ impl TextDisplay {
 
             if part_len_no_space > 0.0 {
                 line_len = caret + part_len_no_space;
-                if line_len >= limit {
-                    return Ok(limit);
+                if line_len >= max_width {
+                    return Ok(max_width);
                 }
             }
             caret += part_len;
@@ -219,7 +219,7 @@ impl TextDisplay {
         {
             self.num_glyphs = adder.num_glyphs;
         }
-        self.l_bound = adder.l_bound;
+        self.l_bound = adder.l_bound.min(adder.r_bound);
         self.r_bound = bounding_corner.0;
         Ok(bounding_corner)
     }
@@ -278,6 +278,7 @@ struct LineAdder {
 impl LineAdder {
     fn new(bounds: Vec2, align: (Align, Align)) -> Self {
         LineAdder {
+            l_bound: bounds.0,
             halign: align.0,
             width_bound: bounds.0,
             ..Default::default()

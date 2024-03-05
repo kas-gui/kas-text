@@ -35,8 +35,8 @@ impl TextDisplay {
     /// Prerequisites: prepared runs: requires action is no greater than `Action::Wrap`.
     /// Post-requirements: prepare lines (requires action `Action::Wrap`).  
     /// Parameters: see [`crate::Environment`] documentation.
-    pub(crate) fn resize_runs<F: FormattableText + ?Sized>(&mut self, text: &F, dpem: f32) {
-        assert!(self.action <= Action::Resize);
+    pub fn resize_runs<F: FormattableText + ?Sized>(&mut self, text: &F, dpem: f32) {
+        assert_eq!(self.action, Action::Resize);
         self.action = Action::Wrap;
 
         let mut font_tokens = text.font_tokens(dpem);
@@ -74,10 +74,6 @@ impl TextDisplay {
     /// This is the first step of preparation: breaking text into runs according
     /// to font properties, bidi-levels and line-wrap points.
     ///
-    /// This method only updates self as required; use [`Self::require_action`] if necessary.
-    /// On [`Action::All`], this prepares runs from scratch; on [`Action::Resize`] existing runs
-    /// are resized; afterwards, action is no greater than [`Action::Wrap`].
-    ///
     /// Parameters: see [`crate::Environment`] documentation.
     pub fn prepare_runs<F: FormattableText + ?Sized>(
         &mut self,
@@ -86,11 +82,7 @@ impl TextDisplay {
         mut font_id: FontId,
         mut dpem: f32,
     ) -> Result<(), InvalidFontId> {
-        match self.action {
-            Action::None | Action::VAlign | Action::Wrap => return Ok(()),
-            Action::Resize => return Ok(self.resize_runs(text, dpem)),
-            Action::All => (),
-        }
+        assert_eq!(self.action, Action::All);
 
         // This method constructs a list of "hard lines" (the initial line and any
         // caused by a hard break), each composed of a list of "level runs" (the
