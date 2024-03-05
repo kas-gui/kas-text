@@ -7,7 +7,7 @@
 
 use crate::conv::to_usize;
 use crate::fonts::InvalidFontId;
-use crate::{shaper, Action, Direction, Vec2};
+use crate::{shaper, Direction, Status, Vec2};
 use smallvec::SmallVec;
 
 mod glyph_pos;
@@ -35,7 +35,7 @@ pub struct NotReady;
 ///
 /// ### Preparation
 ///
-/// This struct tracks the state of preparation ([`Self::required_action`]).
+/// This struct tracks the state of preparation ([`Self::status`]).
 /// Methods will return a [`NotReady`] error if called without sufficient
 /// preparation.
 ///
@@ -100,7 +100,7 @@ pub struct TextDisplay {
     //
     /// Level runs within the text, in logical order
     runs: SmallVec<[shaper::GlyphRun; 1]>,
-    action: Action,
+    status: Status,
     /// Contiguous runs, in logical order
     ///
     /// Within a line, runs may not be in visual order due to BIDI reversals.
@@ -127,7 +127,7 @@ impl Default for TextDisplay {
     fn default() -> Self {
         TextDisplay {
             runs: Default::default(),
-            action: Action::Configure, // highest value
+            status: Status::New,
             wrapped_runs: Default::default(),
             lines: Default::default(),
             #[cfg(feature = "num_glyphs")]
@@ -139,20 +139,20 @@ impl Default for TextDisplay {
 }
 
 impl TextDisplay {
-    /// Get required action
+    /// Get status of preparation
     #[inline]
-    pub fn required_action(&self) -> Action {
-        self.action
+    pub fn status(&self) -> Status {
+        self.status
     }
 
-    /// Require an action
+    /// Adjust status to indicate a required action
     ///
-    /// Required actions are tracked internally. This combines internal action
-    /// state with that input via `max`. It may be used, for example, to mark
-    /// that fonts need resizing due to change in environment.
+    /// This is used to notify that some step of preparation may need to be
+    /// repeated. The internally-tracked status is set to the minimum of
+    /// `status` and its previous value.
     #[inline]
-    pub fn require_action(&mut self, action: Action) {
-        self.action = self.action.max(action);
+    pub fn set_max_status(&mut self, status: Status) {
+        self.status = self.status.min(status);
     }
 
     /// Configure text
@@ -160,13 +160,13 @@ impl TextDisplay {
     /// Text objects must be configured before used.
     #[inline]
     pub fn configure(&mut self) -> Result<(), InvalidFontId> {
-        self.action = self.action.min(Action::Break);
+        self.status = self.status.max(Status::Configured);
         Ok(())
     }
 
     /// Get the number of lines (after wrapping)
     pub fn num_lines(&self) -> Result<usize, NotReady> {
-        if !self.action.is_ready() {
+        if !self.status.is_ready() {
             return Err(NotReady);
         }
         Ok(self.lines.len())
@@ -178,7 +178,7 @@ impl TextDisplay {
     /// bounding box on content.
     /// Alignment and input bounds do affect the result.
     pub fn bounding_box(&self) -> Result<(Vec2, Vec2), NotReady> {
-        if self.action > Action::VAlign {
+        if self.status < Status::Wrapped {
             return Err(NotReady);
         }
 
@@ -202,7 +202,7 @@ impl TextDisplay {
         &self,
         index: usize,
     ) -> Result<Option<(usize, std::ops::Range<usize>)>, NotReady> {
-        if !self.action.is_ready() {
+        if !self.status.is_ready() {
             return Err(NotReady);
         }
 
@@ -222,7 +222,7 @@ impl TextDisplay {
 
     /// Get the range of a line, by line number
     pub fn line_range(&self, line: usize) -> Result<Option<std::ops::Range<usize>>, NotReady> {
-        if !self.action.is_ready() {
+        if !self.status.is_ready() {
             return Err(NotReady);
         }
         Ok(self.lines.get(line).map(|line| line.text_range.to_std()))
@@ -275,7 +275,7 @@ impl TextDisplay {
     /// Note: indeterminate lines (e.g. empty lines) have their direction
     /// determined from the passed environment, by default left-to-right.
     pub fn line_is_rtl(&self, line: usize) -> Result<Option<bool>, NotReady> {
-        if !self.action.is_ready() {
+        if !self.status.is_ready() {
             return Err(NotReady);
         }
         if let Some(line) = self.lines.get(line) {
@@ -295,7 +295,7 @@ impl TextDisplay {
     /// Note: if the font's `rect` does not start at the origin, then its top-left
     /// coordinate should first be subtracted from `pos`.
     pub fn text_index_nearest(&self, pos: Vec2) -> Result<usize, NotReady> {
-        if !self.action.is_ready() {
+        if !self.status.is_ready() {
             return Err(NotReady);
         }
         let mut n = 0;
@@ -315,7 +315,7 @@ impl TextDisplay {
     /// This is similar to [`TextDisplay::text_index_nearest`], but allows the
     /// line to be specified explicitly. Returns `None` only on invalid `line`.
     pub fn line_index_nearest(&self, line: usize, x: f32) -> Result<Option<usize>, NotReady> {
-        if !self.action.is_ready() {
+        if !self.status.is_ready() {
             return Err(NotReady);
         }
         if line >= self.lines.len() {

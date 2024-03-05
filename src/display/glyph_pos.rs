@@ -159,7 +159,7 @@ impl TextDisplay {
     /// Depending on the use-case, the caller may need to clamp the resulting
     /// position.
     pub fn text_glyph_pos(&self, index: usize) -> Result<MarkerPosIter, NotReady> {
-        if !self.action.is_ready() {
+        if !self.status.is_ready() {
             return Err(NotReady);
         }
 
@@ -264,7 +264,7 @@ impl TextDisplay {
     /// This method has fairly low cost: `O(n)` in the number of glyphs with
     /// low overhead.
     pub fn glyphs<F: FnMut(FaceId, f32, Glyph)>(&self, mut f: F) -> Result<(), NotReady> {
-        if !self.action.is_ready() {
+        if !self.status.is_ready() {
             return Err(NotReady);
         }
 
@@ -317,7 +317,7 @@ impl TextDisplay {
         F: FnMut(FaceId, f32, Glyph, usize, X),
         G: FnMut(f32, f32, f32, f32, usize, X),
     {
-        if !self.action.is_ready() {
+        if !self.status.is_ready() {
             return Err(NotReady);
         }
 
@@ -484,7 +484,7 @@ impl TextDisplay {
         range: std::ops::Range<usize>,
         f: &mut dyn FnMut(Vec2, Vec2),
     ) -> Result<(), NotReady> {
-        if !self.action.is_ready() {
+        if !self.status.is_ready() {
             return Err(NotReady);
         }
 

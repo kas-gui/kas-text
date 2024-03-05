@@ -11,7 +11,7 @@ use super::TextDisplay;
 use crate::conv::{to_u32, to_usize};
 use crate::fonts::{fonts, FontId, InvalidFontId};
 use crate::format::FormattableText;
-use crate::{shaper, Action, Direction, Range};
+use crate::{shaper, Direction, Range, Status};
 use unicode_bidi::{BidiClass, BidiInfo, LTR_LEVEL, RTL_LEVEL};
 use xi_unicode::LineBreakIterator;
 
@@ -32,11 +32,11 @@ impl TextDisplay {
     /// This updates the result of [`TextDisplay::prepare_runs`] due to change
     /// in font size.
     ///
-    /// Prerequisites: prepared runs: requires action is no greater than `Action::Wrap`.
-    /// Post-requirements: prepare lines (requires action `Action::Wrap`).  
+    /// Prerequisites: prepared runs: requires status is no less than `Status::LevelRuns`.
+    /// Post-requirements: prepare lines (status is `Status::LevelRuns`).
     pub fn resize_runs<F: FormattableText + ?Sized>(&mut self, text: &F, dpem: f32) {
-        assert_eq!(self.action, Action::Resize);
-        self.action = Action::Wrap;
+        assert_eq!(self.status, Status::ResizeLevelRuns);
+        self.status = Status::LevelRuns;
 
         let mut font_tokens = text.font_tokens(dpem);
         let mut next_fmt = font_tokens.next();
@@ -81,7 +81,7 @@ impl TextDisplay {
         mut font_id: FontId,
         mut dpem: f32,
     ) -> Result<(), InvalidFontId> {
-        assert_eq!(self.action, Action::Break);
+        assert!(self.status >= Status::Configured);
 
         // This method constructs a list of "hard lines" (the initial line and any
         // caused by a hard break), each composed of a list of "level runs" (the
@@ -262,7 +262,7 @@ impl TextDisplay {
             println!("]");
         }
         */
-        self.action = Action::Wrap;
+        self.status = Status::LevelRuns;
         Ok(())
     }
 }

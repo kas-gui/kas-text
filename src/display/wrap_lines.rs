@@ -9,7 +9,7 @@ use super::{NotReady, RunSpecial, TextDisplay};
 use crate::conv::{to_u32, to_usize};
 use crate::fonts::{fonts, FontLibrary};
 use crate::shaper::{GlyphRun, PartMetrics};
-use crate::{Action, Align, Range, Vec2};
+use crate::{Align, Range, Status, Vec2};
 use smallvec::SmallVec;
 use unicode_bidi::{Level, LTR_LEVEL};
 
@@ -38,7 +38,7 @@ impl TextDisplay {
     ///
     /// The return value is unaffected by alignment and wrap configuration.
     pub fn measure_width(&self, max_width: f32) -> Result<f32, NotReady> {
-        if self.action > Action::Wrap {
+        if self.status < Status::LevelRuns {
             return Err(NotReady);
         }
 
@@ -73,11 +73,11 @@ impl TextDisplay {
     /// This method performs most required preparation steps of the
     /// [`TextDisplay`]. Remaining prepartion should be fast.
     pub fn measure_height(&self, wrap_width: f32) -> Result<f32, NotReady> {
-        if self.action > Action::Wrap {
+        if self.status < Status::LevelRuns {
             return Err(NotReady);
         }
 
-        if self.action < Action::Wrap {
+        if self.status >= Status::Wrapped {
             return self.bounding_box().map(|(tl, br)| br.1 - tl.1);
         }
 
@@ -165,7 +165,7 @@ impl TextDisplay {
     ///
     /// Returns:
     ///
-    /// -   `Err(NotReady)` if required action is greater than [`Action::Wrap`]
+    /// -   `Err(NotReady)` if status is less than [`Status::LevelRuns`]
     /// -   `Ok(bounding_corner)` on success: the vertical component is the
     ///     required height while the horizontal component depends on alignment
     pub fn prepare_lines(
@@ -174,10 +174,10 @@ impl TextDisplay {
         width_bound: f32,
         h_align: Align,
     ) -> Result<Vec2, NotReady> {
-        if self.action > Action::Wrap {
+        if self.status < Status::LevelRuns {
             return Err(NotReady);
         }
-        self.action = Action::VAlign;
+        self.status = Status::Wrapped;
 
         let mut adder = LineAdder::new(width_bound, h_align);
 
@@ -285,10 +285,10 @@ impl TextDisplay {
     /// Returns the bottom-right bounding corner.
     pub fn vertically_align(&mut self, bound: f32, v_align: Align) -> Result<Vec2, NotReady> {
         debug_assert!(bound.is_finite());
-        if self.action > Action::VAlign {
+        if self.status < Status::Wrapped {
             return Err(NotReady);
         }
-        self.action = Action::None;
+        self.status = Status::Ready;
 
         if self.lines.is_empty() {
             return Ok(Vec2(0.0, 0.0));

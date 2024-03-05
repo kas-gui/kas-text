@@ -5,28 +5,28 @@
 
 //! Utility types and traits
 
-/// Describes required text-preparation actions
+/// Describes the state-of-preparation of a [`TextDisplay`][crate::TextDisplay]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Ord, PartialOrd, Hash)]
-pub enum Action {
-    /// Nothing to do
-    None,
-    /// Fix vertical alignment
-    VAlign,
-    /// Do wrapping and alignment
-    Wrap,
-    /// Resize text, and above
-    Resize,
-    /// Break text into runs, associate fonts, and above
-    Break,
-    /// Configure text
-    Configure,
+pub enum Status {
+    /// Nothing done yet
+    New,
+    /// Configured
+    Configured,
+    /// As [`Self::LevelRuns`], except these need resizing
+    ResizeLevelRuns,
+    /// Source text has been broken into level runs
+    LevelRuns,
+    /// Line wrapping and horizontal alignment is done
+    Wrapped,
+    /// The text is ready for display
+    Ready,
 }
 
-impl Action {
-    /// True if action is `Action::None`
+impl Status {
+    /// True if status is `Status::Ready`
     #[inline]
     pub fn is_ready(&self) -> bool {
-        *self == Action::None
+        *self == Status::Ready
     }
 }
 

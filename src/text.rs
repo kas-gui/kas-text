@@ -8,7 +8,7 @@
 use crate::display::{Effect, MarkerPosIter, NotReady, TextDisplay};
 use crate::fonts::{fonts, FaceId, FontId, InvalidFontId};
 use crate::format::{EditableText, FormattableText};
-use crate::{Action, Align, Direction, Glyph, Vec2};
+use crate::{Align, Direction, Glyph, Status, Vec2};
 use std::ops::{Deref, DerefMut};
 
 /// Text, prepared for display in a given environment
@@ -103,23 +103,23 @@ impl<T: FormattableText> Text<T> {
          */
 
         self.text = text;
-        self.display.require_action(Action::Break);
+        self.display.set_max_status(Status::Configured);
     }
 }
 
 impl<T: FormattableText + ?Sized> Text<T> {
     #[inline]
     fn prepare_runs(&mut self) -> Result<(), NotReady> {
-        match self.display.required_action() {
-            Action::Configure => Err(NotReady),
-            Action::Break => self
+        match self.display.status() {
+            Status::New => Err(NotReady),
+            Status::Configured => self
                 .display
                 .prepare_runs(&self.text, self.direction, self.font_id, self.dpem)
                 .map_err(|_| {
                     debug_assert!(false, "font_id should be validated by configure");
                     NotReady
                 }),
-            Action::Resize => Ok(self.display.resize_runs(&self.text, self.dpem)),
+            Status::ResizeLevelRuns => Ok(self.display.resize_runs(&self.text, self.dpem)),
             _ => Ok(()),
         }
     }
@@ -307,7 +307,7 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
     fn set_font(&mut self, font_id: FontId) {
         if font_id != self.font_id {
             self.font_id = font_id;
-            self.require_action(Action::Break);
+            self.set_max_status(Status::Configured);
         }
     }
 
@@ -320,7 +320,7 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
     fn set_font_size(&mut self, dpem: f32) {
         if dpem != self.dpem {
             self.dpem = dpem;
-            self.require_action(Action::Resize);
+            self.set_max_status(Status::ResizeLevelRuns);
         }
     }
 
@@ -333,7 +333,7 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
     fn set_direction(&mut self, direction: Direction) {
         if direction != self.direction {
             self.direction = direction;
-            self.require_action(Action::Break);
+            self.set_max_status(Status::Configured);
         }
     }
 
@@ -347,7 +347,7 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
         assert!(self.wrap_width >= 0.0);
         if wrap_width != self.wrap_width {
             self.wrap_width = wrap_width;
-            self.require_action(Action::Wrap);
+            self.set_max_status(Status::LevelRuns);
         }
     }
 
@@ -360,9 +360,9 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
     fn set_align(&mut self, align: (Align, Align)) {
         if align != self.align {
             if align.0 == self.align.0 {
-                self.require_action(Action::VAlign);
+                self.set_max_status(Status::Wrapped);
             } else {
-                self.require_action(Action::Wrap);
+                self.set_max_status(Status::LevelRuns);
             }
             self.align = align;
         }
@@ -378,9 +378,9 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
         debug_assert!(bounds.is_finite());
         if bounds != self.bounds {
             if bounds.0 != self.bounds.0 {
-                self.require_action(Action::Wrap);
+                self.set_max_status(Status::LevelRuns);
             } else {
-                self.require_action(Action::VAlign);
+                self.set_max_status(Status::Wrapped);
             }
             self.bounds = bounds;
         }
@@ -422,15 +422,15 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
     fn prepare(&mut self) -> Result<bool, NotReady> {
         self.prepare_runs()?;
 
-        let action = self.display.required_action();
-        debug_assert!(action <= Action::Wrap);
+        let status = self.display.status();
+        debug_assert!(status >= Status::LevelRuns);
 
-        if action == Action::Wrap {
+        if status == Status::LevelRuns {
             self.display
                 .prepare_lines(self.wrap_width, self.bounds.0, self.align.0)?;
         }
 
-        Ok(if action >= Action::VAlign {
+        Ok(if status <= Status::Wrapped {
             let bound = self.display.vertically_align(self.bounds.1, self.align.1)?;
             !(bound.0 <= self.bounds.0 && bound.1 <= self.bounds.1)
         } else {
@@ -449,7 +449,7 @@ pub trait TextApiExt: TextApi {
     /// Check whether the text is fully prepared and ready for usage
     #[inline]
     fn is_prepared(&self) -> bool {
-        self.display().required_action().is_ready()
+        self.display().status().is_ready()
     }
 
     /// Set font size
@@ -468,7 +468,7 @@ pub trait TextApiExt: TextApi {
     /// This depends on the font and font size, but is independent of the text.
     #[inline]
     fn line_height(&self) -> Result<f32, NotReady> {
-        if self.display().required_action() >= Action::Configure {
+        if self.display().status() < Status::Configured {
             return Err(NotReady);
         }
 
@@ -657,25 +657,25 @@ impl<T: EditableText + ?Sized> EditableTextApi for Text<T> {
     #[inline]
     fn insert_char(&mut self, index: usize, c: char) {
         self.text.insert_char(index, c);
-        self.display.require_action(Action::Break);
+        self.display.set_max_status(Status::Configured);
     }
 
     #[inline]
     fn replace_range(&mut self, range: std::ops::Range<usize>, replace_with: &str) {
         self.text.replace_range(range, replace_with);
-        self.display.require_action(Action::Break);
+        self.display.set_max_status(Status::Configured);
     }
 
     #[inline]
     fn set_string(&mut self, string: String) {
         self.text.set_string(string);
-        self.display.require_action(Action::Break);
+        self.display.set_max_status(Status::Configured);
     }
 
     #[inline]
     fn swap_string(&mut self, string: &mut String) {
         self.text.swap_string(string);
-        self.display.require_action(Action::Break);
+        self.display.set_max_status(Status::Configured);
     }
 }
 
