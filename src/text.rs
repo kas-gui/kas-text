@@ -47,10 +47,14 @@ impl<T: FormattableText> Text<T> {
         }
     }
 
-    /// Construct from parts
+    /// Replace the [`TextDisplay`]
+    ///
+    /// This may be used with [`Self::new`] to reconstruct an object which was
+    /// disolved [`into_parts`][Self::into_parts].
     #[inline]
-    pub fn from_parts(env: Environment, display: TextDisplay, text: T) -> Self {
-        Text { env, display, text }
+    pub fn with_display(mut self, display: TextDisplay) -> Self {
+        self.display = display;
+        self
     }
 
     /// Decompose into parts
