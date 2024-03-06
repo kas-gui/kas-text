@@ -29,7 +29,8 @@ pub(crate) enum RunSpecial {
 impl TextDisplay {
     /// Update font size
     ///
-    /// Requires: level runs have been prepared.
+    /// [Requires status][Self#status-of-preparation]: level runs have been
+    /// prepared and are valid in all ways except size (`dpem`).
     ///
     /// This updates the result of [`TextDisplay::prepare_runs`] due to change
     /// in font size.
@@ -64,14 +65,17 @@ impl TextDisplay {
         }
     }
 
-    /// Prepare text runs
+    /// Break text into level runs
     ///
-    /// Requires: none.
+    /// [Requires status][Self#status-of-preparation]: none.
     ///
-    /// Prerequisite: assign to or assert validity of `self.default_font_id`.
+    /// Must be called again if any of `text`, `direction` or `font_id` change.
+    /// If only `dpem` changes, [`Self::resize_runs`] may be called instead.
     ///
-    /// This is the first step of preparation: breaking text into runs according
-    /// to font properties, bidi-levels and line-wrap points.
+    /// The text is broken into a set of contiguous "level runs". These runs are
+    /// maximal slices of the `text` which do not contain explicit line breaks
+    /// and have a single text direction according to the
+    /// [Unicode Bidirectional Algorithm](http://www.unicode.org/reports/tr9/).
     pub fn prepare_runs<F: FormattableText + ?Sized>(
         &mut self,
         text: &F,

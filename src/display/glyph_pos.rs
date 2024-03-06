@@ -143,7 +143,8 @@ impl ExactSizeIterator for MarkerPosIter {}
 impl TextDisplay {
     /// Find the starting position (top-left) of the glyph at the given index
     ///
-    /// Requires: text is fully prepared for display.
+    /// [Requires status][Self#status-of-preparation]:
+    /// text is fully prepared for display.
     ///
     /// The index should be no greater than the text length. It is not required
     /// to be on a code-point boundary. Returns an iterator over matching
@@ -233,6 +234,8 @@ impl TextDisplay {
 
     /// Get the number of glyphs
     ///
+    /// [Requires status][Self#status-of-preparation]: lines have been wrapped.
+    ///
     /// This method is a simple memory-read.
     #[inline]
     #[cfg_attr(doc_cfg, doc(cfg(feature = "num_glyphs")))]
@@ -243,7 +246,8 @@ impl TextDisplay {
 
     /// Yield a sequence of positioned glyphs
     ///
-    /// Requires: text is fully prepared for display.
+    /// [Requires status][Self#status-of-preparation]:
+    /// text is fully prepared for display.
     ///
     /// Glyphs are yielded in undefined order by a call to `f`. The number of
     /// glyphs yielded will equal [`TextDisplay::num_glyphs`]. The closure `f`
@@ -279,7 +283,8 @@ impl TextDisplay {
 
     /// Like [`TextDisplay::glyphs`] but with added effects
     ///
-    /// Requires: text is fully prepared for display.
+    /// [Requires status][Self#status-of-preparation]:
+    /// text is fully prepared for display.
     ///
     /// If the list `effects` is empty or has first entry with `start > 0`, the
     /// result of `Effect::default(default_aux)` is used. The user payload of
@@ -467,7 +472,8 @@ impl TextDisplay {
 
     /// Yield a sequence of rectangles to highlight a given text range
     ///
-    /// Requires: text is fully prepared for display.
+    /// [Requires status][Self#status-of-preparation]:
+    /// text is fully prepared for display.
     ///
     /// Calls `f(top_left, bottom_right)` for each highlighting rectangle.
     pub fn highlight_range(&self, range: std::ops::Range<usize>, f: &mut dyn FnMut(Vec2, Vec2)) {
@@ -489,7 +495,8 @@ impl TextDisplay {
 
     /// Produce highlighting rectangles within a range of runs
     ///
-    /// Requires: text is fully prepared for display.
+    /// [Requires status][Self#status-of-preparation]:
+    /// text is fully prepared for display.
     ///
     /// Warning: runs are in logical order which does not correspond to display
     /// order. As a result, the order of results (on a line) is not known.

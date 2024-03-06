@@ -32,7 +32,8 @@ pub struct Line {
 impl TextDisplay {
     /// Measure required width, up to some `max_width`
     ///
-    /// Requires: level runs have been prepared.
+    /// [Requires status][Self#status-of-preparation]: level runs have been
+    /// prepared.
     ///
     /// This method allows calculation of the width requirement of a text object
     /// without full wrapping and glyph placement. Whenever the requirement
@@ -68,7 +69,8 @@ impl TextDisplay {
 
     /// Measure required vertical height, wrapping as configured
     ///
-    /// Requires: level runs have been prepared.
+    /// [Requires status][Self#status-of-preparation]: level runs have been
+    /// prepared.
     ///
     /// This method performs most required preparation steps of the
     /// [`TextDisplay`]. Remaining prepartion should be fast.
@@ -152,7 +154,8 @@ impl TextDisplay {
 
     /// Prepare lines ("wrap")
     ///
-    /// Requires: level runs have been prepared.
+    /// [Requires status][Self#status-of-preparation]: level runs have been
+    /// prepared.
     ///
     /// This does text layout, including wrapping and horizontal alignment but
     /// excluding vertical alignment.
@@ -262,7 +265,7 @@ impl TextDisplay {
 
     /// Vertically align lines
     ///
-    /// Requires: lines have been wrapped.
+    /// [Requires status][Self#status-of-preparation]: lines have been wrapped.
     ///
     /// Returns the bottom-right bounding corner.
     pub fn vertically_align(&mut self, bound: f32, v_align: Align) -> Vec2 {
