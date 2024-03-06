@@ -12,7 +12,7 @@
 
 use super::{Line, TextDisplay};
 use crate::conv::to_usize;
-use crate::fonts::{fonts, FaceId};
+use crate::fonts::{self, FaceId};
 use crate::{Glyph, Vec2};
 
 /// Effect formatting marker
@@ -181,7 +181,7 @@ impl TextDisplay {
             }
 
             let glyph_run = &self.runs[to_usize(run_part.glyph_run)];
-            let sf = fonts()
+            let sf = fonts::library()
                 .get_face(glyph_run.face_id)
                 .scale_by_dpu(glyph_run.dpu);
 
@@ -317,7 +317,7 @@ impl TextDisplay {
         F: FnMut(FaceId, f32, Glyph, usize, X),
         G: FnMut(f32, f32, f32, f32, usize, X),
     {
-        let fonts = fonts();
+        let fonts = fonts::library();
 
         let mut effect_cur = usize::MAX;
         let mut effect_next = 0;
@@ -506,7 +506,7 @@ impl TextDisplay {
         range: std::ops::Range<usize>,
         f: &mut dyn FnMut(Vec2, Vec2),
     ) {
-        let fonts = fonts();
+        let fonts = fonts::library();
 
         let mut a;
 

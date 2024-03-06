@@ -7,7 +7,7 @@
 
 use super::{RunSpecial, TextDisplay};
 use crate::conv::{to_u32, to_usize};
-use crate::fonts::{fonts, FontLibrary};
+use crate::fonts::{self, FontLibrary};
 use crate::shaper::{GlyphRun, PartMetrics};
 use crate::{Align, Range, Vec2};
 use smallvec::SmallVec;
@@ -178,7 +178,7 @@ impl TextDisplay {
     }
 
     fn wrap_lines(&self, accumulator: &mut impl PartAccumulator, wrap_width: f32) {
-        let fonts = fonts();
+        let fonts = fonts::library();
 
         // Tuples: (index, part_index, num_parts)
         let mut start = (0, 0, 0);

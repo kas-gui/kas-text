@@ -9,7 +9,7 @@
 
 use super::TextDisplay;
 use crate::conv::{to_u32, to_usize};
-use crate::fonts::{fonts, FontId, InvalidFontId};
+use crate::fonts::{self, FontId, InvalidFontId};
 use crate::format::FormattableText;
 use crate::{shaper, Direction, Range};
 use unicode_bidi::{BidiClass, BidiInfo, LTR_LEVEL, RTL_LEVEL};
@@ -101,7 +101,7 @@ impl TextDisplay {
             }
         }
 
-        let fonts = fonts();
+        let fonts = fonts::library();
         let text = text.as_str();
 
         let default_para_level = match direction {

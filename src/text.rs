@@ -26,11 +26,11 @@ use crate::{Align, Direction, Glyph, Status, Vec2};
 /// [state of preparation][TextDisplay#status-of-preparation] and will perform
 /// steps as required. To use this struct:
 /// ```
-/// use kas_text::{fonts::fonts, Text, TextApi, TextApiExt, Vec2};
+/// use kas_text::{fonts, Text, TextApi, TextApiExt, Vec2};
 /// use std::path::Path;
 ///
 /// // Load system fonts and select a default:
-/// let fonts = fonts();
+/// let fonts = fonts::library();
 /// fonts.select_default().expect("failed to select default font");
 ///
 /// let mut text = Text::new("Hello, world!");
@@ -487,7 +487,7 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
     #[inline]
     fn configure(&mut self) -> Result<(), InvalidFontId> {
         // Validate default_font_id
-        let _ = fonts::fonts().first_face_for(self.font_id)?;
+        let _ = fonts::library().first_face_for(self.font_id)?;
 
         self.status = self.status.max(Status::Configured);
         Ok(())
@@ -496,7 +496,7 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
     fn line_height(&self) -> Result<f32, NotReady> {
         self.check_status(Status::Configured)?;
 
-        fonts::fonts()
+        fonts::library()
             .get_first_face(self.get_font())
             .map(|face| face.height(self.get_font_size()))
             .map_err(|_| {

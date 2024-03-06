@@ -44,14 +44,12 @@ fn to_uppercase<'a>(c: Cow<'a, str>) -> Cow<'a, str> {
 
 /// Manages the list of available fonts and font selection
 ///
-/// This database exists as a singleton, accessible through the [`fonts`]
-/// function.
+/// This database exists as a singleton, accessible through
+/// [`crate::fonts::library()`].
 ///
 /// After initialization font loading and alias adjustment is disabled. The
 /// reason for this is that font selection uses multiple caches and
 /// there is no mechanism for forcing fresh lookups everywhere.
-///
-/// [`fonts`]: super::fonts
 pub struct Database {
     state: State,
     db: fontdb::Database,

@@ -19,7 +19,7 @@
 
 use crate::conv::{to_u32, to_usize, DPU};
 use crate::display::RunSpecial;
-use crate::fonts::{fonts, FaceId};
+use crate::fonts::{self, FaceId};
 use crate::{Range, Vec2};
 use smallvec::SmallVec;
 use unicode_bidi::Level;
@@ -260,7 +260,7 @@ pub(crate) fn shape(
     let mut no_space_end = 0.0;
     let mut caret = 0.0;
 
-    let face = fonts().get_face(face_id);
+    let face = fonts::library().get_face(face_id);
     let dpu = face.dpu(dpem);
     let sf = face.scale_by_dpu(dpu);
 
@@ -330,7 +330,7 @@ fn shape_harfbuzz(
     level: Level,
     breaks: &mut [GlyphBreak],
 ) -> (Vec<Glyph>, f32, f32) {
-    let mut font = fonts().get_harfbuzz(face_id);
+    let mut font = fonts::library().get_harfbuzz(face_id);
 
     // ppem affects hinting but does not scale layout, so this has little effect:
     font.set_ppem(dpem as u32, dpem as u32);
@@ -417,7 +417,7 @@ fn shape_rustybuzz(
     level: Level,
     breaks: &mut [GlyphBreak],
 ) -> (Vec<Glyph>, f32, f32) {
-    let fonts = fonts();
+    let fonts = fonts::library();
     let dpu = fonts.get_face(face_id).dpu(dpem);
     let face = fonts.get_rustybuzz(face_id);
 

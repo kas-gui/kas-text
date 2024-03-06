@@ -177,7 +177,7 @@ impl EditableText for Markdown {
 fn parse(input: &str) -> Result<Markdown, Error> {
     let mut text = String::with_capacity(input.len());
     let mut fmt: Vec<Fmt> = Vec::new();
-    let fonts = fonts::fonts();
+    let fonts = fonts::library();
     let mut set_last = |item: &StackItem| {
         let f = Fmt::new(fonts, item);
         if let Some(last) = fmt.last_mut() {
