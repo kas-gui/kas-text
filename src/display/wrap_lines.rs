@@ -5,7 +5,7 @@
 
 //! Text preparation: wrapping
 
-use super::{NotReady, RunSpecial, TextDisplay};
+use super::{RunSpecial, TextDisplay};
 use crate::conv::{to_u32, to_usize};
 use crate::fonts::{fonts, FontLibrary};
 use crate::shaper::{GlyphRun, PartMetrics};
@@ -32,16 +32,14 @@ pub struct Line {
 impl TextDisplay {
     /// Measure required width, up to some `max_width`
     ///
+    /// Requires: level runs have been prepared.
+    ///
     /// This method allows calculation of the width requirement of a text object
     /// without full wrapping and glyph placement. Whenever the requirement
     /// exceeds `max_width`, the algorithm stops early, returning `max_width`.
     ///
     /// The return value is unaffected by alignment and wrap configuration.
-    pub fn measure_width(&self, max_width: f32) -> Result<f32, NotReady> {
-        if self.status < Status::LevelRuns {
-            return Err(NotReady);
-        }
-
+    pub fn measure_width(&self, max_width: f32) -> f32 {
         let mut max_line_len = 0.0f32;
         let mut caret = 0.0;
         let mut line_len = 0.0;
@@ -53,7 +51,7 @@ impl TextDisplay {
             if part.len_no_space > 0.0 {
                 line_len = caret + part.len_no_space;
                 if line_len >= max_width {
-                    return Ok(max_width);
+                    return max_width;
                 }
             }
             caret += part.len;
@@ -65,22 +63,16 @@ impl TextDisplay {
             }
         }
 
-        Ok(max_line_len.max(line_len))
+        max_line_len.max(line_len)
     }
 
     /// Measure required vertical height, wrapping as configured
     ///
+    /// Requires: level runs have been prepared.
+    ///
     /// This method performs most required preparation steps of the
     /// [`TextDisplay`]. Remaining prepartion should be fast.
-    pub fn measure_height(&self, wrap_width: f32) -> Result<f32, NotReady> {
-        if self.status < Status::LevelRuns {
-            return Err(NotReady);
-        }
-
-        if self.status >= Status::Wrapped {
-            return self.bounding_box().map(|(tl, br)| br.1 - tl.1);
-        }
-
+    pub fn measure_height(&self, wrap_width: f32) -> f32 {
         #[derive(Default)]
         struct MeasureAdder {
             parts: Vec<usize>, // run index for each part
@@ -155,28 +147,18 @@ impl TextDisplay {
 
         let mut adder = MeasureAdder::default();
         self.wrap_lines(&mut adder, wrap_width);
-        Ok(adder.vcaret)
+        adder.vcaret
     }
 
     /// Prepare lines ("wrap")
     ///
+    /// Requires: level runs have been prepared.
+    ///
     /// This does text layout, including wrapping and horizontal alignment but
     /// excluding vertical alignment.
     ///
-    /// Returns:
-    ///
-    /// -   `Err(NotReady)` if status is less than [`Status::LevelRuns`]
-    /// -   `Ok(bounding_corner)` on success: the vertical component is the
-    ///     required height while the horizontal component depends on alignment
-    pub fn prepare_lines(
-        &mut self,
-        wrap_width: f32,
-        width_bound: f32,
-        h_align: Align,
-    ) -> Result<Vec2, NotReady> {
-        if self.status < Status::LevelRuns {
-            return Err(NotReady);
-        }
+    /// Returns the required height.
+    pub fn prepare_lines(&mut self, wrap_width: f32, width_bound: f32, h_align: Align) -> f32 {
         self.status = Status::Wrapped;
 
         let mut adder = LineAdder::new(width_bound, h_align);
@@ -191,7 +173,7 @@ impl TextDisplay {
         }
         self.l_bound = adder.l_bound.min(adder.r_bound);
         self.r_bound = adder.r_bound;
-        Ok(Vec2(adder.r_bound, adder.vcaret))
+        adder.vcaret
     }
 
     fn wrap_lines(&self, accumulator: &mut impl PartAccumulator, wrap_width: f32) {
@@ -282,16 +264,15 @@ impl TextDisplay {
 
     /// Vertically align lines
     ///
+    /// Requires: lines have been wrapped.
+    ///
     /// Returns the bottom-right bounding corner.
-    pub fn vertically_align(&mut self, bound: f32, v_align: Align) -> Result<Vec2, NotReady> {
+    pub fn vertically_align(&mut self, bound: f32, v_align: Align) -> Vec2 {
         debug_assert!(bound.is_finite());
-        if self.status < Status::Wrapped {
-            return Err(NotReady);
-        }
         self.status = Status::Ready;
 
         if self.lines.is_empty() {
-            return Ok(Vec2(0.0, 0.0));
+            return Vec2(0.0, 0.0);
         }
 
         let top = self.lines.first().unwrap().top;
@@ -315,7 +296,7 @@ impl TextDisplay {
             }
         }
 
-        Ok(Vec2(self.r_bound, bottom))
+        Vec2(self.r_bound, bottom)
     }
 }
 

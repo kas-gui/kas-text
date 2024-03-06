@@ -29,11 +29,10 @@ pub(crate) enum RunSpecial {
 impl TextDisplay {
     /// Update font size
     ///
+    /// Requires: level runs have been prepared.
+    ///
     /// This updates the result of [`TextDisplay::prepare_runs`] due to change
     /// in font size.
-    ///
-    /// Prerequisites: prepared runs: requires status is no less than `Status::LevelRuns`.
-    /// Post-requirements: prepare lines (status is `Status::LevelRuns`).
     pub fn resize_runs<F: FormattableText + ?Sized>(&mut self, text: &F, dpem: f32) {
         assert_eq!(self.status, Status::ResizeLevelRuns);
         self.status = Status::LevelRuns;
@@ -69,6 +68,8 @@ impl TextDisplay {
     }
 
     /// Prepare text runs
+    ///
+    /// Requires: none.
     ///
     /// Prerequisite: assign to or assert validity of `self.default_font_id`.
     ///

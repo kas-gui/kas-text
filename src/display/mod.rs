@@ -165,47 +165,39 @@ impl TextDisplay {
     }
 
     /// Get the number of lines (after wrapping)
-    pub fn num_lines(&self) -> Result<usize, NotReady> {
-        if !self.status.is_ready() {
-            return Err(NotReady);
-        }
-        Ok(self.lines.len())
+    ///
+    /// Requires: lines have been wrapped.
+    pub fn num_lines(&self) -> usize {
+        self.lines.len()
     }
 
     /// Get the size of the required bounding box
     ///
-    /// This is the position of the upper-left and lower-right corners of a
+    /// Requires: lines have been wrapped.
+    ///
+    /// Returns the position of the upper-left and lower-right corners of a
     /// bounding box on content.
     /// Alignment and input bounds do affect the result.
-    pub fn bounding_box(&self) -> Result<(Vec2, Vec2), NotReady> {
-        if self.status < Status::Wrapped {
-            return Err(NotReady);
-        }
-
+    pub fn bounding_box(&self) -> (Vec2, Vec2) {
         if self.lines.is_empty() {
-            return Ok((Vec2::ZERO, Vec2::ZERO));
+            return (Vec2::ZERO, Vec2::ZERO);
         }
 
         let top = self.lines.first().unwrap().top;
         let bottom = self.lines.last().unwrap().bottom;
-        Ok((Vec2(self.l_bound, top), Vec2(self.r_bound, bottom)))
+        (Vec2(self.l_bound, top), Vec2(self.r_bound, bottom))
     }
 
     /// Find the line containing text `index`
+    ///
+    /// Requires: lines have been wrapped.
     ///
     /// Returns the line number and the text-range of the line.
     ///
     /// Returns `None` in case `index` does not line on or at the end of a line
     /// (which means either that `index` is beyond the end of the text or that
     /// `index` is within a mult-byte line break).
-    pub fn find_line(
-        &self,
-        index: usize,
-    ) -> Result<Option<(usize, std::ops::Range<usize>)>, NotReady> {
-        if !self.status.is_ready() {
-            return Err(NotReady);
-        }
-
+    pub fn find_line(&self, index: usize) -> Option<(usize, std::ops::Range<usize>)> {
         let mut first = None;
         for (n, line) in self.lines.iter().enumerate() {
             if line.text_range.end() == index {
@@ -214,18 +206,17 @@ impl TextDisplay {
                 // lines it does not match any other location.
                 first = Some((n, line.text_range.to_std()));
             } else if line.text_range.includes(index) {
-                return Ok(Some((n, line.text_range.to_std())));
+                return Some((n, line.text_range.to_std()));
             }
         }
-        Ok(first)
+        first
     }
 
     /// Get the range of a line, by line number
-    pub fn line_range(&self, line: usize) -> Result<Option<std::ops::Range<usize>>, NotReady> {
-        if !self.status.is_ready() {
-            return Err(NotReady);
-        }
-        Ok(self.lines.get(line).map(|line| line.text_range.to_std()))
+    ///
+    /// Requires: lines have been wrapped.
+    pub fn line_range(&self, line: usize) -> Option<std::ops::Range<usize>> {
+        self.lines.get(line).map(|line| line.text_range.to_std())
     }
 
     /// Get the base directionality of the text
@@ -252,38 +243,35 @@ impl TextDisplay {
 
     /// Get the directionality of the current line
     ///
+    /// Requires: lines have been wrapped.
+    ///
     /// Returns:
     ///
-    /// - `Err(NotReady)` if text is not prepared
-    /// - `Ok(None)` if text is empty
-    /// - `Ok(Some(line_is_right_to_left))` otherwise
+    /// - `None` if text is empty
+    /// - `Some(line_is_right_to_left)` otherwise
     ///
     /// Note: indeterminate lines (e.g. empty lines) have their direction
     /// determined from the passed environment, by default left-to-right.
-    pub fn line_is_rtl(&self, line: usize) -> Result<Option<bool>, NotReady> {
-        if !self.status.is_ready() {
-            return Err(NotReady);
-        }
+    pub fn line_is_rtl(&self, line: usize) -> Option<bool> {
         if let Some(line) = self.lines.get(line) {
             let first_run = line.run_range.start();
             let glyph_run = to_usize(self.wrapped_runs[first_run].glyph_run);
-            Ok(Some(self.runs[glyph_run].level.is_rtl()))
+            Some(self.runs[glyph_run].level.is_rtl())
         } else {
-            Ok(None)
+            None
         }
     }
 
     /// Find the text index for the glyph nearest the given `pos`
+    ///
+    /// Requires: text is fully prepared for display.
     ///
     /// This includes the index immediately after the last glyph, thus
     /// `result ≤ text.len()`.
     ///
     /// Note: if the font's `rect` does not start at the origin, then its top-left
     /// coordinate should first be subtracted from `pos`.
-    pub fn text_index_nearest(&self, pos: Vec2) -> Result<usize, NotReady> {
-        if !self.status.is_ready() {
-            return Err(NotReady);
-        }
+    pub fn text_index_nearest(&self, pos: Vec2) -> usize {
         let mut n = 0;
         for (i, line) in self.lines.iter().enumerate() {
             if line.top > pos.1 {
@@ -292,20 +280,18 @@ impl TextDisplay {
             n = i;
         }
         // Expected to return Some(..) value but None has been observed:
-        self.line_index_nearest(n, pos.0)
-            .map(|opt_line| opt_line.unwrap_or(0))
+        self.line_index_nearest(n, pos.0).unwrap_or(0)
     }
 
     /// Find the text index nearest horizontal-coordinate `x` on `line`
     ///
+    /// Requires: lines have been wrapped.
+    ///
     /// This is similar to [`TextDisplay::text_index_nearest`], but allows the
     /// line to be specified explicitly. Returns `None` only on invalid `line`.
-    pub fn line_index_nearest(&self, line: usize, x: f32) -> Result<Option<usize>, NotReady> {
-        if !self.status.is_ready() {
-            return Err(NotReady);
-        }
+    pub fn line_index_nearest(&self, line: usize, x: f32) -> Option<usize> {
         if line >= self.lines.len() {
-            return Ok(None);
+            return None;
         }
         let line = &self.lines[line];
         let run_range = line.run_range.to_std();
@@ -348,6 +334,6 @@ impl TextDisplay {
             try_best((end_pos - rel_pos).abs(), end_index);
         }
 
-        Ok(Some(to_usize(best)))
+        Some(to_usize(best))
     }
 }

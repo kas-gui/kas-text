@@ -129,6 +129,9 @@ impl<T: FormattableText + ?Sized> Text<T> {
 ///
 /// This allows dynamic dispatch over [`Text`]'s type parameters.
 pub trait TextApi {
+    /// Check whether the status is at least `status`
+    fn check_status(&self, status: Status) -> Result<(), NotReady>;
+
     /// Read the [`TextDisplay`]
     fn display(&self) -> &TextDisplay;
 
@@ -296,6 +299,15 @@ pub trait TextApi {
 
 impl<T: FormattableText + ?Sized> TextApi for Text<T> {
     #[inline]
+    fn check_status(&self, status: Status) -> Result<(), NotReady> {
+        if self.display().status() >= status {
+            Ok(())
+        } else {
+            Err(NotReady)
+        }
+    }
+
+    #[inline]
     fn display(&self) -> &TextDisplay {
         &self.display
     }
@@ -455,12 +467,17 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
     fn measure_width(&mut self, max_width: f32) -> Result<f32, NotReady> {
         self.prepare_runs()?;
 
-        Ok(self.display.measure_width(max_width).unwrap())
+        Ok(self.display.measure_width(max_width))
     }
 
     fn measure_height(&mut self) -> Result<f32, NotReady> {
+        if self.display.status() >= Status::Wrapped {
+            let (tl, br) = self.display.bounding_box();
+            return Ok(br.1 - tl.1);
+        }
+
         self.prepare_runs()?;
-        self.display.measure_height(self.wrap_width)
+        Ok(self.display.measure_height(self.wrap_width))
     }
 
     #[inline]
@@ -472,11 +489,12 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
 
         if status == Status::LevelRuns {
             self.display
-                .prepare_lines(self.wrap_width, self.bounds.0, self.align.0)?;
+                .prepare_lines(self.wrap_width, self.bounds.0, self.align.0);
         }
 
         Ok(if status <= Status::Wrapped {
-            let bound = self.display.vertically_align(self.bounds.1, self.align.1)?;
+            debug_assert!(self.display.status() >= Status::Wrapped);
+            let bound = self.display.vertically_align(self.bounds.1, self.align.1);
             !(bound.0 <= self.bounds.0 && bound.1 <= self.bounds.1)
         } else {
             false
@@ -512,8 +530,10 @@ pub trait TextApiExt: TextApi {
     /// This is the position of the upper-left and lower-right corners of a
     /// bounding box on content.
     /// Alignment and input bounds do affect the result.
+    #[inline]
     fn bounding_box(&self) -> Result<(Vec2, Vec2), NotReady> {
-        self.display().bounding_box()
+        self.check_status(Status::Wrapped)?;
+        Ok(self.display().bounding_box())
     }
 
     /// Get the number of lines (after wrapping)
@@ -521,7 +541,8 @@ pub trait TextApiExt: TextApi {
     /// See [`TextDisplay::num_lines`].
     #[inline]
     fn num_lines(&self) -> Result<usize, NotReady> {
-        self.display().num_lines()
+        self.check_status(Status::Wrapped)?;
+        Ok(self.display().num_lines())
     }
 
     /// Find the line containing text `index`
@@ -529,7 +550,8 @@ pub trait TextApiExt: TextApi {
     /// See [`TextDisplay::find_line`].
     #[inline]
     fn find_line(&self, index: usize) -> Result<Option<(usize, std::ops::Range<usize>)>, NotReady> {
-        self.display().find_line(index)
+        self.check_status(Status::Wrapped)?;
+        Ok(self.display().find_line(index))
     }
 
     /// Get the range of a line, by line number
@@ -537,7 +559,8 @@ pub trait TextApiExt: TextApi {
     /// See [`TextDisplay::line_range`].
     #[inline]
     fn line_range(&self, line: usize) -> Result<Option<std::ops::Range<usize>>, NotReady> {
-        self.display().line_range(line)
+        self.check_status(Status::Wrapped)?;
+        Ok(self.display().line_range(line))
     }
 
     /// Get the directionality of the current line
@@ -545,7 +568,8 @@ pub trait TextApiExt: TextApi {
     /// See [`TextDisplay::line_is_rtl`].
     #[inline]
     fn line_is_rtl(&self, line: usize) -> Result<Option<bool>, NotReady> {
-        self.display().line_is_rtl(line)
+        self.check_status(Status::Wrapped)?;
+        Ok(self.display().line_is_rtl(line))
     }
 
     /// Find the text index for the glyph nearest the given `pos`
@@ -553,7 +577,8 @@ pub trait TextApiExt: TextApi {
     /// See [`TextDisplay::text_index_nearest`].
     #[inline]
     fn text_index_nearest(&self, pos: Vec2) -> Result<usize, NotReady> {
-        self.display().text_index_nearest(pos)
+        self.check_status(Status::Ready)?;
+        Ok(self.display().text_index_nearest(pos))
     }
 
     /// Find the text index nearest horizontal-coordinate `x` on `line`
@@ -561,14 +586,16 @@ pub trait TextApiExt: TextApi {
     /// See [`TextDisplay::line_index_nearest`].
     #[inline]
     fn line_index_nearest(&self, line: usize, x: f32) -> Result<Option<usize>, NotReady> {
-        self.display().line_index_nearest(line, x)
+        self.check_status(Status::Wrapped)?;
+        Ok(self.display().line_index_nearest(line, x))
     }
 
     /// Find the starting position (top-left) of the glyph at the given index
     ///
     /// See [`TextDisplay::text_glyph_pos`].
     fn text_glyph_pos(&self, index: usize) -> Result<MarkerPosIter, NotReady> {
-        self.display().text_glyph_pos(index)
+        self.check_status(Status::Ready)?;
+        Ok(self.display().text_glyph_pos(index))
     }
 
     /// Get the number of glyphs
@@ -577,15 +604,17 @@ pub trait TextApiExt: TextApi {
     #[inline]
     #[cfg_attr(doc_cfg, doc(cfg(feature = "num_glyphs")))]
     #[cfg(feature = "num_glyphs")]
-    fn num_glyphs(&self) -> usize {
-        self.display().num_glyphs()
+    fn num_glyphs(&self) -> Result<usize, NotReady> {
+        self.check_status(Status::Wrapped)?;
+        Ok(self.display().num_glyphs())
     }
 
     /// Yield a sequence of positioned glyphs
     ///
     /// See [`TextDisplay::glyphs`].
     fn glyphs<F: FnMut(FaceId, f32, Glyph)>(&self, f: F) -> Result<(), NotReady> {
-        self.display().glyphs(f)
+        self.check_status(Status::Ready)?;
+        Ok(self.display().glyphs(f))
     }
 
     /// Like [`TextDisplay::glyphs`] but with added effects
@@ -603,8 +632,10 @@ pub trait TextApiExt: TextApi {
         F: FnMut(FaceId, f32, Glyph, usize, X),
         G: FnMut(f32, f32, f32, f32, usize, X),
     {
-        self.display()
-            .glyphs_with_effects(effects, default_aux, f, g)
+        self.check_status(Status::Ready)?;
+        Ok(self
+            .display()
+            .glyphs_with_effects(effects, default_aux, f, g))
     }
 
     /// Yield a sequence of rectangles to highlight a given text range
@@ -614,7 +645,8 @@ pub trait TextApiExt: TextApi {
     where
         F: FnMut(Vec2, Vec2),
     {
-        self.display().highlight_range(range, &mut f)
+        self.check_status(Status::Ready)?;
+        Ok(self.display().highlight_range(range, &mut f))
     }
 }
 

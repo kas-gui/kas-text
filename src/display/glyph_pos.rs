@@ -10,7 +10,7 @@
 #![allow(clippy::never_loop)]
 #![allow(clippy::needless_range_loop)]
 
-use super::{Line, NotReady, TextDisplay};
+use super::{Line, TextDisplay};
 use crate::conv::to_usize;
 use crate::fonts::{fonts, FaceId};
 use crate::{Glyph, Vec2};
@@ -143,6 +143,8 @@ impl ExactSizeIterator for MarkerPosIter {}
 impl TextDisplay {
     /// Find the starting position (top-left) of the glyph at the given index
     ///
+    /// Requires: text is fully prepared for display.
+    ///
     /// The index should be no greater than the text length. It is not required
     /// to be on a code-point boundary. Returns an iterator over matching
     /// positions. Length of results is guaranteed to be one of 0, 1 or 2:
@@ -158,11 +160,7 @@ impl TextDisplay {
     /// The result is not guaranteed to be within [`Self::bounding_box`].
     /// Depending on the use-case, the caller may need to clamp the resulting
     /// position.
-    pub fn text_glyph_pos(&self, index: usize) -> Result<MarkerPosIter, NotReady> {
-        if !self.status.is_ready() {
-            return Err(NotReady);
-        }
-
+    pub fn text_glyph_pos(&self, index: usize) -> MarkerPosIter {
         let mut v: [MarkerPos; 2] = Default::default();
         let (a, mut b) = (0, 0);
         let mut push_result = |pos, ascent, descent, level| {
@@ -230,7 +228,7 @@ impl TextDisplay {
             break;
         }
 
-        Ok(MarkerPosIter { v, a, b })
+        MarkerPosIter { v, a, b }
     }
 
     /// Get the number of glyphs
@@ -245,6 +243,8 @@ impl TextDisplay {
 
     /// Yield a sequence of positioned glyphs
     ///
+    /// Requires: text is fully prepared for display.
+    ///
     /// Glyphs are yielded in undefined order by a call to `f`. The number of
     /// glyphs yielded will equal [`TextDisplay::num_glyphs`]. The closure `f`
     /// receives parameters `face_id, dpem, glyph`.
@@ -256,18 +256,14 @@ impl TextDisplay {
     /// let mut text = Text::new("Some example text");
     /// text.prepare();
     ///
-    /// let mut glyphs = Vec::with_capacity(text.num_glyphs());
+    /// let mut glyphs = Vec::with_capacity(text.num_glyphs().unwrap_or(0));
     /// text.glyphs(|_, dpem, glyph| glyphs.push((dpem, glyph)));
     /// draw(glyphs);
     /// ```
     ///
     /// This method has fairly low cost: `O(n)` in the number of glyphs with
     /// low overhead.
-    pub fn glyphs<F: FnMut(FaceId, f32, Glyph)>(&self, mut f: F) -> Result<(), NotReady> {
-        if !self.status.is_ready() {
-            return Err(NotReady);
-        }
-
+    pub fn glyphs<F: FnMut(FaceId, f32, Glyph)>(&self, mut f: F) {
         // self.wrapped_runs is in logical order
         for run_part in self.wrapped_runs.iter().cloned() {
             let run = &self.runs[to_usize(run_part.glyph_run)];
@@ -279,11 +275,11 @@ impl TextDisplay {
                 f(face_id, dpem, glyph);
             }
         }
-
-        Ok(())
     }
 
     /// Like [`TextDisplay::glyphs`] but with added effects
+    ///
+    /// Requires: text is fully prepared for display.
     ///
     /// If the list `effects` is empty or has first entry with `start > 0`, the
     /// result of `Effect::default(default_aux)` is used. The user payload of
@@ -311,16 +307,11 @@ impl TextDisplay {
         default_aux: X,
         mut f: F,
         mut g: G,
-    ) -> Result<(), NotReady>
-    where
+    ) where
         X: Copy,
         F: FnMut(FaceId, f32, Glyph, usize, X),
         G: FnMut(f32, f32, f32, f32, usize, X),
     {
-        if !self.status.is_ready() {
-            return Err(NotReady);
-        }
-
         let fonts = fonts();
 
         let mut effect_cur = usize::MAX;
@@ -472,22 +463,14 @@ impl TextDisplay {
                 g(x1, x2, y_top, h, effect_cur, aux);
             }
         }
-
-        Ok(())
     }
 
     /// Yield a sequence of rectangles to highlight a given text range
     ///
+    /// Requires: text is fully prepared for display.
+    ///
     /// Calls `f(top_left, bottom_right)` for each highlighting rectangle.
-    pub fn highlight_range(
-        &self,
-        range: std::ops::Range<usize>,
-        f: &mut dyn FnMut(Vec2, Vec2),
-    ) -> Result<(), NotReady> {
-        if !self.status.is_ready() {
-            return Err(NotReady);
-        }
-
+    pub fn highlight_range(&self, range: std::ops::Range<usize>, f: &mut dyn FnMut(Vec2, Vec2)) {
         for line in &self.lines {
             let line_range: std::ops::Range<usize> = line.text_range.into();
             if line_range.end <= range.start {
@@ -502,11 +485,11 @@ impl TextDisplay {
                 self.highlight_line(line.clone(), range.clone(), f);
             }
         }
-
-        Ok(())
     }
 
     /// Produce highlighting rectangles within a range of runs
+    ///
+    /// Requires: text is fully prepared for display.
     ///
     /// Warning: runs are in logical order which does not correspond to display
     /// order. As a result, the order of results (on a line) is not known.
