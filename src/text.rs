@@ -20,9 +20,10 @@ use std::ops::{Deref, DerefMut};
 /// traits.
 #[derive(Clone, Debug, Default)]
 pub struct Text<T: FormattableText + ?Sized> {
+    /// Bounds to use for alignment
+    bounds: Vec2,
     font_id: FontId,
     dpem: f32,
-    direction: Direction,
     wrap_width: f32,
     /// Alignment (`horiz`, `vert`)
     ///
@@ -30,8 +31,8 @@ pub struct Text<T: FormattableText + ?Sized> {
     /// text direction (see [`Self::direction`]), and vertical alignment
     /// is to the top.
     align: (Align, Align),
-    /// Bounds to use for alignment
-    bounds: Vec2,
+    direction: Direction,
+    status: Status,
 
     display: TextDisplay,
     text: T,
@@ -44,12 +45,13 @@ impl<T: FormattableText> Text<T> {
     #[inline]
     pub fn new(text: T) -> Self {
         Text {
+            bounds: Vec2::INFINITY,
             font_id: FontId::default(),
             dpem: 16.0,
-            direction: Direction::default(),
             wrap_width: f32::INFINITY,
             align: Default::default(),
-            bounds: Vec2::INFINITY,
+            direction: Direction::default(),
+            status: Status::New,
             text,
             display: Default::default(),
         }
@@ -103,25 +105,38 @@ impl<T: FormattableText> Text<T> {
          */
 
         self.text = text;
-        self.display.set_max_status(Status::Configured);
+        self.set_max_status(Status::Configured);
     }
 }
 
 impl<T: FormattableText + ?Sized> Text<T> {
+    /// Adjust status to indicate a required action
+    ///
+    /// This is used to notify that some step of preparation may need to be
+    /// repeated. The internally-tracked status is set to the minimum of
+    /// `status` and its previous value.
+    #[inline]
+    fn set_max_status(&mut self, status: Status) {
+        self.status = self.status.min(status);
+    }
+
     #[inline]
     fn prepare_runs(&mut self) -> Result<(), NotReady> {
-        match self.display.status() {
-            Status::New => Err(NotReady),
+        match self.status {
+            Status::New => return Err(NotReady),
             Status::Configured => self
                 .display
                 .prepare_runs(&self.text, self.direction, self.font_id, self.dpem)
                 .map_err(|_| {
                     debug_assert!(false, "font_id should be validated by configure");
                     NotReady
-                }),
-            Status::ResizeLevelRuns => Ok(self.display.resize_runs(&self.text, self.dpem)),
-            _ => Ok(()),
+                })?,
+            Status::ResizeLevelRuns => self.display.resize_runs(&self.text, self.dpem),
+            _ => (),
         }
+
+        self.status = Status::LevelRuns;
+        Ok(())
     }
 }
 
@@ -300,7 +315,7 @@ pub trait TextApi {
 impl<T: FormattableText + ?Sized> TextApi for Text<T> {
     #[inline]
     fn check_status(&self, status: Status) -> Result<(), NotReady> {
-        if self.display.status() >= status {
+        if self.status >= status {
             Ok(())
         } else {
             Err(NotReady)
@@ -447,7 +462,8 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
         // Validate default_font_id
         let _ = fonts().first_face_for(self.font_id)?;
 
-        self.display.configure()
+        self.status = self.status.max(Status::Configured);
+        Ok(())
     }
 
     fn line_height(&self) -> Result<f32, NotReady> {
@@ -469,7 +485,7 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
     }
 
     fn measure_height(&mut self) -> Result<f32, NotReady> {
-        if self.display.status() >= Status::Wrapped {
+        if self.status >= Status::Wrapped {
             let (tl, br) = self.display.bounding_box();
             return Ok(br.1 - tl.1);
         }
@@ -481,22 +497,22 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
     #[inline]
     fn prepare(&mut self) -> Result<bool, NotReady> {
         self.prepare_runs()?;
+        debug_assert!(self.status >= Status::LevelRuns);
 
-        let status = self.display.status();
-        debug_assert!(status >= Status::LevelRuns);
-
-        if status == Status::LevelRuns {
+        if self.status == Status::LevelRuns {
             self.display
                 .prepare_lines(self.wrap_width, self.bounds.0, self.align.0);
         }
 
-        Ok(if status <= Status::Wrapped {
-            debug_assert!(self.display.status() >= Status::Wrapped);
+        let overflow = if self.status <= Status::Wrapped {
             let bound = self.display.vertically_align(self.bounds.1, self.align.1);
             !(bound.0 <= self.bounds.0 && bound.1 <= self.bounds.1)
         } else {
             false
-        })
+        };
+
+        self.status = Status::Ready;
+        Ok(overflow)
     }
 
     #[inline]
@@ -706,25 +722,25 @@ impl<T: EditableText + ?Sized> EditableTextApi for Text<T> {
     #[inline]
     fn insert_char(&mut self, index: usize, c: char) {
         self.text.insert_char(index, c);
-        self.display.set_max_status(Status::Configured);
+        self.set_max_status(Status::Configured);
     }
 
     #[inline]
     fn replace_range(&mut self, range: std::ops::Range<usize>, replace_with: &str) {
         self.text.replace_range(range, replace_with);
-        self.display.set_max_status(Status::Configured);
+        self.set_max_status(Status::Configured);
     }
 
     #[inline]
     fn set_string(&mut self, string: String) {
         self.text.set_string(string);
-        self.display.set_max_status(Status::Configured);
+        self.set_max_status(Status::Configured);
     }
 
     #[inline]
     fn swap_string(&mut self, string: &mut String) {
         self.text.swap_string(string);
-        self.display.set_max_status(Status::Configured);
+        self.set_max_status(Status::Configured);
     }
 }
 

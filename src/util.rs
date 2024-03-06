@@ -6,9 +6,10 @@
 //! Utility types and traits
 
 /// Describes the state-of-preparation of a [`TextDisplay`][crate::TextDisplay]
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Ord, PartialOrd, Hash)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Ord, PartialOrd, Hash)]
 pub enum Status {
     /// Nothing done yet
+    #[default]
     New,
     /// Configured
     Configured,

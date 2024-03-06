@@ -9,7 +9,7 @@ use super::{RunSpecial, TextDisplay};
 use crate::conv::{to_u32, to_usize};
 use crate::fonts::{fonts, FontLibrary};
 use crate::shaper::{GlyphRun, PartMetrics};
-use crate::{Align, Range, Status, Vec2};
+use crate::{Align, Range, Vec2};
 use smallvec::SmallVec;
 use unicode_bidi::{Level, LTR_LEVEL};
 
@@ -159,8 +159,6 @@ impl TextDisplay {
     ///
     /// Returns the required height.
     pub fn prepare_lines(&mut self, wrap_width: f32, width_bound: f32, h_align: Align) -> f32 {
-        self.status = Status::Wrapped;
-
         let mut adder = LineAdder::new(width_bound, h_align);
 
         self.wrap_lines(&mut adder, wrap_width);
@@ -269,7 +267,6 @@ impl TextDisplay {
     /// Returns the bottom-right bounding corner.
     pub fn vertically_align(&mut self, bound: f32, v_align: Align) -> Vec2 {
         debug_assert!(bound.is_finite());
-        self.status = Status::Ready;
 
         if self.lines.is_empty() {
             return Vec2(0.0, 0.0);

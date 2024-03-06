@@ -11,7 +11,7 @@ use super::TextDisplay;
 use crate::conv::{to_u32, to_usize};
 use crate::fonts::{fonts, FontId, InvalidFontId};
 use crate::format::FormattableText;
-use crate::{shaper, Direction, Range, Status};
+use crate::{shaper, Direction, Range};
 use unicode_bidi::{BidiClass, BidiInfo, LTR_LEVEL, RTL_LEVEL};
 use xi_unicode::LineBreakIterator;
 
@@ -34,9 +34,6 @@ impl TextDisplay {
     /// This updates the result of [`TextDisplay::prepare_runs`] due to change
     /// in font size.
     pub fn resize_runs<F: FormattableText + ?Sized>(&mut self, text: &F, dpem: f32) {
-        assert_eq!(self.status, Status::ResizeLevelRuns);
-        self.status = Status::LevelRuns;
-
         let mut font_tokens = text.font_tokens(dpem);
         let mut next_fmt = font_tokens.next();
 
@@ -82,8 +79,6 @@ impl TextDisplay {
         mut font_id: FontId,
         mut dpem: f32,
     ) -> Result<(), InvalidFontId> {
-        assert!(self.status >= Status::Configured);
-
         // This method constructs a list of "hard lines" (the initial line and any
         // caused by a hard break), each composed of a list of "level runs" (the
         // result of splitting and reversing according to Unicode TR9 aka
@@ -263,7 +258,6 @@ impl TextDisplay {
             println!("]");
         }
         */
-        self.status = Status::LevelRuns;
         Ok(())
     }
 }

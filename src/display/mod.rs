@@ -6,8 +6,7 @@
 //! Text prepared for display
 
 use crate::conv::to_usize;
-use crate::fonts::InvalidFontId;
-use crate::{shaper, Direction, Status, Vec2};
+use crate::{shaper, Direction, Vec2};
 use smallvec::SmallVec;
 
 mod glyph_pos;
@@ -100,7 +99,6 @@ pub struct TextDisplay {
     //
     /// Level runs within the text, in logical order
     runs: SmallVec<[shaper::GlyphRun; 1]>,
-    status: Status,
     /// Contiguous runs, in logical order
     ///
     /// Within a line, runs may not be in visual order due to BIDI reversals.
@@ -127,7 +125,6 @@ impl Default for TextDisplay {
     fn default() -> Self {
         TextDisplay {
             runs: Default::default(),
-            status: Status::New,
             wrapped_runs: Default::default(),
             lines: Default::default(),
             #[cfg(feature = "num_glyphs")]
@@ -139,31 +136,6 @@ impl Default for TextDisplay {
 }
 
 impl TextDisplay {
-    /// Get status of preparation
-    #[inline]
-    pub fn status(&self) -> Status {
-        self.status
-    }
-
-    /// Adjust status to indicate a required action
-    ///
-    /// This is used to notify that some step of preparation may need to be
-    /// repeated. The internally-tracked status is set to the minimum of
-    /// `status` and its previous value.
-    #[inline]
-    pub fn set_max_status(&mut self, status: Status) {
-        self.status = self.status.min(status);
-    }
-
-    /// Configure text
-    ///
-    /// Text objects must be configured before used.
-    #[inline]
-    pub fn configure(&mut self) -> Result<(), InvalidFontId> {
-        self.status = self.status.max(Status::Configured);
-        Ok(())
-    }
-
     /// Get the number of lines (after wrapping)
     ///
     /// Requires: lines have been wrapped.
