@@ -232,17 +232,6 @@ impl TextDisplay {
     ///
     /// This does not require that the text is prepared.
     pub fn text_is_rtl(&self, text: &str, direction: Direction) -> bool {
-        let cached_is_rtl = match self.line_is_rtl(0) {
-            Ok(None) => Some(direction == Direction::Rtl),
-            Ok(Some(is_rtl)) => Some(is_rtl),
-            Err(NotReady) => None,
-        };
-
-        #[cfg(not(debug_assertions))]
-        if let Some(cached) = cached_is_rtl {
-            return cached;
-        }
-
         let (is_auto, mut is_rtl) = match direction {
             Direction::Ltr => (false, false),
             Direction::Rtl => (false, true),
@@ -258,9 +247,6 @@ impl TextDisplay {
             }
         }
 
-        if let Some(cached) = cached_is_rtl {
-            debug_assert_eq!(cached, is_rtl);
-        }
         is_rtl
     }
 

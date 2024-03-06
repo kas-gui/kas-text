@@ -129,6 +129,9 @@ impl<T: FormattableText + ?Sized> Text<T> {
 ///
 /// This allows dynamic dispatch over [`Text`]'s type parameters.
 pub trait TextApi {
+    /// Read the [`TextDisplay`]
+    fn display(&self) -> &TextDisplay;
+
     /// Length of text
     ///
     /// This is a shortcut to `self.as_str().len()`.
@@ -233,13 +236,22 @@ pub trait TextApi {
         wrap_width: f32,
     );
 
-    /// Read the [`TextDisplay`]
-    fn display(&self) -> &TextDisplay;
+    /// Get the base directionality of the text
+    ///
+    /// This does not require that the text is prepared.
+    fn text_is_rtl(&self) -> bool;
 
     /// Configure text
     ///
     /// Text objects must be configured before used.
     fn configure(&mut self) -> Result<(), InvalidFontId>;
+
+    /// Returns the height of horizontal text
+    ///
+    /// Returns an error if called before [`Self::configure`].
+    ///
+    /// This depends on the font and font size, but is independent of the text.
+    fn line_height(&self) -> Result<f32, NotReady>;
 
     /// Measure required width, up to some `max_width`
     ///
@@ -400,11 +412,44 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
     }
 
     #[inline]
+    fn text_is_rtl(&self) -> bool {
+        let cached_is_rtl = match self.line_is_rtl(0) {
+            Ok(None) => Some(self.direction == Direction::Rtl),
+            Ok(Some(is_rtl)) => Some(is_rtl),
+            Err(NotReady) => None,
+        };
+        #[cfg(not(debug_assertions))]
+        if let Some(cached) = cached_is_rtl {
+            return cached;
+        }
+
+        let is_rtl = self.display.text_is_rtl(self.as_str(), self.direction);
+        if let Some(cached) = cached_is_rtl {
+            debug_assert_eq!(cached, is_rtl);
+        }
+        is_rtl
+    }
+
+    #[inline]
     fn configure(&mut self) -> Result<(), InvalidFontId> {
         // Validate default_font_id
         let _ = fonts().first_face_for(self.font_id)?;
 
         self.display.configure()
+    }
+
+    fn line_height(&self) -> Result<f32, NotReady> {
+        if self.display().status() < Status::Configured {
+            return Err(NotReady);
+        }
+
+        fonts()
+            .get_first_face(self.get_font())
+            .map(|face| face.height(self.get_font_size()))
+            .map_err(|_| {
+                debug_assert!(false, "font_id should be validated by configure");
+                NotReady
+            })
     }
 
     fn measure_width(&mut self, max_width: f32) -> Result<f32, NotReady> {
@@ -457,28 +502,9 @@ pub trait TextApiExt: TextApi {
     /// This is an alternative to [`TextApi::set_font_size`]. It is assumed
     /// that 72 Points = 1 Inch and the base screen resolution is 96 DPI.
     /// (Note: MacOS uses a different definition where 1 Point = 1 Pixel.)
+    #[inline]
     fn set_font_size_pt(&mut self, pt_size: f32, scale_factor: f32) {
         self.set_font_size(pt_size * scale_factor * (96.0 / 72.0));
-    }
-
-    /// Returns the height of horizontal text
-    ///
-    /// Returns an error if called before [`configure`][TextApi::configure].
-    ///
-    /// This depends on the font and font size, but is independent of the text.
-    #[inline]
-    fn line_height(&self) -> Result<f32, NotReady> {
-        if self.display().status() < Status::Configured {
-            return Err(NotReady);
-        }
-
-        fonts()
-            .get_first_face(self.get_font())
-            .map(|face| face.height(self.get_font_size()))
-            .map_err(|_| {
-                debug_assert!(false, "font_id should be validated by configure");
-                NotReady
-            })
     }
 
     /// Get the size of the required bounding box
@@ -512,15 +538,6 @@ pub trait TextApiExt: TextApi {
     #[inline]
     fn line_range(&self, line: usize) -> Result<Option<std::ops::Range<usize>>, NotReady> {
         self.display().line_range(line)
-    }
-
-    /// Get the base directionality of the text
-    ///
-    /// This does not require that the text is prepared.
-    #[inline]
-    fn text_is_rtl(&self) -> bool {
-        self.display()
-            .text_is_rtl(self.as_str(), self.get_direction())
     }
 
     /// Get the directionality of the current line
