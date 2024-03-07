@@ -16,17 +16,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install toolchain
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@nightly
         with:
-          profile: minimal
-          toolchain: nightly
-          override: true
           components: rustfmt, clippy
       - name: Rustfmt check
-        uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --all -- --check
+        run: |
+          cargo fmt --all -- --check
       - name: doc
         run: RUSTDOCFLAGS="--cfg doc_cfg" cargo doc --features markdown,raster,num_glyphs --no-deps
       - name: Test Harfbuzz
