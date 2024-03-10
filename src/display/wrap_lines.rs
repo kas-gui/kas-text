@@ -5,11 +5,11 @@
 
 //! Text preparation: wrapping
 
-use super::{NotReady, RunSpecial, TextDisplay};
+use super::{RunSpecial, TextDisplay};
 use crate::conv::{to_u32, to_usize};
-use crate::fonts::{fonts, FontLibrary};
-use crate::shaper::GlyphRun;
-use crate::{Action, Align, Range, Vec2};
+use crate::fonts::{self, FontLibrary};
+use crate::shaper::{GlyphRun, PartMetrics};
+use crate::{Align, Range, Vec2};
 use smallvec::SmallVec;
 use unicode_bidi::{Level, LTR_LEVEL};
 
@@ -29,44 +29,33 @@ pub struct Line {
     pub bottom: f32,
 }
 
-#[derive(Clone, Debug)]
-struct PartInfo {
-    run: u32,
-    offset: f32,
-    len: f32,
-    len_no_space: f32,
-    glyph_range: Range,
-    end_space: bool,
-}
-
 impl TextDisplay {
     /// Measure required width, up to some `max_width`
+    ///
+    /// [Requires status][Self#status-of-preparation]: level runs have been
+    /// prepared.
     ///
     /// This method allows calculation of the width requirement of a text object
     /// without full wrapping and glyph placement. Whenever the requirement
     /// exceeds `max_width`, the algorithm stops early, returning `max_width`.
     ///
     /// The return value is unaffected by alignment and wrap configuration.
-    pub fn measure_width(&self, max_width: f32) -> Result<f32, NotReady> {
-        if self.action > Action::Wrap {
-            return Err(NotReady);
-        }
-
+    pub fn measure_width(&self, max_width: f32) -> f32 {
         let mut max_line_len = 0.0f32;
         let mut caret = 0.0;
         let mut line_len = 0.0;
 
         for run in self.runs.iter() {
             let num_parts = run.num_parts();
-            let (_, part_len_no_space, part_len) = run.part_lengths(0..num_parts);
+            let part = run.part_lengths(0..num_parts);
 
-            if part_len_no_space > 0.0 {
-                line_len = caret + part_len_no_space;
+            if part.len_no_space > 0.0 {
+                line_len = caret + part.len_no_space;
                 if line_len >= max_width {
-                    return Ok(max_width);
+                    return max_width;
                 }
             }
-            caret += part_len;
+            caret += part.len;
 
             if run.special == RunSpecial::HardBreak {
                 max_line_len = max_line_len.max(line_len);
@@ -75,44 +64,132 @@ impl TextDisplay {
             }
         }
 
-        Ok(max_line_len.max(line_len))
+        max_line_len.max(line_len)
+    }
+
+    /// Measure required vertical height, wrapping as configured
+    ///
+    /// [Requires status][Self#status-of-preparation]: level runs have been
+    /// prepared.
+    ///
+    /// This method performs most required preparation steps of the
+    /// [`TextDisplay`]. Remaining prepartion should be fast.
+    pub fn measure_height(&self, wrap_width: f32) -> f32 {
+        #[derive(Default)]
+        struct MeasureAdder {
+            parts: Vec<usize>, // run index for each part
+            has_any_lines: bool,
+            line_gap: f32,
+            vcaret: f32,
+        }
+
+        impl PartAccumulator for MeasureAdder {
+            fn num_parts(&self) -> usize {
+                self.parts.len()
+            }
+
+            fn add_part(
+                &mut self,
+                _: &[GlyphRun],
+                run_index: usize,
+                _: std::ops::Range<usize>,
+                _: PartMetrics,
+                checkpoint: bool,
+            ) {
+                if checkpoint {
+                    if let Some(index) = self.parts.last().cloned() {
+                        if index == run_index {
+                            return;
+                        }
+                    }
+                }
+
+                self.parts.push(run_index);
+            }
+
+            fn add_line(
+                &mut self,
+                fonts: &FontLibrary,
+                runs: &[GlyphRun],
+                parts_end: usize,
+                _: bool,
+            ) {
+                debug_assert!(parts_end > 0);
+                let parts = &mut self.parts[..parts_end];
+
+                // Iterate runs to determine max ascent, level, etc.
+                let mut last_run = usize::MAX;
+                let (mut ascent, mut descent, mut line_gap) = (0f32, 0f32, 0f32);
+                for run_index in parts.iter().cloned() {
+                    if last_run == run_index {
+                        continue;
+                    }
+                    last_run = run_index;
+                    let run = &runs[last_run];
+
+                    let scale_font = fonts.get_face(run.face_id).scale_by_dpu(run.dpu);
+                    ascent = ascent.max(scale_font.ascent());
+                    descent = descent.min(scale_font.descent());
+                    line_gap = line_gap.max(scale_font.line_gap());
+                }
+
+                if self.has_any_lines {
+                    self.vcaret += line_gap.max(self.line_gap);
+                }
+                self.vcaret += ascent - descent;
+                self.line_gap = line_gap;
+
+                // Vertically align lines to the nearest pixel (improves rendering):
+                self.vcaret = self.vcaret.round();
+
+                self.has_any_lines = true;
+                self.parts.clear();
+            }
+        }
+
+        let mut adder = MeasureAdder::default();
+        self.wrap_lines(&mut adder, wrap_width);
+        adder.vcaret
     }
 
     /// Prepare lines ("wrap")
     ///
-    /// This does text layout, with wrapping if enabled.
+    /// [Requires status][Self#status-of-preparation]: level runs have been
+    /// prepared.
     ///
-    /// Returns:
+    /// This does text layout, including wrapping and horizontal alignment but
+    /// excluding vertical alignment.
     ///
-    /// -   `Err(NotReady)` if required action is greater than [`Action::Wrap`]
-    /// -   `Ok(bounding_corner)` on success
-    pub fn prepare_lines(
-        &mut self,
-        bounds: Vec2,
-        wrap: bool,
-        align: (Align, Align),
-    ) -> Result<Vec2, NotReady> {
-        if self.action > Action::Wrap {
-            return Err(NotReady);
+    /// Returns the required height.
+    pub fn prepare_lines(&mut self, wrap_width: f32, width_bound: f32, h_align: Align) -> f32 {
+        let mut adder = LineAdder::new(width_bound, h_align);
+
+        self.wrap_lines(&mut adder, wrap_width);
+
+        self.wrapped_runs = adder.wrapped_runs;
+        self.lines = adder.lines;
+        #[cfg(feature = "num_glyphs")]
+        {
+            self.num_glyphs = adder.num_glyphs;
         }
-        self.action = Action::None;
+        self.l_bound = adder.l_bound.min(adder.r_bound);
+        self.r_bound = adder.r_bound;
+        adder.vcaret
+    }
 
-        let fonts = fonts();
-        let mut adder = LineAdder::new(bounds, align);
-        let width_bound = adder.width_bound;
-        let justify = align.0 == Align::Stretch;
-        let mut parts = Vec::with_capacity(16);
+    fn wrap_lines(&self, accumulator: &mut impl PartAccumulator, wrap_width: f32) {
+        let fonts = fonts::library();
 
-        // Tuples: (index, part, num_parts)
+        // Tuples: (index, part_index, num_parts)
         let mut start = (0, 0, 0);
         let mut end = start;
 
         let mut caret = 0.0;
-        let mut index = start.0;
+        let mut run_index = start.0;
 
         let end_index = self.runs.len();
-        'a: while index < end_index {
-            let run = &self.runs[index];
+        'a: while run_index < end_index {
+            let run = &self.runs[run_index];
             let num_parts = run.num_parts();
 
             let hard_break = run.special == RunSpecial::HardBreak;
@@ -120,12 +197,11 @@ impl TextDisplay {
             let tab = run.special == RunSpecial::HTab;
 
             let mut last_part = start.1;
-            let mut part = last_part + 1;
-            while part <= num_parts {
-                let (part_offset, part_len_no_space, mut part_len) =
-                    run.part_lengths(last_part..part);
+            let mut part_index = last_part + 1;
+            while part_index <= num_parts {
+                let mut part = run.part_lengths(last_part..part_index);
                 if tab {
-                    // Tab runs have no glyph; instead we calculate part_len
+                    // Tab runs have no glyph; instead we calculate part.len
                     // based on the current line length.
 
                     // TODO(bidi): we should really calculate this after
@@ -136,105 +212,67 @@ impl TextDisplay {
                     // TODO: custom tab sizes?
                     let tab_size = sf.h_advance(sf.face().glyph_index(' ')) * 8.0;
                     let stops = (caret / tab_size).floor() + 1.0;
-                    part_len = tab_size * stops - caret;
+                    part.len = tab_size * stops - caret;
                 }
 
-                let line_len = caret + part_len_no_space;
-                if wrap && line_len > width_bound && end.2 > 0 {
+                let line_len = caret + part.len_no_space;
+                if line_len > wrap_width && end.2 > 0 {
                     // Add up to last valid break point then wrap and reset
-                    let slice = &mut parts[0..end.2];
-                    adder.add_line(fonts, &self.runs, slice, true);
+                    accumulator.add_line(fonts, &self.runs, end.2, true);
 
                     end.2 = 0;
                     start = end;
-                    parts.clear();
                     caret = 0.0;
-                    index = start.0;
+                    run_index = start.0;
                     continue 'a;
                 }
-                caret += part_len;
-                let glyph_range = run.to_glyph_range(last_part..part);
-                let checkpoint = part < num_parts || allow_break;
-                if !checkpoint
-                    || (justify && part_len_no_space > 0.0)
-                    || parts
-                        .last()
-                        .map(|part| to_usize(part.run) < index)
-                        .unwrap_or(true)
-                {
-                    parts.push(PartInfo {
-                        run: to_u32(index),
-                        offset: part_offset,
-                        len: part_len,
-                        len_no_space: part_len_no_space,
-                        glyph_range,
-                        end_space: false, // set later
-                    });
-                } else {
-                    // Combine with last part (not strictly necessary)
-                    if let Some(part) = parts.last_mut() {
-                        if run.level.is_ltr() {
-                            part.glyph_range.end = glyph_range.end;
-                        } else {
-                            part.offset = part_offset;
-                            part.glyph_range.start = glyph_range.start;
-                        }
-                        debug_assert!(part.glyph_range.start <= part.glyph_range.end);
-                        if part_len_no_space > 0.0 {
-                            part.len_no_space = part.len + part_len_no_space;
-                        }
-                        part.len += part_len;
-                    }
-                }
+                caret += part.len;
+                let checkpoint = part_index < num_parts || allow_break;
+                accumulator.add_part(
+                    &self.runs,
+                    run_index,
+                    last_part..part_index,
+                    part,
+                    checkpoint,
+                );
                 if checkpoint {
-                    end = (index, part, parts.len());
+                    end = (run_index, part_index, accumulator.num_parts());
                 }
-                last_part = part;
-                part += 1;
+                last_part = part_index;
+                part_index += 1;
             }
 
-            index += 1;
+            run_index += 1;
             start.1 = 0;
 
-            if hard_break || index == end_index {
-                if parts.len() > 0 {
+            if hard_break || run_index == end_index {
+                let num_parts = accumulator.num_parts();
+                if num_parts > 0 {
                     // It should not be possible for a line to end with a no-break, so:
-                    debug_assert_eq!(parts.len(), end.2);
-                    adder.add_line(fonts, &self.runs, &mut parts, false);
+                    debug_assert_eq!(num_parts, end.2);
+
+                    accumulator.add_line(fonts, &self.runs, num_parts, false);
                 }
 
-                start = (index, 0, 0);
+                start = (run_index, 0, 0);
                 end = start;
-                parts.clear();
 
                 caret = 0.0;
-                index = start.0;
+                run_index = start.0;
             }
         }
-
-        let bounding_corner = adder.finish(bounds, align);
-        self.wrapped_runs = adder.runs;
-        self.lines = adder.lines;
-        #[cfg(feature = "num_glyphs")]
-        {
-            self.num_glyphs = adder.num_glyphs;
-        }
-        self.l_bound = adder.l_bound.min(adder.r_bound);
-        self.r_bound = bounding_corner.0;
-        Ok(bounding_corner)
     }
 
     /// Vertically align lines
     ///
+    /// [Requires status][Self#status-of-preparation]: lines have been wrapped.
+    ///
     /// Returns the bottom-right bounding corner.
-    pub fn vertically_align(&mut self, bound: f32, v_align: Align) -> Result<Vec2, NotReady> {
-        if self.action > Action::VAlign {
-            return Err(NotReady);
-        }
-        self.action = Action::None;
+    pub fn vertically_align(&mut self, bound: f32, v_align: Align) -> Vec2 {
+        debug_assert!(bound.is_finite());
 
         if self.lines.is_empty() {
-            return Ok(Vec2(0.0, 0.0));
+            return Vec2(0.0, 0.0);
         }
 
         let top = self.lines.first().unwrap().top;
@@ -258,13 +296,39 @@ impl TextDisplay {
             }
         }
 
-        Ok(Vec2(self.r_bound, bottom))
+        Vec2(self.r_bound, bottom)
     }
+}
+
+trait PartAccumulator {
+    fn num_parts(&self) -> usize;
+
+    fn add_part(
+        &mut self,
+        runs: &[GlyphRun],
+        run_index: usize,
+        part_range: std::ops::Range<usize>,
+        part: PartMetrics,
+        checkpoint: bool,
+    );
+
+    fn add_line(&mut self, fonts: &FontLibrary, runs: &[GlyphRun], parts_end: usize, is_wrap: bool);
+}
+
+#[derive(Clone, Debug)]
+struct PartInfo {
+    run: u32,
+    offset: f32,
+    len: f32,
+    len_no_space: f32,
+    glyph_range: Range,
+    end_space: bool,
 }
 
 #[derive(Default)]
 struct LineAdder {
-    runs: SmallVec<[RunPart; 1]>,
+    wrapped_runs: SmallVec<[RunPart; 1]>,
+    parts: Vec<PartInfo>,
     lines: SmallVec<[Line; 1]>,
     line_gap: f32,
     l_bound: f32,
@@ -272,28 +336,82 @@ struct LineAdder {
     vcaret: f32,
     #[cfg(feature = "num_glyphs")]
     num_glyphs: u32,
-    halign: Align,
+    h_align: Align,
     width_bound: f32,
 }
 impl LineAdder {
-    fn new(bounds: Vec2, align: (Align, Align)) -> Self {
+    fn new(width_bound: f32, h_align: Align) -> Self {
         LineAdder {
-            l_bound: bounds.0,
-            halign: align.0,
-            width_bound: bounds.0,
+            parts: Vec::with_capacity(16),
+            l_bound: width_bound,
+            h_align,
+            width_bound,
             ..Default::default()
         }
+    }
+}
+
+impl PartAccumulator for LineAdder {
+    fn num_parts(&self) -> usize {
+        self.parts.len()
+    }
+
+    fn add_part(
+        &mut self,
+        runs: &[GlyphRun],
+        run_index: usize,
+        part_range: std::ops::Range<usize>,
+        part: PartMetrics,
+        checkpoint: bool,
+    ) {
+        let glyph_run = &runs[run_index];
+        let run = to_u32(run_index);
+        let glyph_range = glyph_run.to_glyph_range(part_range);
+
+        let justify = self.h_align == Align::Stretch && part.len_no_space > 0.0;
+        if checkpoint && !justify {
+            if let Some(info) = self.parts.last_mut() {
+                if info.run == run {
+                    // Merge into last part info (not strictly necessary)
+
+                    if glyph_run.level.is_ltr() {
+                        info.glyph_range.end = glyph_range.end;
+                    } else {
+                        info.offset = part.offset;
+                        info.glyph_range.start = glyph_range.start;
+                    }
+                    debug_assert!(info.glyph_range.start <= info.glyph_range.end);
+
+                    if part.len_no_space > 0.0 {
+                        info.len_no_space = info.len + part.len_no_space;
+                    }
+                    info.len += part.len;
+
+                    return;
+                }
+            }
+        }
+
+        self.parts.push(PartInfo {
+            run,
+            offset: part.offset,
+            len: part.len,
+            len_no_space: part.len_no_space,
+            glyph_range,
+            end_space: false, // set later
+        });
     }
 
     fn add_line(
         &mut self,
         fonts: &FontLibrary,
         runs: &[GlyphRun],
-        parts: &mut [PartInfo],
+        parts_end: usize,
         is_wrap: bool,
     ) {
-        assert!(parts.len() > 0);
-        let line_start = self.runs.len();
+        debug_assert!(parts_end > 0);
+        let line_start = self.wrapped_runs.len();
+        let parts = &mut self.parts[..parts_end];
 
         // Iterate runs to determine max ascent, level, etc.
         let mut last_run = u32::MAX;
@@ -428,7 +546,7 @@ impl LineAdder {
         let spare = self.width_bound - line_len;
         let mut is_gap = SmallVec::<[bool; 16]>::new();
         let mut per_gap = 0.0;
-        let mut caret = match self.halign {
+        let mut caret = match self.h_align {
             Align::Default => match line_is_rtl {
                 false => 0.0,
                 true => spare,
@@ -514,7 +632,7 @@ impl LineAdder {
             } else {
                 caret - part.offset
             };
-            self.runs.push(RunPart {
+            self.wrapped_runs.push(RunPart {
                 text_end,
                 glyph_run: part.run,
                 glyph_range: part.glyph_range,
@@ -539,7 +657,7 @@ impl LineAdder {
         // Other parts of this library expect runs to be in logical order, so
         // we re-order now (does not affect display position).
         // TODO: should we change this, e.g. for visual-order navigation?
-        self.runs[line_start..].sort_by_key(|run| run.text_end);
+        self.wrapped_runs[line_start..].sort_by_key(|run| run.text_end);
 
         let top = self.vcaret - ascent;
         self.vcaret -= descent;
@@ -548,31 +666,10 @@ impl LineAdder {
 
         self.lines.push(Line {
             text_range: Range::from(line_text_start..line_text_end),
-            run_range: (line_start..self.runs.len()).into(),
+            run_range: (line_start..self.wrapped_runs.len()).into(),
             top,
             bottom: self.vcaret,
         });
-    }
-
-    /// Returns the bottom-right bounding corner.
-    fn finish(&mut self, bounds: Vec2, align: (Align, Align)) -> Vec2 {
-        let height = self.vcaret;
-        let offset = match align.1 {
-            _ if !(height < bounds.1) => 0.0,
-            Align::Default | Align::TL | Align::Stretch => 0.0, // nothing to do
-            Align::Center => 0.5 * (bounds.1 - height),
-            Align::BR => bounds.1 - height,
-        };
-        if offset != 0.0 {
-            for run in &mut self.runs {
-                run.offset.1 += offset;
-            }
-            for line in &mut self.lines {
-                line.top += offset;
-                line.bottom += offset;
-            }
-        }
-
-        Vec2(self.r_bound, height + offset)
+        self.parts.clear();
     }
 }

@@ -163,7 +163,7 @@ impl FontList {
 
 /// Library of loaded fonts
 ///
-/// This is the type of the global singleton accessible via the [`fonts`]
+/// This is the type of the global singleton accessible via the [`library()`]
 /// function. Thread-safety is handled via internal locks.
 pub struct FontLibrary {
     db: RwLock<Database>,
@@ -543,7 +543,7 @@ lazy_static::lazy_static! {
 }
 
 /// Access the [`FontLibrary`] singleton
-pub fn fonts() -> &'static FontLibrary {
+pub fn library() -> &'static FontLibrary {
     &LIBRARY
 }
 

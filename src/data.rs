@@ -36,6 +36,12 @@ impl Vec2 {
     pub fn max(self, other: Self) -> Self {
         Vec2(self.0.max(other.0), self.1.max(other.1))
     }
+
+    /// Whether both components are finite
+    #[inline]
+    pub fn is_finite(self) -> bool {
+        self.0.is_finite() && self.1.is_finite()
+    }
 }
 
 impl std::ops::Add for Vec2 {

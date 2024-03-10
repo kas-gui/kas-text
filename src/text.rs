@@ -6,21 +6,61 @@
 //! Text object
 
 use crate::display::{Effect, MarkerPosIter, NotReady, TextDisplay};
-use crate::fonts::{self, FaceId, InvalidFontId};
+use crate::fonts::{self, FaceId, FontId, InvalidFontId};
 use crate::format::{EditableText, FormattableText};
-use crate::{Action, Align, Environment, Glyph, Vec2};
-use std::ops::{Deref, DerefMut};
+use crate::{Align, Direction, Glyph, Status, Vec2};
 
-/// Text, prepared for display in a given environment
+/// Text type-setting object (high-level API)
 ///
-/// This struct is composed of three parts: an [`Environment`], a representation
-/// of the [`FormattableText`] being displayed, and a [`TextDisplay`] object.
+/// This struct contains:
+/// -   A [`FormattableText`]
+/// -   A [`TextDisplay`]
+/// -   Type-setting configuration. Values have reasonable defaults:
+///     -   The default font will be the first loaded font: see [fonts].
+///     -   The default font size is 16px (the web default).
+///     -   Default text direction and alignment is inferred from the text.
+///     -   Line-wrapping requires a call to [`TextApi::set_wrap_width`].
+///     -   The bounds used for alignment [must be set][TextApi::set_bounds].
+///
+/// This struct tracks the [`TextDisplay`]'s
+/// [state of preparation][TextDisplay#status-of-preparation] and will perform
+/// steps as required. To use this struct:
+/// ```
+/// use kas_text::{fonts, Text, TextApi, TextApiExt, Vec2};
+/// use std::path::Path;
+///
+/// // Load system fonts and select a default:
+/// let fonts = fonts::library();
+/// fonts.select_default().expect("failed to select default font");
+///
+/// let mut text = Text::new("Hello, world!");
+/// text.configure().unwrap();
+/// text.set_bounds(Vec2(200.0, 50.0));
+/// text.prepare().unwrap();
+///
+/// text.glyphs(|face, dpem, glyph| {
+///     println!("{face:?} - {dpem}px - {glyph:?}");
+/// });
+/// ```
 ///
 /// Most Functionality is implemented via the [`TextApi`] and [`TextApiExt`]
 /// traits.
 #[derive(Clone, Debug, Default)]
 pub struct Text<T: FormattableText + ?Sized> {
-    env: Environment,
+    /// Bounds to use for alignment
+    bounds: Vec2,
+    font_id: FontId,
+    dpem: f32,
+    wrap_width: f32,
+    /// Alignment (`horiz`, `vert`)
+    ///
+    /// By default, horizontal alignment is left or right depending on the
+    /// text direction (see [`Self::direction`]), and vertical alignment
+    /// is to the top.
+    align: (Align, Align),
+    direction: Direction,
+    status: Status,
+
     display: TextDisplay,
     text: T,
 }
@@ -31,31 +71,33 @@ impl<T: FormattableText> Text<T> {
     /// This struct must be made ready for usage by calling [`Text::prepare`].
     #[inline]
     pub fn new(text: T) -> Self {
-        Text::new_env(Default::default(), text)
-    }
-
-    /// Construct from a text model and environment
-    ///
-    /// This struct must be made ready for usage by calling [`Text::prepare`].
-    #[inline]
-    pub fn new_env(env: Environment, text: T) -> Self {
         Text {
-            env,
+            bounds: Vec2::INFINITY,
+            font_id: FontId::default(),
+            dpem: 16.0,
+            wrap_width: f32::INFINITY,
+            align: Default::default(),
+            direction: Direction::default(),
+            status: Status::New,
             text,
             display: Default::default(),
         }
     }
 
-    /// Construct from parts
+    /// Replace the [`TextDisplay`]
+    ///
+    /// This may be used with [`Self::new`] to reconstruct an object which was
+    /// disolved [`into_parts`][Self::into_parts].
     #[inline]
-    pub fn from_parts(env: Environment, display: TextDisplay, text: T) -> Self {
-        Text { env, display, text }
+    pub fn with_display(mut self, display: TextDisplay) -> Self {
+        self.display = display;
+        self
     }
 
     /// Decompose into parts
     #[inline]
-    pub fn into_parts(self) -> (Environment, TextDisplay, T) {
-        (self.env, self.display, self.text)
+    pub fn into_parts(self) -> (TextDisplay, T) {
+        (self.display, self.text)
     }
 
     /// Clone the formatted text
@@ -85,44 +127,42 @@ impl<T: FormattableText> Text<T> {
     pub fn set_text(&mut self, text: T) {
         /* TODO: enable if we have a way of testing equality (a hash?)
         if self.text == text {
-            return self.action.into(); // no change
+            return; // no change
         }
          */
 
         self.text = text;
-        self.display.require_action(Action::All);
-    }
-
-    /// Set the text and prepare (if any fonts are loaded)
-    ///
-    /// Sets `text` regardless of other outcomes.
-    ///
-    /// If fonts are not loaded, this fails fast (see [`fonts::any_loaded`]),
-    /// unlike other preparation methods.
-    ///
-    /// Returns true if at least some action is performed *and* the text exceeds
-    /// the allocated bounds ([`Environment::bounds`]).
-    #[inline]
-    pub fn set_and_try_prepare(&mut self, text: T) -> Result<bool, InvalidFontId> {
-        self.set_text(text);
-        self.try_prepare()
+        self.set_max_status(Status::Configured);
     }
 }
 
 impl<T: FormattableText + ?Sized> Text<T> {
+    /// Adjust status to indicate a required action
+    ///
+    /// This is used to notify that some step of preparation may need to be
+    /// repeated. The internally-tracked status is set to the minimum of
+    /// `status` and its previous value.
     #[inline]
-    fn prepare_runs(&mut self) -> Result<(), InvalidFontId> {
-        match self.display.required_action() {
-            Action::All => self.display.prepare_runs(
-                &self.text,
-                self.env.direction,
-                self.env.font_id,
-                self.env.dpem,
-            )?,
-            Action::Resize => self.display.resize_runs(&self.text, self.env.dpem),
+    fn set_max_status(&mut self, status: Status) {
+        self.status = self.status.min(status);
+    }
+
+    #[inline]
+    fn prepare_runs(&mut self) -> Result<(), NotReady> {
+        match self.status {
+            Status::New => return Err(NotReady),
+            Status::Configured => self
+                .display
+                .prepare_runs(&self.text, self.direction, self.font_id, self.dpem)
+                .map_err(|_| {
+                    debug_assert!(false, "font_id should be validated by configure");
+                    NotReady
+                })?,
+            Status::ResizeLevelRuns => self.display.resize_runs(&self.text, self.dpem),
             _ => (),
         }
 
+        self.status = Status::LevelRuns;
         Ok(())
     }
 }
@@ -131,6 +171,12 @@ impl<T: FormattableText + ?Sized> Text<T> {
 ///
 /// This allows dynamic dispatch over [`Text`]'s type parameters.
 pub trait TextApi {
+    /// Check whether the status is at least `status`
+    fn check_status(&self, status: Status) -> Result<(), NotReady>;
+
+    /// Read the [`TextDisplay`], without checking status
+    fn unchecked_display(&self) -> &TextDisplay;
+
     /// Length of text
     ///
     /// This is a shortcut to `self.as_str().len()`.
@@ -151,20 +197,110 @@ pub trait TextApi {
     /// Clone the unformatted text as a `String`
     fn clone_string(&self) -> String;
 
-    /// Read the environment
-    fn env(&self) -> Environment;
+    /// Get the default font
+    fn get_font(&self) -> FontId;
 
-    /// Set the environment
+    /// Get text (horizontal, vertical) alignment
+    fn get_align(&self) -> (Align, Align);
+
+    /// Set text alignment
     ///
-    /// Use of this method may require new preparation actions.
-    /// Call [`TextApiExt::update_env`] instead to perform such actions
-    /// with a single method call.
-    fn set_env(&mut self, env: Environment);
+    /// It is necessary to [`prepare`][Self::prepare] the text after calling this.
+    fn set_align(&mut self, align: (Align, Align));
 
-    /// Read the [`TextDisplay`]
-    fn display(&self) -> &TextDisplay;
+    /// Set the default [`FontId`]
+    ///
+    /// This `font_id` is used by all unformatted texts and by any formatted
+    /// texts which don't immediately set formatting.
+    ///
+    /// It is necessary to [`prepare`][Self::prepare] the text after calling this.
+    fn set_font(&mut self, font_id: FontId);
+
+    /// Get the default font size (pixels)
+    fn get_font_size(&self) -> f32;
+
+    /// Set the default font size (pixels)
+    ///
+    /// This is a scaling factor used to convert font sizes, with units
+    /// `pixels/Em`. Equivalently, this is the line-height in pixels.
+    /// See [`crate::fonts`] documentation.
+    ///
+    /// To calculate this from text size in Points, use `dpem = dpp * pt_size`
+    /// where the dots-per-point is usually `dpp = scale_factor * 96.0 / 72.0`
+    /// on PC platforms, or `dpp = 1` on MacOS (or 2 for retina displays).
+    ///
+    /// It is necessary to [`prepare`][Self::prepare] the text after calling this.
+    fn set_font_size(&mut self, dpem: f32);
+
+    /// Get the base text direction
+    fn get_direction(&self) -> Direction;
+
+    /// Set the base text direction
+    ///
+    /// It is necessary to [`prepare`][Self::prepare] the text after calling this.
+    fn set_direction(&mut self, direction: Direction);
+
+    /// Get the text wrap width
+    fn get_wrap_width(&self) -> f32;
+
+    /// Set wrap width or disable line wrapping
+    ///
+    /// By default, this is [`f32::INFINITY`] and text lines are not wrapped.
+    /// If set to some positive finite value, text lines will be wrapped at that
+    /// width.
+    ///
+    /// Either way, explicit line-breaks such as `\n` still result in new lines.
+    ///
+    /// It is necessary to [`prepare`][Self::prepare] the text after calling this.
+    fn set_wrap_width(&mut self, wrap_width: f32);
+
+    /// Get text bounds
+    fn get_bounds(&self) -> Vec2;
+
+    /// Set text bounds
+    ///
+    /// These are used for alignment. They are not used for wrapping; see
+    /// instead [`Self::set_wrap_width`].
+    ///
+    /// It is expected that `bounds` are finite.
+    fn set_bounds(&mut self, bounds: Vec2);
+
+    /// Set font properties
+    ///
+    /// This has the same effect as calling the following functions separately:
+    ///
+    /// -   [`Self::set_direction`]
+    /// -   [`Self::set_font`]
+    /// -   [`Self::set_font_size`]
+    /// -   [`Self::set_wrap_width`]
+    fn set_font_properties(
+        &mut self,
+        direction: Direction,
+        font_id: FontId,
+        dpem: f32,
+        wrap_width: f32,
+    );
+
+    /// Get the base directionality of the text
+    ///
+    /// This does not require that the text is prepared.
+    fn text_is_rtl(&self) -> bool;
+
+    /// Configure text
+    ///
+    /// Text objects must be configured before used.
+    fn configure(&mut self) -> Result<(), InvalidFontId>;
+
+    /// Returns the height of horizontal text
+    ///
+    /// Returns an error if called before [`Self::configure`].
+    ///
+    /// This depends on the font and font size, but is independent of the text.
+    fn line_height(&self) -> Result<f32, NotReady>;
 
     /// Measure required width, up to some `max_width`
+    ///
+    /// [`configure`][Self::configure] must be called before this method.
     ///
     /// This method partially prepares the [`TextDisplay`] as required.
     ///
@@ -173,22 +309,24 @@ pub trait TextApi {
     /// exceeds `max_width`, the algorithm stops early, returning `max_width`.
     ///
     /// The return value is unaffected by alignment and wrap configuration.
-    fn measure_width(&mut self, max_width: f32) -> Result<f32, InvalidFontId>;
+    fn measure_width(&mut self, max_width: f32) -> Result<f32, NotReady>;
 
     /// Measure required vertical height, wrapping as configured
     ///
-    /// This method performs most required preparation steps of the
-    /// [`TextDisplay`]. Remaining prepartion should be fast.
-    fn measure_height(&mut self) -> Result<f32, InvalidFontId>;
+    /// [`configure`][Self::configure] must be called before this method.
+    fn measure_height(&mut self) -> Result<f32, NotReady>;
 
     /// Prepare text for display, as necessary
     ///
+    /// [`Self::configure`] and [`Self::set_bounds`] must be called before this
+    /// method.
+    ///
     /// Does all preparation steps necessary in order to display or query the
-    /// layout of this text.
+    /// layout of this text. Text is aligned within the given `bounds`.
     ///
     /// Returns true if at least some action is performed *and* the text exceeds
-    /// the allocated bounds ([`Environment::bounds`]).
-    fn prepare(&mut self) -> Result<bool, InvalidFontId>;
+    /// the [bounds][Self::set_bounds].
+    fn prepare(&mut self) -> Result<bool, NotReady>;
 
     /// Get the sequence of effect tokens
     ///
@@ -203,7 +341,16 @@ pub trait TextApi {
 
 impl<T: FormattableText + ?Sized> TextApi for Text<T> {
     #[inline]
-    fn display(&self) -> &TextDisplay {
+    fn check_status(&self, status: Status) -> Result<(), NotReady> {
+        if self.status >= status {
+            Ok(())
+        } else {
+            Err(NotReady)
+        }
+    }
+
+    #[inline]
+    fn unchecked_display(&self) -> &TextDisplay {
         &self.display
     }
 
@@ -218,88 +365,181 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
     }
 
     #[inline]
-    fn env(&self) -> Environment {
-        self.env
+    fn get_font(&self) -> FontId {
+        self.font_id
     }
 
     #[inline]
-    fn set_env(&mut self, env: Environment) {
-        let action;
-        if env.font_id != self.env.font_id || env.direction != self.env.direction {
-            action = Action::All;
-        } else if env.dpem != self.env.dpem {
-            action = Action::Resize;
-        } else if env.bounds.0 != self.env.bounds.0
-            || env.align.0 != self.env.align.0
-            || env.wrap != self.env.wrap
-        {
-            action = Action::Wrap;
-        } else if env.bounds.1 != self.env.bounds.1 || env.align.1 != self.env.align.1 {
-            action = Action::VAlign;
-        } else {
-            debug_assert_eq!(env, self.env);
-            action = Action::None;
+    fn set_font(&mut self, font_id: FontId) {
+        if font_id != self.font_id {
+            self.font_id = font_id;
+            self.set_max_status(Status::Configured);
         }
-        self.display.require_action(action);
-        self.env = env;
-    }
-
-    fn measure_width(&mut self, max_width: f32) -> Result<f32, InvalidFontId> {
-        self.prepare_runs()?;
-
-        Ok(self.display.measure_width(max_width).unwrap())
-    }
-
-    fn measure_height(&mut self) -> Result<f32, InvalidFontId> {
-        let v_align = self.env.align.1;
-        if v_align != Align::TL {
-            self.env.align.1 = Align::TL;
-            self.display.require_action(Action::VAlign);
-        }
-
-        self.prepare_runs()?;
-
-        let action = self.display.required_action();
-        let height = if action >= Action::Wrap {
-            self.display
-                .prepare_lines(self.env.bounds, self.env.wrap, self.env.align)
-                .unwrap()
-                .1
-        } else if action == Action::VAlign {
-            self.display
-                .vertically_align(self.env.bounds.1, self.env.align.1)
-                .unwrap()
-                .1
-        } else {
-            (self.display.bounding_box().unwrap().1).1
-        };
-
-        if v_align != Align::TL {
-            self.env.align.1 = v_align;
-            self.display.require_action(Action::VAlign);
-        }
-
-        Ok(height)
     }
 
     #[inline]
-    fn prepare(&mut self) -> Result<bool, InvalidFontId> {
+    fn get_font_size(&self) -> f32 {
+        self.dpem
+    }
+
+    #[inline]
+    fn set_font_size(&mut self, dpem: f32) {
+        if dpem != self.dpem {
+            self.dpem = dpem;
+            self.set_max_status(Status::ResizeLevelRuns);
+        }
+    }
+
+    #[inline]
+    fn get_direction(&self) -> Direction {
+        self.direction
+    }
+
+    #[inline]
+    fn set_direction(&mut self, direction: Direction) {
+        if direction != self.direction {
+            self.direction = direction;
+            self.set_max_status(Status::Configured);
+        }
+    }
+
+    #[inline]
+    fn get_wrap_width(&self) -> f32 {
+        self.wrap_width
+    }
+
+    #[inline]
+    fn set_wrap_width(&mut self, wrap_width: f32) {
+        assert!(self.wrap_width >= 0.0);
+        if wrap_width != self.wrap_width {
+            self.wrap_width = wrap_width;
+            self.set_max_status(Status::LevelRuns);
+        }
+    }
+
+    #[inline]
+    fn get_align(&self) -> (Align, Align) {
+        self.align
+    }
+
+    #[inline]
+    fn set_align(&mut self, align: (Align, Align)) {
+        if align != self.align {
+            if align.0 == self.align.0 {
+                self.set_max_status(Status::Wrapped);
+            } else {
+                self.set_max_status(Status::LevelRuns);
+            }
+            self.align = align;
+        }
+    }
+
+    #[inline]
+    fn get_bounds(&self) -> Vec2 {
+        self.bounds
+    }
+
+    #[inline]
+    fn set_bounds(&mut self, bounds: Vec2) {
+        debug_assert!(bounds.is_finite());
+        if bounds != self.bounds {
+            if bounds.0 != self.bounds.0 {
+                self.set_max_status(Status::LevelRuns);
+            } else {
+                self.set_max_status(Status::Wrapped);
+            }
+            self.bounds = bounds;
+        }
+    }
+
+    fn set_font_properties(
+        &mut self,
+        direction: Direction,
+        font_id: FontId,
+        dpem: f32,
+        wrap_width: f32,
+    ) {
+        self.set_font(font_id);
+        self.set_font_size(dpem);
+        self.set_direction(direction);
+        self.set_wrap_width(wrap_width);
+    }
+
+    #[inline]
+    fn text_is_rtl(&self) -> bool {
+        let cached_is_rtl = match self.line_is_rtl(0) {
+            Ok(None) => Some(self.direction == Direction::Rtl),
+            Ok(Some(is_rtl)) => Some(is_rtl),
+            Err(NotReady) => None,
+        };
+        #[cfg(not(debug_assertions))]
+        if let Some(cached) = cached_is_rtl {
+            return cached;
+        }
+
+        let is_rtl = self.display.text_is_rtl(self.as_str(), self.direction);
+        if let Some(cached) = cached_is_rtl {
+            debug_assert_eq!(cached, is_rtl);
+        }
+        is_rtl
+    }
+
+    #[inline]
+    fn configure(&mut self) -> Result<(), InvalidFontId> {
+        // Validate default_font_id
+        let _ = fonts::library().first_face_for(self.font_id)?;
+
+        self.status = self.status.max(Status::Configured);
+        Ok(())
+    }
+
+    fn line_height(&self) -> Result<f32, NotReady> {
+        self.check_status(Status::Configured)?;
+
+        fonts::library()
+            .get_first_face(self.get_font())
+            .map(|face| face.height(self.get_font_size()))
+            .map_err(|_| {
+                debug_assert!(false, "font_id should be validated by configure");
+                NotReady
+            })
+    }
+
+    fn measure_width(&mut self, max_width: f32) -> Result<f32, NotReady> {
         self.prepare_runs()?;
 
-        let action = self.display.required_action();
-        let bound = if action == Action::Wrap {
+        Ok(self.display.measure_width(max_width))
+    }
+
+    fn measure_height(&mut self) -> Result<f32, NotReady> {
+        if self.status >= Status::Wrapped {
+            let (tl, br) = self.display.bounding_box();
+            return Ok(br.1 - tl.1);
+        }
+
+        self.prepare_runs()?;
+        Ok(self.display.measure_height(self.wrap_width))
+    }
+
+    #[inline]
+    fn prepare(&mut self) -> Result<bool, NotReady> {
+        self.prepare_runs()?;
+        debug_assert!(self.status >= Status::LevelRuns);
+
+        if self.status == Status::LevelRuns {
             self.display
-                .prepare_lines(self.env.bounds, self.env.wrap, self.env.align)
-                .unwrap()
-        } else if action == Action::VAlign {
-            self.display
-                .vertically_align(self.env.bounds.1, self.env.align.1)
-                .unwrap()
+                .prepare_lines(self.wrap_width, self.bounds.0, self.align.0);
+        }
+
+        let overflow = if self.status <= Status::Wrapped {
+            let bound = self.display.vertically_align(self.bounds.1, self.align.1);
+            !(bound.0 <= self.bounds.0 && bound.1 <= self.bounds.1)
         } else {
-            return Ok(false);
+            false
         };
 
-        Ok(!(bound.0 <= self.env.bounds.0 && bound.1 <= self.env.bounds.1))
+        self.status = Status::Ready;
+        Ok(overflow)
     }
 
     #[inline]
@@ -313,30 +553,31 @@ pub trait TextApiExt: TextApi {
     /// Check whether the text is fully prepared and ready for usage
     #[inline]
     fn is_prepared(&self) -> bool {
-        self.display().required_action().is_ready()
+        self.check_status(Status::Ready).is_ok()
     }
 
-    /// Update the environment and do full preparation
-    ///
-    /// Fully prepares the text. This is equivalent to calling
-    /// [`TextApi::set_env`] followed by [`TextApi::prepare`].
-    ///
-    /// Returns true if at least some action is performed *and* the text exceeds
-    /// the allocated bounds ([`Environment::bounds`]).
-    fn update_env(&mut self, env: Environment) -> Result<bool, InvalidFontId> {
-        self.set_env(env);
-        self.prepare()
+    /// Read the [`TextDisplay`], if fully prepared
+    #[inline]
+    fn display(&self) -> Result<&TextDisplay, NotReady> {
+        self.check_status(Status::Ready)?;
+        Ok(self.unchecked_display())
     }
 
-    /// Prepare text for display, failing fast if fonts are not loaded
+    /// Read the [`TextDisplay`], if at least wrapped
+    #[inline]
+    fn wrapped_display(&self) -> Result<&TextDisplay, NotReady> {
+        self.check_status(Status::Wrapped)?;
+        Ok(self.unchecked_display())
+    }
+
+    /// Set font size
     ///
-    /// This is identical to [`TextApi::prepare`] except that it will fail fast in
-    /// case no fonts have been loaded yet (see [`fonts::any_loaded`]).
-    fn try_prepare(&mut self) -> Result<bool, InvalidFontId> {
-        if !fonts::any_loaded() {
-            return Err(InvalidFontId);
-        }
-        self.prepare()
+    /// This is an alternative to [`TextApi::set_font_size`]. It is assumed
+    /// that 72 Points = 1 Inch and the base screen resolution is 96 DPI.
+    /// (Note: MacOS uses a different definition where 1 Point = 1 Pixel.)
+    #[inline]
+    fn set_font_size_pt(&mut self, pt_size: f32, scale_factor: f32) {
+        self.set_font_size(pt_size * scale_factor * (96.0 / 72.0));
     }
 
     /// Get the size of the required bounding box
@@ -344,8 +585,9 @@ pub trait TextApiExt: TextApi {
     /// This is the position of the upper-left and lower-right corners of a
     /// bounding box on content.
     /// Alignment and input bounds do affect the result.
+    #[inline]
     fn bounding_box(&self) -> Result<(Vec2, Vec2), NotReady> {
-        self.display().bounding_box()
+        Ok(self.wrapped_display()?.bounding_box())
     }
 
     /// Get the number of lines (after wrapping)
@@ -353,7 +595,7 @@ pub trait TextApiExt: TextApi {
     /// See [`TextDisplay::num_lines`].
     #[inline]
     fn num_lines(&self) -> Result<usize, NotReady> {
-        self.display().num_lines()
+        Ok(self.wrapped_display()?.num_lines())
     }
 
     /// Find the line containing text `index`
@@ -361,7 +603,7 @@ pub trait TextApiExt: TextApi {
     /// See [`TextDisplay::find_line`].
     #[inline]
     fn find_line(&self, index: usize) -> Result<Option<(usize, std::ops::Range<usize>)>, NotReady> {
-        self.display().find_line(index)
+        Ok(self.wrapped_display()?.find_line(index))
     }
 
     /// Get the range of a line, by line number
@@ -369,16 +611,7 @@ pub trait TextApiExt: TextApi {
     /// See [`TextDisplay::line_range`].
     #[inline]
     fn line_range(&self, line: usize) -> Result<Option<std::ops::Range<usize>>, NotReady> {
-        self.display().line_range(line)
-    }
-
-    /// Get the base directionality of the text
-    ///
-    /// This does not require that the text is prepared.
-    #[inline]
-    fn text_is_rtl(&self) -> bool {
-        self.display()
-            .text_is_rtl(self.as_str(), self.env().direction)
+        Ok(self.wrapped_display()?.line_range(line))
     }
 
     /// Get the directionality of the current line
@@ -386,7 +619,7 @@ pub trait TextApiExt: TextApi {
     /// See [`TextDisplay::line_is_rtl`].
     #[inline]
     fn line_is_rtl(&self, line: usize) -> Result<Option<bool>, NotReady> {
-        self.display().line_is_rtl(line)
+        Ok(self.wrapped_display()?.line_is_rtl(line))
     }
 
     /// Find the text index for the glyph nearest the given `pos`
@@ -394,7 +627,7 @@ pub trait TextApiExt: TextApi {
     /// See [`TextDisplay::text_index_nearest`].
     #[inline]
     fn text_index_nearest(&self, pos: Vec2) -> Result<usize, NotReady> {
-        self.display().text_index_nearest(pos)
+        Ok(self.display()?.text_index_nearest(pos))
     }
 
     /// Find the text index nearest horizontal-coordinate `x` on `line`
@@ -402,14 +635,14 @@ pub trait TextApiExt: TextApi {
     /// See [`TextDisplay::line_index_nearest`].
     #[inline]
     fn line_index_nearest(&self, line: usize, x: f32) -> Result<Option<usize>, NotReady> {
-        self.display().line_index_nearest(line, x)
+        Ok(self.wrapped_display()?.line_index_nearest(line, x))
     }
 
     /// Find the starting position (top-left) of the glyph at the given index
     ///
     /// See [`TextDisplay::text_glyph_pos`].
     fn text_glyph_pos(&self, index: usize) -> Result<MarkerPosIter, NotReady> {
-        self.display().text_glyph_pos(index)
+        Ok(self.display()?.text_glyph_pos(index))
     }
 
     /// Get the number of glyphs
@@ -418,15 +651,15 @@ pub trait TextApiExt: TextApi {
     #[inline]
     #[cfg_attr(doc_cfg, doc(cfg(feature = "num_glyphs")))]
     #[cfg(feature = "num_glyphs")]
-    fn num_glyphs(&self) -> usize {
-        self.display().num_glyphs()
+    fn num_glyphs(&self) -> Result<usize, NotReady> {
+        Ok(self.wrapped_display()?.num_glyphs())
     }
 
     /// Yield a sequence of positioned glyphs
     ///
     /// See [`TextDisplay::glyphs`].
     fn glyphs<F: FnMut(FaceId, f32, Glyph)>(&self, f: F) -> Result<(), NotReady> {
-        self.display().glyphs(f)
+        Ok(self.display()?.glyphs(f))
     }
 
     /// Like [`TextDisplay::glyphs`] but with added effects
@@ -444,8 +677,9 @@ pub trait TextApiExt: TextApi {
         F: FnMut(FaceId, f32, Glyph, usize, X),
         G: FnMut(f32, f32, f32, f32, usize, X),
     {
-        self.display()
-            .glyphs_with_effects(effects, default_aux, f, g)
+        Ok(self
+            .display()?
+            .glyphs_with_effects(effects, default_aux, f, g))
     }
 
     /// Yield a sequence of rectangles to highlight a given text range
@@ -455,7 +689,7 @@ pub trait TextApiExt: TextApi {
     where
         F: FnMut(Vec2, Vec2),
     {
-        self.display().highlight_range(range, &mut f)
+        Ok(self.display()?.highlight_range(range, &mut f))
     }
 }
 
@@ -515,50 +749,24 @@ impl<T: EditableText + ?Sized> EditableTextApi for Text<T> {
     #[inline]
     fn insert_char(&mut self, index: usize, c: char) {
         self.text.insert_char(index, c);
-        self.display.require_action(Action::All);
+        self.set_max_status(Status::Configured);
     }
 
     #[inline]
     fn replace_range(&mut self, range: std::ops::Range<usize>, replace_with: &str) {
         self.text.replace_range(range, replace_with);
-        self.display.require_action(Action::All);
+        self.set_max_status(Status::Configured);
     }
 
     #[inline]
     fn set_string(&mut self, string: String) {
         self.text.set_string(string);
-        self.display.require_action(Action::All);
+        self.set_max_status(Status::Configured);
     }
 
     #[inline]
     fn swap_string(&mut self, string: &mut String) {
         self.text.swap_string(string);
-        self.display.require_action(Action::All);
-    }
-}
-
-impl<T: FormattableText + ?Sized> Deref for Text<T> {
-    type Target = TextDisplay;
-
-    fn deref(&self) -> &TextDisplay {
-        &self.display
-    }
-}
-
-impl<T: FormattableText + ?Sized> DerefMut for Text<T> {
-    fn deref_mut(&mut self) -> &mut TextDisplay {
-        &mut self.display
-    }
-}
-
-impl<T: FormattableText + ?Sized> AsRef<TextDisplay> for Text<T> {
-    fn as_ref(&self) -> &TextDisplay {
-        &self.display
-    }
-}
-
-impl<T: FormattableText + ?Sized> AsMut<TextDisplay> for Text<T> {
-    fn as_mut(&mut self) -> &mut TextDisplay {
-        &mut self.display
+        self.set_max_status(Status::Configured);
     }
 }

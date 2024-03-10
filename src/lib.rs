@@ -42,7 +42,7 @@ mod text;
 pub use text::*;
 
 mod util;
-pub use util::{Action, OwningVecIter};
+pub use util::{OwningVecIter, Status};
 
 pub(crate) mod shaper;
 pub use shaper::{Glyph, GlyphId};

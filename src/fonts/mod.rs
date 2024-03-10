@@ -6,7 +6,7 @@
 //! Font selection and loading
 //!
 //! Fonts are managed by the [`FontLibrary`], of which a static singleton
-//! exists and can be accessed via [`fonts`].
+//! exists and can be accessed via [`library()`].
 //!
 //! ### `FontId` and the default font
 //!
@@ -16,7 +16,7 @@
 //! To make this work, the user of this library *must* load the default font
 //! before all other fonts and before any operation requiring font metrics:
 //! ```
-//! if let Err(e) = kas_text::fonts::fonts().select_default() {
+//! if let Err(e) = kas_text::fonts::library().select_default() {
 //!     panic!("Error loading font: {}", e);
 //! }
 //! // from now on, kas_text::fonts::FontId::default() identifies the default font
@@ -79,7 +79,7 @@ mod library;
 mod selector;
 
 pub use face::{FaceRef, ScaledFaceRef};
-pub use library::{fonts, FaceData, FaceId, FontId, FontLibrary, InvalidFontId};
+pub use library::{library, FaceData, FaceId, FontId, FontLibrary, InvalidFontId};
 pub use selector::*;
 
 impl From<GlyphId> for ttf_parser::GlyphId {

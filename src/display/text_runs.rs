@@ -9,9 +9,9 @@
 
 use super::TextDisplay;
 use crate::conv::{to_u32, to_usize};
-use crate::fonts::{fonts, FontId, InvalidFontId};
+use crate::fonts::{self, FontId, InvalidFontId};
 use crate::format::FormattableText;
-use crate::{shaper, Action, Direction, Range};
+use crate::{shaper, Direction, Range};
 use unicode_bidi::{BidiClass, BidiInfo, LTR_LEVEL, RTL_LEVEL};
 use xi_unicode::LineBreakIterator;
 
@@ -29,16 +29,12 @@ pub(crate) enum RunSpecial {
 impl TextDisplay {
     /// Update font size
     ///
+    /// [Requires status][Self#status-of-preparation]: level runs have been
+    /// prepared and are valid in all ways except size (`dpem`).
+    ///
     /// This updates the result of [`TextDisplay::prepare_runs`] due to change
     /// in font size.
-    ///
-    /// Prerequisites: prepared runs: requires action is no greater than `Action::Wrap`.
-    /// Post-requirements: prepare lines (requires action `Action::Wrap`).  
-    /// Parameters: see [`crate::Environment`] documentation.
     pub fn resize_runs<F: FormattableText + ?Sized>(&mut self, text: &F, dpem: f32) {
-        assert_eq!(self.action, Action::Resize);
-        self.action = Action::Wrap;
-
         let mut font_tokens = text.font_tokens(dpem);
         let mut next_fmt = font_tokens.next();
 
@@ -69,12 +65,17 @@ impl TextDisplay {
         }
     }
 
-    /// Prepare text runs
+    /// Break text into level runs
     ///
-    /// This is the first step of preparation: breaking text into runs according
-    /// to font properties, bidi-levels and line-wrap points.
+    /// [Requires status][Self#status-of-preparation]: none.
     ///
-    /// Parameters: see [`crate::Environment`] documentation.
+    /// Must be called again if any of `text`, `direction` or `font_id` change.
+    /// If only `dpem` changes, [`Self::resize_runs`] may be called instead.
+    ///
+    /// The text is broken into a set of contiguous "level runs". These runs are
+    /// maximal slices of the `text` which do not contain explicit line breaks
+    /// and have a single text direction according to the
+    /// [Unicode Bidirectional Algorithm](http://www.unicode.org/reports/tr9/).
     pub fn prepare_runs<F: FormattableText + ?Sized>(
         &mut self,
         text: &F,
@@ -82,8 +83,6 @@ impl TextDisplay {
         mut font_id: FontId,
         mut dpem: f32,
     ) -> Result<(), InvalidFontId> {
-        assert_eq!(self.action, Action::All);
-
         // This method constructs a list of "hard lines" (the initial line and any
         // caused by a hard break), each composed of a list of "level runs" (the
         // result of splitting and reversing according to Unicode TR9 aka
@@ -102,7 +101,7 @@ impl TextDisplay {
             }
         }
 
-        let fonts = fonts();
+        let fonts = fonts::library();
         let text = text.as_str();
 
         let default_para_level = match direction {
@@ -263,7 +262,6 @@ impl TextDisplay {
             println!("]");
         }
         */
-        self.action = Action::Wrap;
         Ok(())
     }
 }

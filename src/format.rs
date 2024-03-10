@@ -6,9 +6,9 @@
 //! Parsers for formatted text
 
 use crate::fonts::FontId;
-#[allow(unused)]
-use crate::Text; // for doc-links
 use crate::{Effect, OwningVecIter};
+#[allow(unused)]
+use crate::{Text, TextDisplay}; // for doc-links
 
 mod plain;
 
@@ -42,7 +42,8 @@ pub trait FormattableText: std::fmt::Debug {
     /// It is expected that [`FontToken::start`] of yielded items is strictly
     /// increasing; if not, formatting may not be applied correctly.
     ///
-    /// The `dpem` parameter is font size as in [`crate::Environment`].
+    /// The default [font size][crate::TextApi::set_font_size] (`dpem`) is passed
+    /// as a reference.
     ///
     /// For plain text this iterator will be empty.
     fn font_tokens<'a>(&'a self, dpem: f32) -> Self::FontTokenIter<'a>;
@@ -81,7 +82,8 @@ pub trait FormattableTextDyn: std::fmt::Debug {
     /// It is expected that [`FontToken::start`] of yielded items is strictly
     /// increasing; if not, formatting may not be applied correctly.
     ///
-    /// The `dpem` parameter is font size as in [`crate::Environment`].
+    /// The default [font size][crate::TextApi::set_font_size] (`dpem`) is passed
+    /// as a reference.
     ///
     /// For plain text this iterator will be empty.
     fn font_tokens(&self, dpem: f32) -> OwningVecIter<FontToken>;

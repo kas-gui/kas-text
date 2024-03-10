@@ -57,7 +57,7 @@
 //! }
 //! ```
 
-use crate::fonts::{fonts, FaceId};
+use crate::fonts::{self, FaceId};
 use crate::{Glyph, GlyphId};
 use easy_cast::*;
 
@@ -221,7 +221,7 @@ fn raster_ab(config: &Config, desc: SpriteDescriptor) -> Option<Sprite> {
 
     let id = desc.glyph();
     let face = desc.face();
-    let face_store = fonts().get_face_store(face);
+    let face_store = fonts::library().get_face_store(face);
     let dpem = desc.dpem(config);
 
     let (mut x, y) = desc.fractional_position(config);
@@ -260,7 +260,7 @@ fn raster_ab(config: &Config, desc: SpriteDescriptor) -> Option<Sprite> {
 #[cfg(feature = "fontdue")]
 fn raster_fontdue(config: &Config, desc: SpriteDescriptor) -> Option<Sprite> {
     let face = desc.face();
-    let face = &fonts().get_face_store(face).fontdue;
+    let face = &fonts::library().get_face_store(face).fontdue;
 
     let (metrics, data) = face.rasterize_indexed(desc.glyph().0, desc.dpem(config));
 

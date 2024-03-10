@@ -5,10 +5,11 @@
 
 //! Text prepared for display
 
-use smallvec::SmallVec;
-
 use crate::conv::to_usize;
-use crate::{shaper, Action, Direction, Vec2};
+#[allow(unused)]
+use crate::Text;
+use crate::{shaper, Direction, Vec2};
+use smallvec::SmallVec;
 
 mod glyph_pos;
 mod text_runs;
@@ -24,40 +25,43 @@ use wrap_lines::{Line, RunPart};
 #[error("not ready")]
 pub struct NotReady;
 
-/// Text display, without source text representation
+/// Text type-setting object (low-level, without text and configuration)
 ///
-/// This struct stores glyph locations and intermediate values used to calculate
-/// glyph layout. It does not contain the source text itself or "environment"
-/// state used during layout.
+/// This struct caches type-setting data at multiple levels of preparation.
+/// Its end result is a sequence of type-set glyphs.
 ///
-/// In general, it is recommended to use [`crate::Text`] instead, which includes
-/// a representation of the source text and environmental state.
+/// It is usually recommended to use [`Text`] instead, which includes
+/// the source text, type-setting configuration and status tracking.
 ///
-/// ### Preparation
+/// ### Status of preparation
 ///
-/// This struct tracks the state of preparation ([`Self::required_action`]).
-/// Methods will return a [`NotReady`] error if called without sufficient
-/// preparation.
+/// Stages of preparation are as follows:
 ///
-/// The struct may be default-constructed.
+/// 1.  Ensure all required [fonts](crate::fonts) are loaded.
+/// 2.  Call [`Self::prepare_runs`] to break text into level runs, then shape
+///     these runs into glyph runs (unwrapped but with weak break points).
 ///
-/// Text preparation proceeds as follows:
+///     This method must be called again if the `text`, text `direction` or
+///     `font_id` change. If only the text size (`dpem`) changes, it is
+///     sufficient to instead call [`Self::resize_runs`].
+/// 3.  Optionally, [`Self::measure_width`] and [`Self::measure_height`] may be
+///     used at this point to determine size requirements.
+/// 4.  Call [`Self::prepare_lines`] to wrap text and perform re-ordering (where
+///     lines are bi-directional) and horizontal alignment.
 ///
-/// 1.  [`Self::prepare_runs`] breaks the source text into runs which may be fed
-///     to the shaping algorithm. Each run has a single bidi embedding level
-///     (direction) and uses a single font face, and contains no explicit line
-///     break (except as a terminator).
+///     This must be called again if any of `wrap_width`, `width_bound` or
+///     `h_align` change.
+/// 5.  Call [`Self::vertically_align`] to set or adjust vertical alignment.
+///     (Not technically required if alignment is always top.)
 ///
-///     Each run is then fed through the text shaper, resulting in a sequence of
-///     type-set glyphs.
-/// 2.  Optionally, [`Self::measure_width`] may be used to calculate the
-///     required width (mostly useful for short texts which will not wrap).
-/// 3.  [`Self::prepare_lines`] takes the output of the first step and
-///     applies line wrapping, line re-ordering (for bi-directional lines) and
-///     alignment.
+/// All methods are idempotent (that is, they may be called multiple times
+/// without affecting the result). Later stages of preparation do not affect
+/// earlier stages, but if an earlier stage is repeated to account for adjusted
+/// configuration then later stages must also be repeated.
 ///
-///     This step is separate primarily to allow faster re-wrapping should the
-///     text's wrap width change.
+/// This struct does not track the state of preparation. It is recommended to
+/// use [`Text`] or a custom wrapper for that purpose. Failure to observe the
+/// correct sequence is memory-safe but may cause panic or an unexpected result.
 ///
 /// ### Text navigation
 ///
@@ -65,7 +69,7 @@ pub struct NotReady;
 /// glyphs and lines, and vice-versa.
 ///
 /// The text range is `0..self.text_len()`. Any index within this range
-/// (inclusive of end point) is valid for usage in all methods taking an index.
+/// (inclusive of end point) is valid for usage in all methods taking a text index.
 /// Multiple indices may map to the same glyph (e.g. within multi-byte chars,
 /// with combining-diacritics, and with ligatures). In some cases a single index
 /// corresponds to multiple glyph positions (due to line-wrapping or change of
@@ -74,15 +78,17 @@ pub struct NotReady;
 /// Navigating to the start or end of a line can be done with
 /// [`TextDisplay::find_line`] and [`TextDisplay::line_range`].
 ///
-/// Navigating left or right should be done via a library such as
+/// Navigating forwards or backwards should be done via a library such as
 /// [`unicode-segmentation`](https://github.com/unicode-rs/unicode-segmentation)
 /// which provides a
 /// [`GraphemeCursor`](https://unicode-rs.github.io/unicode-segmentation/unicode_segmentation/struct.GraphemeCursor.html)
-/// to step back or forward one "grapheme", in logical order. Navigating glyphs
-/// in display-order is not currently supported. Optionally, the direction may
+/// to step back or forward one "grapheme", in logical text order.
+/// Optionally, the direction may
 /// be reversed for right-to-left lines [`TextDisplay::line_is_rtl`], but note
 /// that the result may be confusing since not all text on the line follows the
 /// line's base direction and adjacent lines may have different directions.
+///
+/// Navigating glyphs left or right in display-order is not currently supported.
 ///
 /// To navigate "up" and "down" lines, use [`TextDisplay::text_glyph_pos`] to
 /// get the position of the cursor, [`TextDisplay::find_line`] to get the line
@@ -100,7 +106,6 @@ pub struct TextDisplay {
     //
     /// Level runs within the text, in logical order
     runs: SmallVec<[shaper::GlyphRun; 1]>,
-    action: Action,
     /// Contiguous runs, in logical order
     ///
     /// Within a line, runs may not be in visual order due to BIDI reversals.
@@ -127,7 +132,6 @@ impl Default for TextDisplay {
     fn default() -> Self {
         TextDisplay {
             runs: Default::default(),
-            action: Action::All, // highest value
             wrapped_runs: Default::default(),
             lines: Default::default(),
             #[cfg(feature = "num_glyphs")]
@@ -139,64 +143,40 @@ impl Default for TextDisplay {
 }
 
 impl TextDisplay {
-    /// Get required action
-    #[inline]
-    pub fn required_action(&self) -> Action {
-        self.action
-    }
-
-    /// Require an action
-    ///
-    /// Required actions are tracked internally. This combines internal action
-    /// state with that input via `max`. It may be used, for example, to mark
-    /// that fonts need resizing due to change in environment.
-    #[inline]
-    pub fn require_action(&mut self, action: Action) {
-        self.action = self.action.max(action);
-    }
-
     /// Get the number of lines (after wrapping)
-    pub fn num_lines(&self) -> Result<usize, NotReady> {
-        if !self.action.is_ready() {
-            return Err(NotReady);
-        }
-        Ok(self.lines.len())
+    ///
+    /// [Requires status][Self#status-of-preparation]: lines have been wrapped.
+    pub fn num_lines(&self) -> usize {
+        self.lines.len()
     }
 
     /// Get the size of the required bounding box
     ///
-    /// This is the position of the upper-left and lower-right corners of a
+    /// [Requires status][Self#status-of-preparation]: lines have been wrapped.
+    ///
+    /// Returns the position of the upper-left and lower-right corners of a
     /// bounding box on content.
     /// Alignment and input bounds do affect the result.
-    pub fn bounding_box(&self) -> Result<(Vec2, Vec2), NotReady> {
-        if self.action > Action::VAlign {
-            return Err(NotReady);
-        }
-
+    pub fn bounding_box(&self) -> (Vec2, Vec2) {
         if self.lines.is_empty() {
-            return Ok((Vec2::ZERO, Vec2::ZERO));
+            return (Vec2::ZERO, Vec2::ZERO);
         }
 
         let top = self.lines.first().unwrap().top;
         let bottom = self.lines.last().unwrap().bottom;
-        Ok((Vec2(self.l_bound, top), Vec2(self.r_bound, bottom)))
+        (Vec2(self.l_bound, top), Vec2(self.r_bound, bottom))
     }
 
     /// Find the line containing text `index`
+    ///
+    /// [Requires status][Self#status-of-preparation]: lines have been wrapped.
     ///
     /// Returns the line number and the text-range of the line.
     ///
     /// Returns `None` in case `index` does not line on or at the end of a line
     /// (which means either that `index` is beyond the end of the text or that
     /// `index` is within a mult-byte line break).
-    pub fn find_line(
-        &self,
-        index: usize,
-    ) -> Result<Option<(usize, std::ops::Range<usize>)>, NotReady> {
-        if !self.action.is_ready() {
-            return Err(NotReady);
-        }
-
+    pub fn find_line(&self, index: usize) -> Option<(usize, std::ops::Range<usize>)> {
         let mut first = None;
         for (n, line) in self.lines.iter().enumerate() {
             if line.text_range.end() == index {
@@ -205,35 +185,23 @@ impl TextDisplay {
                 // lines it does not match any other location.
                 first = Some((n, line.text_range.to_std()));
             } else if line.text_range.includes(index) {
-                return Ok(Some((n, line.text_range.to_std())));
+                return Some((n, line.text_range.to_std()));
             }
         }
-        Ok(first)
+        first
     }
 
     /// Get the range of a line, by line number
-    pub fn line_range(&self, line: usize) -> Result<Option<std::ops::Range<usize>>, NotReady> {
-        if !self.action.is_ready() {
-            return Err(NotReady);
-        }
-        Ok(self.lines.get(line).map(|line| line.text_range.to_std()))
+    ///
+    /// [Requires status][Self#status-of-preparation]: lines have been wrapped.
+    pub fn line_range(&self, line: usize) -> Option<std::ops::Range<usize>> {
+        self.lines.get(line).map(|line| line.text_range.to_std())
     }
 
     /// Get the base directionality of the text
     ///
-    /// This does not require that the text is prepared.
+    /// [Requires status][Self#status-of-preparation]: none.
     pub fn text_is_rtl(&self, text: &str, direction: Direction) -> bool {
-        let cached_is_rtl = match self.line_is_rtl(0) {
-            Ok(None) => Some(direction == Direction::Rtl),
-            Ok(Some(is_rtl)) => Some(is_rtl),
-            Err(NotReady) => None,
-        };
-
-        #[cfg(not(debug_assertions))]
-        if let Some(cached) = cached_is_rtl {
-            return cached;
-        }
-
         let (is_auto, mut is_rtl) = match direction {
             Direction::Ltr => (false, false),
             Direction::Rtl => (false, true),
@@ -249,46 +217,41 @@ impl TextDisplay {
             }
         }
 
-        if let Some(cached) = cached_is_rtl {
-            debug_assert_eq!(cached, is_rtl);
-        }
         is_rtl
     }
 
     /// Get the directionality of the current line
     ///
+    /// [Requires status][Self#status-of-preparation]: lines have been wrapped.
+    ///
     /// Returns:
     ///
-    /// - `Err(NotReady)` if text is not prepared
-    /// - `Ok(None)` if text is empty
-    /// - `Ok(Some(line_is_right_to_left))` otherwise
+    /// - `None` if text is empty
+    /// - `Some(line_is_right_to_left)` otherwise
     ///
     /// Note: indeterminate lines (e.g. empty lines) have their direction
     /// determined from the passed environment, by default left-to-right.
-    pub fn line_is_rtl(&self, line: usize) -> Result<Option<bool>, NotReady> {
-        if !self.action.is_ready() {
-            return Err(NotReady);
-        }
+    pub fn line_is_rtl(&self, line: usize) -> Option<bool> {
         if let Some(line) = self.lines.get(line) {
             let first_run = line.run_range.start();
             let glyph_run = to_usize(self.wrapped_runs[first_run].glyph_run);
-            Ok(Some(self.runs[glyph_run].level.is_rtl()))
+            Some(self.runs[glyph_run].level.is_rtl())
         } else {
-            Ok(None)
+            None
         }
     }
 
     /// Find the text index for the glyph nearest the given `pos`
+    ///
+    /// [Requires status][Self#status-of-preparation]:
+    /// text is fully prepared for display.
     ///
     /// This includes the index immediately after the last glyph, thus
     /// `result ≤ text.len()`.
     ///
     /// Note: if the font's `rect` does not start at the origin, then its top-left
     /// coordinate should first be subtracted from `pos`.
-    pub fn text_index_nearest(&self, pos: Vec2) -> Result<usize, NotReady> {
-        if !self.action.is_ready() {
-            return Err(NotReady);
-        }
+    pub fn text_index_nearest(&self, pos: Vec2) -> usize {
         let mut n = 0;
         for (i, line) in self.lines.iter().enumerate() {
             if line.top > pos.1 {
@@ -297,20 +260,18 @@ impl TextDisplay {
             n = i;
         }
         // Expected to return Some(..) value but None has been observed:
-        self.line_index_nearest(n, pos.0)
-            .map(|opt_line| opt_line.unwrap_or(0))
+        self.line_index_nearest(n, pos.0).unwrap_or(0)
     }
 
     /// Find the text index nearest horizontal-coordinate `x` on `line`
     ///
+    /// [Requires status][Self#status-of-preparation]: lines have been wrapped.
+    ///
     /// This is similar to [`TextDisplay::text_index_nearest`], but allows the
     /// line to be specified explicitly. Returns `None` only on invalid `line`.
-    pub fn line_index_nearest(&self, line: usize, x: f32) -> Result<Option<usize>, NotReady> {
-        if !self.action.is_ready() {
-            return Err(NotReady);
-        }
+    pub fn line_index_nearest(&self, line: usize, x: f32) -> Option<usize> {
         if line >= self.lines.len() {
-            return Ok(None);
+            return None;
         }
         let line = &self.lines[line];
         let run_range = line.run_range.to_std();
@@ -353,6 +314,6 @@ impl TextDisplay {
             try_best((end_pos - rel_pos).abs(), end_index);
         }
 
-        Ok(Some(to_usize(best)))
+        Some(to_usize(best))
     }
 }
