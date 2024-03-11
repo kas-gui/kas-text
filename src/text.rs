@@ -408,7 +408,7 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
 
     #[inline]
     fn set_wrap_width(&mut self, wrap_width: f32) {
-        assert!(self.wrap_width >= 0.0);
+        debug_assert!(wrap_width >= 0.0);
         if wrap_width != self.wrap_width {
             self.wrap_width = wrap_width;
             self.set_max_status(Status::LevelRuns);
