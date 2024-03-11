@@ -125,11 +125,9 @@ impl<T: FormattableText> Text<T> {
     /// One must call [`Text::prepare`] afterwards and may wish to inspect its
     /// return value to check the size allocation meets requirements.
     pub fn set_text(&mut self, text: T) {
-        /* TODO: enable if we have a way of testing equality (a hash?)
         if self.text == text {
             return; // no change
         }
-         */
 
         self.text = text;
         self.set_max_status(Status::Configured);
