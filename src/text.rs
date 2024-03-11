@@ -322,8 +322,8 @@ pub trait TextApi {
     /// Does all preparation steps necessary in order to display or query the
     /// layout of this text. Text is aligned within the given `bounds`.
     ///
-    /// Returns true if at least some action is performed *and* the text exceeds
-    /// the [bounds][Self::set_bounds].
+    /// Returns `Ok(true)` on success when some action is performed, `Ok(false)`
+    /// when the text is already prepared.
     fn prepare(&mut self) -> Result<bool, NotReady>;
 
     /// Get the sequence of effect tokens
@@ -521,6 +521,12 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
 
     #[inline]
     fn prepare(&mut self) -> Result<bool, NotReady> {
+        if self.is_prepared() {
+            return Ok(false);
+        } else if !self.bounds.is_finite() {
+            return Err(NotReady);
+        }
+
         self.prepare_runs()?;
         debug_assert!(self.status >= Status::LevelRuns);
 
@@ -529,15 +535,12 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
                 .prepare_lines(self.wrap_width, self.bounds.0, self.align.0);
         }
 
-        let overflow = if self.status <= Status::Wrapped {
-            let bound = self.display.vertically_align(self.bounds.1, self.align.1);
-            !(bound.0 <= self.bounds.0 && bound.1 <= self.bounds.1)
-        } else {
-            false
-        };
+        if self.status <= Status::Wrapped {
+            self.display.vertically_align(self.bounds.1, self.align.1);
+        }
 
         self.status = Status::Ready;
-        Ok(overflow)
+        Ok(true)
     }
 
     #[inline]
