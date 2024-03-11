@@ -196,15 +196,7 @@ pub trait TextApi {
     fn clone_string(&self) -> String;
 
     /// Get the default font
-    fn get_font(&self) -> FontId;
-
-    /// Get text (horizontal, vertical) alignment
-    fn get_align(&self) -> (Align, Align);
-
-    /// Set text alignment
-    ///
-    /// It is necessary to [`prepare`][Self::prepare] the text after calling this.
-    fn set_align(&mut self, align: (Align, Align));
+    fn font(&self) -> FontId;
 
     /// Set the default [`FontId`]
     ///
@@ -215,7 +207,7 @@ pub trait TextApi {
     fn set_font(&mut self, font_id: FontId);
 
     /// Get the default font size (pixels)
-    fn get_font_size(&self) -> f32;
+    fn font_size(&self) -> f32;
 
     /// Set the default font size (pixels)
     ///
@@ -231,7 +223,7 @@ pub trait TextApi {
     fn set_font_size(&mut self, dpem: f32);
 
     /// Get the base text direction
-    fn get_direction(&self) -> Direction;
+    fn direction(&self) -> Direction;
 
     /// Set the base text direction
     ///
@@ -239,7 +231,7 @@ pub trait TextApi {
     fn set_direction(&mut self, direction: Direction);
 
     /// Get the text wrap width
-    fn get_wrap_width(&self) -> f32;
+    fn wrap_width(&self) -> f32;
 
     /// Set wrap width or disable line wrapping
     ///
@@ -252,8 +244,16 @@ pub trait TextApi {
     /// It is necessary to [`prepare`][Self::prepare] the text after calling this.
     fn set_wrap_width(&mut self, wrap_width: f32);
 
+    /// Get text (horizontal, vertical) alignment
+    fn align(&self) -> (Align, Align);
+
+    /// Set text alignment
+    ///
+    /// It is necessary to [`prepare`][Self::prepare] the text after calling this.
+    fn set_align(&mut self, align: (Align, Align));
+
     /// Get text bounds
-    fn get_bounds(&self) -> Vec2;
+    fn bounds(&self) -> Vec2;
 
     /// Set text bounds
     ///
@@ -363,7 +363,7 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
     }
 
     #[inline]
-    fn get_font(&self) -> FontId {
+    fn font(&self) -> FontId {
         self.font_id
     }
 
@@ -376,7 +376,7 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
     }
 
     #[inline]
-    fn get_font_size(&self) -> f32 {
+    fn font_size(&self) -> f32 {
         self.dpem
     }
 
@@ -389,7 +389,7 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
     }
 
     #[inline]
-    fn get_direction(&self) -> Direction {
+    fn direction(&self) -> Direction {
         self.direction
     }
 
@@ -402,7 +402,7 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
     }
 
     #[inline]
-    fn get_wrap_width(&self) -> f32 {
+    fn wrap_width(&self) -> f32 {
         self.wrap_width
     }
 
@@ -416,7 +416,7 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
     }
 
     #[inline]
-    fn get_align(&self) -> (Align, Align) {
+    fn align(&self) -> (Align, Align) {
         self.align
     }
 
@@ -433,7 +433,7 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
     }
 
     #[inline]
-    fn get_bounds(&self) -> Vec2 {
+    fn bounds(&self) -> Vec2 {
         self.bounds
     }
 
@@ -495,8 +495,8 @@ impl<T: FormattableText + ?Sized> TextApi for Text<T> {
         self.check_status(Status::Configured)?;
 
         fonts::library()
-            .get_first_face(self.get_font())
-            .map(|face| face.height(self.get_font_size()))
+            .get_first_face(self.font())
+            .map(|face| face.height(self.font_size()))
             .map_err(|_| {
                 debug_assert!(false, "font_id should be validated by configure");
                 NotReady
