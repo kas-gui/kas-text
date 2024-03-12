@@ -42,7 +42,7 @@ pub trait FormattableText: std::cmp::PartialEq + std::fmt::Debug {
     /// It is expected that [`FontToken::start`] of yielded items is strictly
     /// increasing; if not, formatting may not be applied correctly.
     ///
-    /// The default [font size][crate::TextApi::set_font_size] (`dpem`) is passed
+    /// The default [font size][crate::Text::set_font_size] (`dpem`) is passed
     /// as a reference.
     ///
     /// For plain text this iterator will be empty.
@@ -82,7 +82,7 @@ pub trait FormattableTextDyn: std::fmt::Debug {
     /// It is expected that [`FontToken::start`] of yielded items is strictly
     /// increasing; if not, formatting may not be applied correctly.
     ///
-    /// The default [font size][crate::TextApi::set_font_size] (`dpem`) is passed
+    /// The default [font size][crate::Text::set_font_size] (`dpem`) is passed
     /// as a reference.
     ///
     /// For plain text this iterator will be empty.
