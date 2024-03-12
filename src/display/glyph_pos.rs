@@ -255,7 +255,7 @@ impl TextDisplay {
     ///
     /// This may be used as follows:
     /// ```no_run
-    /// # use kas_text::{Glyph, Text, TextApi, TextApiExt, Vec2};
+    /// # use kas_text::{Glyph, Text, Vec2};
     /// # fn draw(_: Vec<(f32, Glyph)>) {}
     /// let mut text = Text::new("Some example text");
     /// text.prepare();
