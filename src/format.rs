@@ -21,7 +21,7 @@ pub use markdown::{Error as MarkdownError, Markdown};
 ///
 /// Any `F: FormattableText` automatically support [`FormattableTextDyn`].
 /// Implement either this or [`FormattableTextDyn`], not both.
-pub trait FormattableText: std::fmt::Debug {
+pub trait FormattableText: std::cmp::PartialEq + std::fmt::Debug {
     type FontTokenIter<'a>: Iterator<Item = FontToken>
     where
         Self: 'a;
@@ -118,6 +118,13 @@ impl<F: FormattableText + Clone + 'static> FormattableTextDyn for F {
 
     fn effect_tokens(&self) -> &[Effect<()>] {
         FormattableText::effect_tokens(self)
+    }
+}
+
+/// References to [`FormattableTextDyn`] always compare unequal
+impl<'t> PartialEq for &'t dyn FormattableTextDyn {
+    fn eq(&self, _: &Self) -> bool {
+        false
     }
 }
 

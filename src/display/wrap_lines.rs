@@ -266,13 +266,11 @@ impl TextDisplay {
     /// Vertically align lines
     ///
     /// [Requires status][Self#status-of-preparation]: lines have been wrapped.
-    ///
-    /// Returns the bottom-right bounding corner.
-    pub fn vertically_align(&mut self, bound: f32, v_align: Align) -> Vec2 {
+    pub fn vertically_align(&mut self, bound: f32, v_align: Align) {
         debug_assert!(bound.is_finite());
 
         if self.lines.is_empty() {
-            return Vec2(0.0, 0.0);
+            return;
         }
 
         let top = self.lines.first().unwrap().top;
@@ -295,8 +293,6 @@ impl TextDisplay {
                 line.bottom += offset;
             }
         }
-
-        Vec2(self.r_bound, bottom)
     }
 }
 
