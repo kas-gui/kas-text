@@ -15,9 +15,8 @@ rust-version = "1.70.0"
 
 [package.metadata.docs.rs]
 # To build locally:
-# RUSTDOCFLAGS="--cfg doc_cfg" cargo +nightly doc --features markdown,raster --no-deps --open
+# RUSTDOCFLAGS="--cfg docsrs" cargo +nightly doc --features num_glyphs,markdown,raster --no-deps --open
 features = ["markdown", "raster", "num_glyphs"]
-rustdoc-args = ["--cfg", "doc_cfg"]
 
 [features]
 # Support num_glyphs method

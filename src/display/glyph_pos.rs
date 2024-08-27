@@ -238,7 +238,7 @@ impl TextDisplay {
     ///
     /// This method is a simple memory-read.
     #[inline]
-    #[cfg_attr(doc_cfg, doc(cfg(feature = "num_glyphs")))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "num_glyphs")))]
     #[cfg(feature = "num_glyphs")]
     pub fn num_glyphs(&self) -> usize {
         to_usize(self.num_glyphs)
