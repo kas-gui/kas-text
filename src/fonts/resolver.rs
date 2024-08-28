@@ -28,14 +28,6 @@ pub enum AddMode {
     Replace,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum State {
-    /// Newly created. If the boolean is true, system fonts will be loaded at
-    /// initialization time.
-    New(bool),
-    Ready,
-}
-
 fn to_uppercase<'a>(c: Cow<'a, str>) -> Cow<'a, str> {
     match c {
         Cow::Borrowed(b) if !b.chars().any(|c| c.is_lowercase()) => Cow::Borrowed(b),
@@ -45,7 +37,7 @@ fn to_uppercase<'a>(c: Cow<'a, str>) -> Cow<'a, str> {
 
 /// A tool to resolve a single font face given a family and style
 pub struct Resolver {
-    state: State,
+    load_system_fonts: bool,
     families_upper: HashMap<String, Vec<ID>>,
     // contract: all keys and values are uppercase
     aliases: HashMap<Cow<'static, str>, Vec<Cow<'static, str>>>,
@@ -92,7 +84,7 @@ impl Resolver {
         );
 
         Resolver {
-            state: State::New(true),
+            load_system_fonts: true,
             families_upper: HashMap::new(),
             aliases,
         }
@@ -142,17 +134,11 @@ impl Resolver {
     /// When searching for `family`, all `aliases` will be searched too. Both
     /// the `family` parameter and all `aliases` are converted to upper case.
     ///
-    /// This method may only be used before initialization; if used afterwards,
-    /// only a warning will be issued.
+    /// This method may only be used before initialization.
     pub fn add_aliases<I>(&mut self, family: Cow<'static, str>, aliases: I, mode: AddMode)
     where
         I: Iterator<Item = Cow<'static, str>>,
     {
-        if self.state == State::Ready {
-            warn!("unable to add aliases after font DB init");
-            return;
-        }
-
         let aliases = aliases.map(to_uppercase);
 
         match self.aliases.entry(to_uppercase(family)) {
@@ -181,9 +167,7 @@ impl Resolver {
     ///
     /// Default value: true
     pub fn set_load_system_fonts(&mut self, load: bool) {
-        if let State::New(l) = &mut self.state {
-            *l = load;
-        }
+        self.load_system_fonts = load;
     }
     /*
     /// Loads a font data into the `Database`.
@@ -236,71 +220,66 @@ impl Resolver {
     */
     /// Construct and return a DB
     pub(crate) fn init(&mut self) -> Arc<Database> {
-        if let State::New(load) = self.state {
-            let mut db = Arc::new(Database::new());
-            let dbm = Arc::make_mut(&mut db);
+        let mut db = Arc::new(Database::new());
+        let dbm = Arc::make_mut(&mut db);
 
-            if load {
-                dbm.load_system_fonts();
-            }
-            info!("Found {} fonts", dbm.len());
-
-            let families_upper = &mut self.families_upper;
-            for face in dbm.faces() {
-                trace!("Discovered: {}", DisplayFaceInfo(face));
-                // Use the first name, which according to docs is always en_US
-                // (unless missing from the font).
-                if let Some(family_name) = face.families.first().map(|pair| &pair.0) {
-                    families_upper
-                        .entry(family_name.to_uppercase())
-                        .or_default()
-                        .push(face.id);
-                }
-            }
-
-            for aliases in self.aliases.values_mut() {
-                // Remove aliases to missing fonts:
-                aliases.retain(|name| families_upper.contains_key(name.as_ref()));
-
-                // Remove duplicates (this is O(n²), but n is usually small):
-                let mut i = 0;
-                while i < aliases.len() {
-                    if aliases[0..i].contains(&aliases[i]) {
-                        aliases.remove(i);
-                    } else {
-                        i += 1;
-                    }
-                }
-            }
-
-            // Set family names in DB (only used in case the DB is used
-            // externally, e.g. to render an SVG with resvg).
-            if let Some(name) = self.font_family_from_alias(dbm, "SERIF") {
-                info!("Default serif font: {}", name);
-                dbm.set_serif_family(name);
-            }
-            if let Some(name) = self.font_family_from_alias(dbm, "SANS-SERIF") {
-                info!("Default sans-serif font: {}", name);
-                dbm.set_sans_serif_family(name);
-            }
-            if let Some(name) = self.font_family_from_alias(dbm, "MONOSPACE") {
-                info!("Default monospace font: {}", name);
-                dbm.set_monospace_family(name);
-            }
-            if let Some(name) = self.font_family_from_alias(dbm, "CURSIVE") {
-                info!("Default cursive font: {}", name);
-                dbm.set_cursive_family(name);
-            }
-            if let Some(name) = self.font_family_from_alias(dbm, "FANTASY") {
-                info!("Default fantasy font: {}", name);
-                dbm.set_fantasy_family(name);
-            }
-
-            self.state = State::Ready;
-            db
-        } else {
-            panic!("??")
+        if self.load_system_fonts {
+            dbm.load_system_fonts();
         }
+        info!("Found {} fonts", dbm.len());
+
+        let families_upper = &mut self.families_upper;
+        for face in dbm.faces() {
+            trace!("Discovered: {}", DisplayFaceInfo(face));
+            // Use the first name, which according to docs is always en_US
+            // (unless missing from the font).
+            if let Some(family_name) = face.families.first().map(|pair| &pair.0) {
+                families_upper
+                    .entry(family_name.to_uppercase())
+                    .or_default()
+                    .push(face.id);
+            }
+        }
+
+        for aliases in self.aliases.values_mut() {
+            // Remove aliases to missing fonts:
+            aliases.retain(|name| families_upper.contains_key(name.as_ref()));
+
+            // Remove duplicates (this is O(n²), but n is usually small):
+            let mut i = 0;
+            while i < aliases.len() {
+                if aliases[0..i].contains(&aliases[i]) {
+                    aliases.remove(i);
+                } else {
+                    i += 1;
+                }
+            }
+        }
+
+        // Set family names in DB (only used in case the DB is used
+        // externally, e.g. to render an SVG with resvg).
+        if let Some(name) = self.font_family_from_alias(dbm, "SERIF") {
+            info!("Default serif font: {}", name);
+            dbm.set_serif_family(name);
+        }
+        if let Some(name) = self.font_family_from_alias(dbm, "SANS-SERIF") {
+            info!("Default sans-serif font: {}", name);
+            dbm.set_sans_serif_family(name);
+        }
+        if let Some(name) = self.font_family_from_alias(dbm, "MONOSPACE") {
+            info!("Default monospace font: {}", name);
+            dbm.set_monospace_family(name);
+        }
+        if let Some(name) = self.font_family_from_alias(dbm, "CURSIVE") {
+            info!("Default cursive font: {}", name);
+            dbm.set_cursive_family(name);
+        }
+        if let Some(name) = self.font_family_from_alias(dbm, "FANTASY") {
+            info!("Default fantasy font: {}", name);
+            dbm.set_fantasy_family(name);
+        }
+
+        db
     }
 }
 

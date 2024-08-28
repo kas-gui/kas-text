@@ -10,6 +10,7 @@
 use super::{FaceRef, FontSelector, Resolver};
 use crate::conv::{to_u32, to_usize};
 use fontdb::Database;
+use log::warn;
 use std::collections::hash_map::{Entry, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock, RwLock, RwLockReadGuard};
@@ -182,16 +183,17 @@ pub struct FontLibrary {
 
 /// Font management
 impl FontLibrary {
-    /// Get mutable access to the font resolver
+    /// Adjust the font resolver
     ///
-    /// This can be used to adjust font selection. Note that any changes only
-    /// affect *new* font selections, thus it is recommended only to adjust the
-    /// database before *any* fonts have been selected. No existing [`FaceId`]
-    /// or [`FontId`] will be affected by this; additionally any
-    /// [`FontSelector`] which has already been selected will continue to
-    /// resolve the existing [`FontId`] via the cache.
-    pub fn update_resolver<F: FnOnce(&mut Resolver) -> T, T>(&self, f: F) -> T {
-        f(&mut self.resolver.write().unwrap())
+    /// This method may only be called before [`FontLibrary::init`].
+    /// If called afterwards this will just return `None`.
+    pub fn adjust_resolver<F: FnOnce(&mut Resolver) -> T, T>(&self, f: F) -> Option<T> {
+        if DB.get().is_some() {
+            warn!("unable to update resolver after kas_text::fonts::library().init()");
+            return None;
+        }
+
+        Some(f(&mut self.resolver.write().unwrap()))
     }
 
     /// Initialize
