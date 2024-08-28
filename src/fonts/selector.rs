@@ -106,7 +106,7 @@ impl Database {
         }
     }
 
-    /// Access the database
+    /// Access the `fontdb` database
     pub fn db(&self) -> &fontdb::Database {
         &self.db
     }
