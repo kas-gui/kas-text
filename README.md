@@ -62,12 +62,6 @@ Non-pure-Rust alternatives include [font-kit](https://crates.io/crates/font-kit)
 and [piet](https://crates.io/crates/piet) among others.
 
 
-MSRV
----
-
-The Minium Supported Rust Version is 1.70.0.
-
-
 Contributing
 --------
 
