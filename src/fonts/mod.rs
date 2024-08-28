@@ -16,7 +16,7 @@
 //! To make this work, the user of this library *must* load the default font
 //! before all other fonts and before any operation requiring font metrics:
 //! ```
-//! if let Err(e) = kas_text::fonts::library().select_default() {
+//! if let Err(e) = kas_text::fonts::library().init() {
 //!     panic!("Error loading font: {}", e);
 //! }
 //! // from now on, kas_text::fonts::FontId::default() identifies the default font
@@ -76,11 +76,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 mod face;
 mod families;
 mod library;
-mod selector;
+mod resolver;
 
 pub use face::{FaceRef, ScaledFaceRef};
-pub use library::{library, FaceData, FaceId, FontId, FontLibrary, InvalidFontId};
-pub use selector::*;
+pub use library::{clone_db, db, library, FaceData, FaceId, FontId, FontLibrary, InvalidFontId};
+pub use resolver::*;
 
 impl From<GlyphId> for ttf_parser::GlyphId {
     fn from(id: GlyphId) -> Self {
