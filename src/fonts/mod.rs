@@ -22,12 +22,6 @@
 //! // from now on, kas_text::fonts::FontId::default() identifies the default font
 //! ```
 //!
-//! (It is not technically necessary to lead the first font with
-//! [`FontLibrary::select_default`]; whichever font is loaded first has number 0.
-//! If doing this, `select_default` must not be called at all.
-//! It is harmless to attempt to load any font multiple times, whether with
-//! `select_default` or another method.)
-//!
 //! ### `FaceId` vs `FontId`
 //!
 //! Why do both [`FaceId`] and [`FontId`] exist? Font fallbacks. A [`FontId`]

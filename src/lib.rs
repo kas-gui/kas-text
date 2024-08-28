@@ -20,6 +20,8 @@
 #![allow(clippy::needless_lifetimes)]
 #![allow(clippy::neg_cmp_op_on_partial_ord)]
 
+pub extern crate fontdb;
+
 mod env;
 pub use env::*;
 
