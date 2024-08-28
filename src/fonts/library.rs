@@ -198,19 +198,42 @@ impl FontLibrary {
 
     /// Initialize
     ///
-    /// This method loads system fonts (if enabled), constructs the
-    /// [`fontdb::Database`] and resolves the default font (i.e. `FontId(0)`).
+    /// This method constructs the [`fontdb::Database`], loads fonts
+    /// and resolves the default font (i.e. `FontId(0)`).
+    ///
+    /// If a custom font loader is provided, this should load all desired fonts
+    /// (optionally including system fonts).
+    /// Otherwise, only system fonts will be loaded.
     ///
     /// This *must* be called before any other font selection method, and before
     /// querying any font-derived properties (such as text dimensions).
     /// It is safe to call multiple times.
     #[inline]
     pub fn init(&self) -> Result<(), Box<dyn std::error::Error>> {
+        self.init_custom(|db| db.load_system_fonts())
+    }
+
+    /// Initialize with custom fonts
+    ///
+    /// This method is an alternative to [`FontLibrary::init`], allowing custom
+    /// font loading.
+    ///
+    /// The loader method must load all required fonts. It is called only if
+    /// initialization is not yet complete.
+    pub fn init_custom(
+        &self,
+        loader: impl FnOnce(&mut Database),
+    ) -> Result<(), Box<dyn std::error::Error>> {
         if DB.get().is_some() {
             return Ok(());
         }
 
-        let db = self.resolver.write().unwrap().init();
+        let mut db = Arc::new(Database::new());
+        let dbm = Arc::make_mut(&mut db);
+        loader(dbm);
+
+        self.resolver.write().unwrap().init(dbm);
+
         if let Ok(()) = DB.set(db) {
             let id = self.select_font(&FontSelector::default())?;
             debug_assert!(id == FontId::default());

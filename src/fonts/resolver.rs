@@ -10,14 +10,12 @@
 use super::families;
 use fontdb::{Database, FaceInfo, Source, ID};
 pub use fontdb::{Stretch, Style, Weight};
-use log::{debug, info, trace, warn};
+use log::{debug, info, trace};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::collections::hash_map::{Entry, HashMap};
 use std::fmt;
-use std::path::Path;
-use std::sync::Arc;
 
 /// How to add new aliases when others exist
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -169,67 +167,13 @@ impl Resolver {
     pub fn set_load_system_fonts(&mut self, load: bool) {
         self.load_system_fonts = load;
     }
-    /*
-    /// Loads a font data into the `Database`.
-    ///
-    /// Will load all font faces in case of a font collection.
-    ///
-    /// This method may only be used before initialization; if used afterwards,
-    /// only a warning will be issued. By default, system fonts are loaded on
-    /// initialization.
-    pub fn load_font_data(&mut self, data: Vec<u8>, db: &Database) {
-        if self.state == State::Ready {
-            warn!("unable to load fonts after font DB init");
-            return;
-        }
-        db.load_font_data(data);
-    }
 
-    /// Loads a font file into the `Database`.
-    ///
-    /// Will load all font faces in case of a font collection.
-    ///
-    /// This method may only be used before initialization; if used afterwards, only a
-    /// warning will be issued. By default, system fonts are loaded on initialization.
-    pub fn load_font_file<P: AsRef<Path>>(&mut self, path: P, db: &Database) -> Result<(), std::io::Error> {
-        if self.state == State::Ready {
-            warn!("unable to load fonts after font DB init");
-            return Ok(());
-        }
-        db.load_font_file(path)
-    }
-
-    /// Loads font files from the selected directory into the `Database`.
-    ///
-    /// This method will scan directories recursively.
-    ///
-    /// Will load `ttf`, `otf`, `ttc` and `otc` fonts.
-    ///
-    /// Unlike other `load_*` methods, this one doesn't return an error.
-    /// It will simply skip malformed fonts and will print a warning into the log for each of them.
-    ///
-    /// This method may only be used before initialization; if used afterwards, only a
-    /// warning will be issued. By default, system fonts are loaded on initialization.
-    pub fn load_fonts_dir<P: AsRef<Path>>(&mut self, dir: P) {
-        if self.state == State::Ready {
-            warn!("unable to load fonts after font DB init");
-            return;
-        }
-        db.load_fonts_dir(dir);
-    }
-    */
-    /// Construct and return a DB
-    pub(crate) fn init(&mut self) -> Arc<Database> {
-        let mut db = Arc::new(Database::new());
-        let dbm = Arc::make_mut(&mut db);
-
-        if self.load_system_fonts {
-            dbm.load_system_fonts();
-        }
-        info!("Found {} fonts", dbm.len());
+    /// Init db and self
+    pub(crate) fn init(&mut self, db: &mut Database) {
+        info!("Found {} fonts", db.len());
 
         let families_upper = &mut self.families_upper;
-        for face in dbm.faces() {
+        for face in db.faces() {
             trace!("Discovered: {}", DisplayFaceInfo(face));
             // Use the first name, which according to docs is always en_US
             // (unless missing from the font).
@@ -258,28 +202,26 @@ impl Resolver {
 
         // Set family names in DB (only used in case the DB is used
         // externally, e.g. to render an SVG with resvg).
-        if let Some(name) = self.font_family_from_alias(dbm, "SERIF") {
+        if let Some(name) = self.font_family_from_alias(db, "SERIF") {
             info!("Default serif font: {}", name);
-            dbm.set_serif_family(name);
+            db.set_serif_family(name);
         }
-        if let Some(name) = self.font_family_from_alias(dbm, "SANS-SERIF") {
+        if let Some(name) = self.font_family_from_alias(db, "SANS-SERIF") {
             info!("Default sans-serif font: {}", name);
-            dbm.set_sans_serif_family(name);
+            db.set_sans_serif_family(name);
         }
-        if let Some(name) = self.font_family_from_alias(dbm, "MONOSPACE") {
+        if let Some(name) = self.font_family_from_alias(db, "MONOSPACE") {
             info!("Default monospace font: {}", name);
-            dbm.set_monospace_family(name);
+            db.set_monospace_family(name);
         }
-        if let Some(name) = self.font_family_from_alias(dbm, "CURSIVE") {
+        if let Some(name) = self.font_family_from_alias(db, "CURSIVE") {
             info!("Default cursive font: {}", name);
-            dbm.set_cursive_family(name);
+            db.set_cursive_family(name);
         }
-        if let Some(name) = self.font_family_from_alias(dbm, "FANTASY") {
+        if let Some(name) = self.font_family_from_alias(db, "FANTASY") {
             info!("Default fantasy font: {}", name);
-            dbm.set_fantasy_family(name);
+            db.set_fantasy_family(name);
         }
-
-        db
     }
 }
 
