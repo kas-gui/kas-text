@@ -13,7 +13,7 @@
 //!
 //! [`format`]: mod@format
 
-#![cfg_attr(doc_cfg, feature(doc_cfg))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 #![allow(clippy::len_zero)]
 #![allow(clippy::type_complexity)]
 #![allow(clippy::unit_arg)]

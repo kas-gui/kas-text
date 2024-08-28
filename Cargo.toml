@@ -11,13 +11,12 @@ keywords = ["text", "bidi", "shaping"]
 categories = ["text-processing"]
 repository = "https://github.com/kas-gui/kas-text"
 exclude = ["design"]
-rust-version = "1.70.0"
+rust-version = "1.71.1"
 
 [package.metadata.docs.rs]
 # To build locally:
-# RUSTDOCFLAGS="--cfg doc_cfg" cargo +nightly doc --features markdown,raster --no-deps --open
+# RUSTDOCFLAGS="--cfg docsrs" cargo +nightly doc --features num_glyphs,markdown,raster --no-deps --open
 features = ["markdown", "raster", "num_glyphs"]
-rustdoc-args = ["--cfg", "doc_cfg"]
 
 [features]
 # Support num_glyphs method
@@ -44,22 +43,22 @@ raster = ["ab_glyph"]
 cfg-if = "1.0.0"
 easy-cast = "0.5.0"
 bitflags = "2.4.2"
-fontdb = "0.16.2"
-ttf-parser = "0.20.0"
+fontdb = "0.21.0"
+ttf-parser = "0.24.1"
 lazy_static = "1.4.0"
 smallvec = "1.6.1"
 xi-unicode = "0.3.0"
 unicode-bidi = "0.3.4"
-unicode-bidi-mirroring = "0.2.0"
+unicode-bidi-mirroring = "0.3.0"
 thiserror = "1.0.20"
-pulldown-cmark = { version = "0.10.0", optional = true }
+pulldown-cmark = { version = "0.12.0", optional = true }
 log = "0.4"
 serde = { version = "1.0.123", features = ["derive"], optional = true }
 ab_glyph = { version = "0.2.10", optional = true }
-fontdue = { version = "0.8.0", optional = true }
+fontdue = { version = "0.9.2", optional = true }
 
 [dependencies.rustybuzz]
-version = "0.13.0"
+version = "0.18.0"
 optional = true
 
 [dependencies.harfbuzz_rs]
