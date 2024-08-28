@@ -13,7 +13,7 @@ use fontdb::Database;
 use log::warn;
 use std::collections::hash_map::{Entry, HashMap};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, OnceLock, RwLock, RwLockReadGuard};
+use std::sync::{Arc, LazyLock, OnceLock, RwLock, RwLockReadGuard};
 use thiserror::Error;
 pub(crate) use ttf_parser::Face;
 
@@ -562,22 +562,12 @@ pub(crate) unsafe fn extend_lifetime<'b, T: ?Sized>(r: &'b T) -> &'static T {
     std::mem::transmute::<&'b T, &'static T>(r)
 }
 
-// internals
-impl FontLibrary {
-    // Private because: safety depends on instance(s) never being destructed.
-    fn new() -> Self {
-        FontLibrary {
-            resolver: RwLock::new(Resolver::new()),
-            data: Default::default(),
-            faces: Default::default(),
-            fonts: Default::default(),
-        }
-    }
-}
-
-lazy_static::lazy_static! {
-    static ref LIBRARY: FontLibrary = FontLibrary::new();
-}
+static LIBRARY: LazyLock<FontLibrary> = LazyLock::new(|| FontLibrary {
+    resolver: RwLock::new(Resolver::new()),
+    data: Default::default(),
+    faces: Default::default(),
+    fonts: Default::default(),
+});
 
 /// Access the [`FontLibrary`] singleton
 pub fn library() -> &'static FontLibrary {
