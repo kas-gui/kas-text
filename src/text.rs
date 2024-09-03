@@ -31,7 +31,7 @@ use crate::{Align, Direction, Glyph, Status, Vec2};
 ///
 /// // Load system fonts and select a default:
 /// let fonts = fonts::library();
-/// fonts.select_default().expect("failed to select default font");
+/// fonts.init().expect("failed to select default font");
 ///
 /// let mut text = Text::new("Hello, world!");
 /// text.configure().unwrap();

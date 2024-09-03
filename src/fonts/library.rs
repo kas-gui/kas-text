@@ -7,17 +7,21 @@
 
 #![allow(clippy::len_without_is_empty)]
 
-use super::{selector::Database, FaceRef, FontSelector};
+use super::{FaceRef, FontSelector, Resolver};
 use crate::conv::{to_u32, to_usize};
+use fontdb::Database;
+use log::warn;
 use std::collections::hash_map::{Entry, HashMap};
 use std::path::{Path, PathBuf};
-use std::sync::{RwLock, RwLockReadGuard};
+use std::sync::{Arc, LazyLock, OnceLock, RwLock, RwLockReadGuard};
 use thiserror::Error;
 pub(crate) use ttf_parser::Face;
 
 /// Font loading errors
 #[derive(Error, Debug)]
 enum FontError {
+    #[error("font DB not yet initialized")]
+    NotReady,
     #[error("no matching font found")]
     NotFound,
     #[error("font load error")]
@@ -166,9 +170,9 @@ impl FontList {
 /// This is the type of the global singleton accessible via the [`library()`]
 /// function. Thread-safety is handled via internal locks.
 pub struct FontLibrary {
-    db: RwLock<Database>,
+    resolver: RwLock<Resolver>,
     // Font files loaded into memory. Safety: we assume that existing entries
-    // are never modified or removed (though the Vec is allowed to reallocate).
+    // are never modified or removed.
     // Note: using std::pin::Pin does not help since u8 impls Unpin.
     data: RwLock<HashMap<PathBuf, Box<[u8]>>>,
     // Font faces defined over the above data (see safety note).
@@ -179,21 +183,68 @@ pub struct FontLibrary {
 
 /// Font management
 impl FontLibrary {
-    /// Get a reference to the font database
-    pub fn read_db(&self) -> RwLockReadGuard<Database> {
-        self.db.read().unwrap()
+    /// Adjust the font resolver
+    ///
+    /// This method may only be called before [`FontLibrary::init`].
+    /// If called afterwards this will just return `None`.
+    pub fn adjust_resolver<F: FnOnce(&mut Resolver) -> T, T>(&self, f: F) -> Option<T> {
+        if DB.get().is_some() {
+            warn!("unable to update resolver after kas_text::fonts::library().init()");
+            return None;
+        }
+
+        Some(f(&mut self.resolver.write().unwrap()))
     }
 
-    /// Get mutable access to the font database
+    /// Initialize
     ///
-    /// This can be used to adjust font selection. Note that any changes only
-    /// affect *new* font selections, thus it is recommended only to adjust the
-    /// database before *any* fonts have been selected. No existing [`FaceId`]
-    /// or [`FontId`] will be affected by this; additionally any
-    /// [`FontSelector`] which has already been selected will continue to
-    /// resolve the existing [`FontId`] via the cache.
-    pub fn update_db<F: FnOnce(&mut Database) -> T, T>(&self, f: F) -> T {
-        f(&mut self.db.write().unwrap())
+    /// This method constructs the [`fontdb::Database`], loads fonts
+    /// and resolves the default font (i.e. `FontId(0)`).
+    ///
+    /// If a custom font loader is provided, this should load all desired fonts
+    /// (optionally including system fonts).
+    /// Otherwise, only system fonts will be loaded.
+    ///
+    /// This *must* be called before any other font selection method, and before
+    /// querying any font-derived properties (such as text dimensions).
+    /// It is safe to call multiple times.
+    #[inline]
+    pub fn init(&self) -> Result<(), Box<dyn std::error::Error>> {
+        self.init_custom(|db| db.load_system_fonts())
+    }
+
+    /// Initialize with custom fonts
+    ///
+    /// This method is an alternative to [`FontLibrary::init`], allowing custom
+    /// font loading.
+    ///
+    /// The loader method must load all required fonts. It is called only if
+    /// initialization is not yet complete.
+    pub fn init_custom(
+        &self,
+        loader: impl FnOnce(&mut Database),
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if DB.get().is_some() {
+            return Ok(());
+        }
+
+        let mut db = Arc::new(Database::new());
+        let dbm = Arc::make_mut(&mut db);
+        loader(dbm);
+
+        self.resolver.write().unwrap().init(dbm);
+
+        if let Ok(()) = DB.set(db) {
+            let id = self.select_font(&FontSelector::default())?;
+            debug_assert!(id == FontId::default());
+        }
+
+        Ok(())
+    }
+
+    /// Get a reference to the font resolver
+    pub fn resolver(&self) -> RwLockReadGuard<Resolver> {
+        self.resolver.read().unwrap()
     }
 
     /// Get the first face for a font
@@ -300,25 +351,6 @@ impl FontLibrary {
         }
     }
 
-    /// Select the default font
-    ///
-    /// If the font database has not yet been initialized, it is initialized.
-    ///
-    /// If `FontId(0)` has not been defined yet, this sets the default font.
-    ///
-    /// This *must* be called (at least once) before any other font selection
-    /// method, and before querying any font-derived properties (such as text
-    /// dimensions).
-    #[inline]
-    pub fn select_default(&self) -> Result<(), Box<dyn std::error::Error>> {
-        self.db.write().unwrap().init();
-        if self.fonts.read().unwrap().fonts.is_empty() {
-            let id = self.select_font(&FontSelector::default())?;
-            debug_assert!(id == FontId::default());
-        }
-        Ok(())
-    }
-
     /// Select a font
     ///
     /// This method uses internal caching to enable fast look-ups of existing
@@ -337,7 +369,12 @@ impl FontLibrary {
         drop(fonts);
 
         let mut faces = Vec::new();
-        selector.select(&self.db.read().unwrap(), |source, index| {
+        let resolver = self.resolver.read().unwrap();
+        let Some(db) = DB.get() else {
+            return Err(Box::new(FontError::NotReady));
+        };
+
+        selector.select(&resolver, db, |source, index| {
             Ok(faces.push(match source {
                 fontdb::Source::File(path) => self.load_path(path, index),
                 _ => unimplemented!("loading from source {:?}", source),
@@ -525,26 +562,32 @@ pub(crate) unsafe fn extend_lifetime<'b, T: ?Sized>(r: &'b T) -> &'static T {
     std::mem::transmute::<&'b T, &'static T>(r)
 }
 
-// internals
-impl FontLibrary {
-    // Private because: safety depends on instance(s) never being destructed.
-    fn new() -> Self {
-        FontLibrary {
-            db: RwLock::new(Database::new()),
-            data: Default::default(),
-            faces: Default::default(),
-            fonts: Default::default(),
-        }
-    }
-}
-
-lazy_static::lazy_static! {
-    static ref LIBRARY: FontLibrary = FontLibrary::new();
-}
+static LIBRARY: LazyLock<FontLibrary> = LazyLock::new(|| FontLibrary {
+    resolver: RwLock::new(Resolver::new()),
+    data: Default::default(),
+    faces: Default::default(),
+    fonts: Default::default(),
+});
 
 /// Access the [`FontLibrary`] singleton
 pub fn library() -> &'static FontLibrary {
     &LIBRARY
+}
+
+static DB: OnceLock<Arc<Database>> = OnceLock::new();
+
+/// Access the font database
+///
+/// Returns `None` when called before [`FontLibrary::init`].
+pub fn db() -> Option<&'static Database> {
+    DB.get().map(|arc| &**arc)
+}
+
+/// Get owning access the font database
+///
+/// Returns `None` when called before [`FontLibrary::init`].
+pub fn clone_db() -> Option<Arc<Database>> {
+    DB.get().cloned()
 }
 
 fn calculate_hash<T: std::hash::Hash>(t: &T) -> u64 {

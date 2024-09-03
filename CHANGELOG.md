@@ -6,7 +6,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Update dependencies:
 
--   Rust (MSRV): 1.71.1 (#86)
+-   Rust (MSRV): 1.80.0 (#87)
 -   `fontdb`: 0.21.0 (#86)
 
 ## [0.6.0] — 2022-12-13

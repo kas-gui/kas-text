@@ -11,7 +11,7 @@ keywords = ["text", "bidi", "shaping"]
 categories = ["text-processing"]
 repository = "https://github.com/kas-gui/kas-text"
 exclude = ["design"]
-rust-version = "1.71.1"
+rust-version = "1.80.0"
 
 [package.metadata.docs.rs]
 # To build locally:
@@ -45,7 +45,6 @@ easy-cast = "0.5.0"
 bitflags = "2.4.2"
 fontdb = "0.21.0"
 ttf-parser = "0.24.1"
-lazy_static = "1.4.0"
 smallvec = "1.6.1"
 xi-unicode = "0.3.0"
 unicode-bidi = "0.3.4"
