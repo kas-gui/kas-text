@@ -509,7 +509,6 @@ impl FontLibrary {
         let id = faces.push(Box::new(store), path_hash);
 
         log::debug!("Loaded: {:?} = {},{}", id, path.display(), index);
-        super::set_loaded();
         Ok(id)
     }
 
