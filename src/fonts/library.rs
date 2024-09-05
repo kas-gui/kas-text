@@ -486,18 +486,6 @@ impl FontLibrary {
         unsafe { extend_lifetime(face) }
     }
 
-    /// Get the number of loaded font faces
-    ///
-    /// [`FaceId`] values are indices assigned consecutively and are permanent.
-    /// For any `x < self.num_faces()`, `FaceId(x)` is a valid font face identifier.
-    ///
-    /// This value may increase as fonts may be loaded on demand. It will not
-    /// decrease since fonts are never unloaded during program execution.
-    pub fn num_faces(&self) -> usize {
-        let faces = self.faces.read().unwrap();
-        faces.faces.len()
-    }
-
     fn hash_path(&self, path: &Path, index: u32) -> u64 {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
