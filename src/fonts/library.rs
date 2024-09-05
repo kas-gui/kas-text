@@ -460,14 +460,6 @@ impl FontLibrary {
         faces.faces.len()
     }
 
-    /// Access loaded font face data
-    pub fn face_data<'a>(&'a self) -> FaceData<'a> {
-        FaceData {
-            faces: self.faces.read().unwrap(),
-            data: self.data.read().unwrap(),
-        }
-    }
-
     /// Load a font by path
     ///
     /// In case the `(path, index)` combination has already been loaded, the
@@ -518,42 +510,6 @@ impl FontLibrary {
         path.hash(&mut hasher);
         hasher.write_u32(index);
         hasher.finish()
-    }
-}
-
-/// Provides access to font data
-///
-/// Each valid [`FaceId`] is an index to a loaded font face.
-pub struct FaceData<'a> {
-    faces: RwLockReadGuard<'a, FaceList>,
-    data: RwLockReadGuard<'a, HashMap<PathBuf, Box<[u8]>>>,
-}
-impl<'a> FaceData<'a> {
-    /// Number of available font faces
-    pub fn len(&self) -> usize {
-        self.faces.faces.len()
-    }
-
-    /// Access font path and face index
-    ///
-    /// Note: use [`FaceData::get_data`] to access the font file data, already
-    /// loaded into memory.
-    pub fn get_path(&self, id: FaceId) -> (&Path, u32) {
-        let index = id.get();
-        let f = &self.faces.faces[index];
-        (&f.path, f.index)
-    }
-
-    /// Access font data and face index
-    ///
-    /// Note: this is safe since fonts are never unloaded.
-    pub fn get_data(&self, id: FaceId) -> (&'static [u8], u32) {
-        let index = id.get();
-        let f = &self.faces.faces[index];
-        let data = self.data.get(&f.path).unwrap();
-        // Safety: data is in FontLibrary::data and will not be dropped or modified
-        let data = unsafe { extend_lifetime(data) };
-        (data, f.index)
     }
 }
 
