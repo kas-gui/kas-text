@@ -523,9 +523,7 @@ impl FontLibrary {
 
 /// Provides access to font data
 ///
-/// Each valid [`FaceId`] is an index to a loaded font face. Since faces are
-/// never unloaded or replaced, [`FaceId::get`] is a valid index into these
-/// arrays for any valid [`FaceId`].
+/// Each valid [`FaceId`] is an index to a loaded font face.
 pub struct FaceData<'a> {
     faces: RwLockReadGuard<'a, FaceList>,
     data: RwLockReadGuard<'a, HashMap<PathBuf, Box<[u8]>>>,
@@ -540,13 +538,17 @@ impl<'a> FaceData<'a> {
     ///
     /// Note: use [`FaceData::get_data`] to access the font file data, already
     /// loaded into memory.
-    pub fn get_path(&self, index: usize) -> (&Path, u32) {
+    pub fn get_path(&self, id: FaceId) -> (&Path, u32) {
+        let index = id.get();
         let f = &self.faces.faces[index];
         (&f.path, f.index)
     }
 
     /// Access font data and face index
-    pub fn get_data(&self, index: usize) -> (&'static [u8], u32) {
+    ///
+    /// Note: this is safe since fonts are never unloaded.
+    pub fn get_data(&self, id: FaceId) -> (&'static [u8], u32) {
+        let index = id.get();
         let f = &self.faces.faces[index];
         let data = self.data.get(&f.path).unwrap();
         // Safety: data is in FontLibrary::data and will not be dropped or modified
