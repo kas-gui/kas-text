@@ -201,13 +201,10 @@ impl FontLibrary {
     /// This method constructs the [`fontdb::Database`], loads fonts
     /// and resolves the default font (i.e. `FontId(0)`).
     ///
-    /// If a custom font loader is provided, this should load all desired fonts
-    /// (optionally including system fonts).
-    /// Otherwise, only system fonts will be loaded.
-    ///
-    /// This *must* be called before any other font selection method, and before
+    /// Either this method or [`FontLibrary::init_custom`] *must* be called
+    /// before any other font selection method, and before
     /// querying any font-derived properties (such as text dimensions).
-    /// It is safe to call multiple times.
+    /// It is safe (but ineffective) to call multiple times.
     #[inline]
     pub fn init(&self) -> Result<(), Box<dyn std::error::Error>> {
         self.init_custom(|db| db.load_system_fonts())
@@ -215,11 +212,12 @@ impl FontLibrary {
 
     /// Initialize with custom fonts
     ///
-    /// This method is an alternative to [`FontLibrary::init`], allowing custom
-    /// font loading.
+    /// This method may be called instead of [`FontLibrary::init`] to customize
+    /// initial font loading: the `loader` method must load all required fonts
+    /// (system and/or custom fonts).
     ///
-    /// The loader method must load all required fonts. It is called only if
-    /// initialization is not yet complete.
+    /// Calling this method repeatedly is safe but ineffective.
+    /// Loading fonts after initialization is not currently supported.
     pub fn init_custom(
         &self,
         loader: impl FnOnce(&mut Database),
