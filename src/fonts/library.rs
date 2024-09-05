@@ -372,10 +372,10 @@ impl FontLibrary {
             return Err(Box::new(FontError::NotReady));
         };
 
-        selector.select(&resolver, db, |source, index| {
-            Ok(faces.push(match source {
-                fontdb::Source::File(path) => self.load_path(path, index),
-                _ => unimplemented!("loading from source {:?}", source),
+        selector.select(&resolver, db, |face_info| {
+            Ok(faces.push(match &face_info.source {
+                fontdb::Source::File(path) => self.load_path(path, face_info.index),
+                source => unimplemented!("loading from source {:?}", source),
             }?))
         })?;
 

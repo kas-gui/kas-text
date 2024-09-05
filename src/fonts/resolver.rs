@@ -311,7 +311,7 @@ impl<'a> FontSelector<'a> {
         mut add_face: F,
     ) -> Result<(), Box<dyn std::error::Error>>
     where
-        F: FnMut(&'b Source, u32) -> Result<(), Box<dyn std::error::Error>>,
+        F: FnMut(&'b FaceInfo) -> Result<(), Box<dyn std::error::Error>>,
     {
         debug!("select(): {:?}", self);
         // TODO(opt): improve, perhaps moving some computation earlier (e.g.
@@ -354,7 +354,7 @@ impl<'a> FontSelector<'a> {
             if !candidates.is_empty() {
                 if let Some(index) = self.find_best_match(&candidates) {
                     let candidate = candidates[index];
-                    add_face(&candidate.source, candidate.index)?;
+                    add_face(candidate)?;
                 }
                 candidates.clear();
             }
