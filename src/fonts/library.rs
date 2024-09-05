@@ -90,15 +90,15 @@ impl FontId {
 pub(crate) struct FaceStore<'a> {
     path: PathBuf,
     index: u32,
-    pub(crate) face: Face<'a>,
+    face: Face<'a>,
     #[cfg(feature = "harfbuzz_rs")]
-    pub(crate) harfbuzz: harfbuzz_rs::Shared<harfbuzz_rs::Face<'a>>,
+    harfbuzz: harfbuzz_rs::Shared<harfbuzz_rs::Face<'a>>,
     #[cfg(all(not(feature = "harfbuzz_rs"), feature = "rustybuzz"))]
-    pub(crate) rustybuzz: rustybuzz::Face<'a>,
+    rustybuzz: rustybuzz::Face<'a>,
     #[cfg(feature = "ab_glyph")]
-    pub(crate) ab_glyph: ab_glyph::FontRef<'a>,
+    ab_glyph: ab_glyph::FontRef<'a>,
     #[cfg(feature = "fontdue")]
-    pub(crate) fontdue: fontdue::Font,
+    fontdue: fontdue::Font,
 }
 
 impl<'a> FaceStore<'a> {
@@ -129,6 +129,35 @@ impl<'a> FaceStore<'a> {
                 fontdue::Font::from_bytes(data, settings)?
             },
         })
+    }
+
+    /// Access the [`Face`] object
+    pub(crate) fn face(&self) -> &Face<'a> {
+        &self.face
+    }
+
+    /// Access the [`harfbuzz_rs`] object
+    #[cfg(feature = "harfbuzz")]
+    pub(crate) fn harfbuzz(&self) -> &harfbuzz_rs::Shared<harfbuzz_rs::Face<'a>> {
+        &self.harfbuzz
+    }
+
+    /// Access the [`rustybuzz`] object
+    #[cfg(all(not(feature = "harfbuzz_rs"), feature = "rustybuzz"))]
+    pub(crate) fn rustybuzz(&self) -> &rustybuzz::Face<'a> {
+        &self.rustybuzz
+    }
+
+    /// Access the [`ab_glyph`] object
+    #[cfg(feature = "ab_glyph")]
+    pub(crate) fn ab_glyph(&self) -> &ab_glyph::FontRef<'a> {
+        &self.ab_glyph
+    }
+
+    /// Access the [`fontdue`] object
+    #[cfg(feature = "fontdue")]
+    pub(crate) fn fontdue(&self) -> &fontdue::Font {
+        &self.fontdue
     }
 }
 
@@ -437,7 +466,7 @@ impl FontLibrary {
             "FontLibrary: invalid {:?}!",
             id
         );
-        let face: &Face<'static> = &faces.faces[id.get()].face;
+        let face: &Face<'static> = faces.faces[id.get()].face();
         // Safety: elements of self.faces are never dropped or modified
         let face = unsafe { extend_lifetime(face) };
         FaceRef(face)
@@ -469,7 +498,7 @@ impl FontLibrary {
             "FontLibrary: invalid {:?}!",
             id
         );
-        harfbuzz_rs::Font::new(faces.faces[id.get()].harfbuzz.clone())
+        harfbuzz_rs::Font::new(faces.faces[id.get()].harfbuzz().clone())
     }
 
     /// Get a Rustybuzz font face
@@ -481,7 +510,7 @@ impl FontLibrary {
             "FontLibrary: invalid {:?}!",
             id
         );
-        let face: &rustybuzz::Face<'static> = &faces.faces[id.get()].rustybuzz;
+        let face: &rustybuzz::Face<'static> = faces.faces[id.get()].rustybuzz();
         // Safety: elements of self.fonts are never dropped or modified
         unsafe { extend_lifetime(face) }
     }
