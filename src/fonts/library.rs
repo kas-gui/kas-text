@@ -24,6 +24,8 @@ enum FontError {
     NotReady,
     #[error("no matching font found")]
     NotFound,
+    #[error("unsupported: loading fonts from data source")]
+    UnsupportedFontDataSource,
     #[error("font load error")]
     TtfParser(#[from] ttf_parser::FaceParsingError),
     #[cfg(feature = "ab_glyph")]
@@ -373,10 +375,43 @@ impl FontLibrary {
         };
 
         selector.select(&resolver, db, |face_info| {
-            Ok(faces.push(match &face_info.source {
-                fontdb::Source::File(path) => self.load_path(path, face_info.index),
-                source => unimplemented!("loading from source {:?}", source),
-            }?))
+            match &face_info.source {
+                fontdb::Source::File(path) => {
+                    let path_hash = self.hash_path(path, face_info.index);
+
+                    // 1st lock: early exit if we already have this font
+                    let lock = self.faces.read().unwrap();
+                    for (h, id) in lock.path_hash.iter().cloned() {
+                        if h == path_hash {
+                            faces.push(id);
+                            return Ok(());
+                        }
+                    }
+                    drop(lock);
+
+                    // 2nd lock: load and store file data / get reference
+                    let mut lock = self.data.write().unwrap();
+                    let slice = if let Some(entry) = lock.get(path) {
+                        &entry[..]
+                    } else {
+                        let v = std::fs::read(path)?.into_boxed_slice();
+                        &lock.entry(path.to_owned()).or_insert(v)[..]
+                    };
+                    // Safety: slice is in self.data and will not be dropped or modified
+                    let slice = unsafe { extend_lifetime(slice) };
+                    drop(lock);
+
+                    // 3rd lock: insert into font list
+                    let store = FaceStore::new(path.to_owned(), slice, face_info.index)?;
+                    let mut lock = self.faces.write().unwrap();
+                    let id = lock.push(Box::new(store), path_hash);
+
+                    log::debug!("Loaded: {:?} = {},{}", id, path.display(), face_info.index);
+                    faces.push(id);
+                    Ok(())
+                }
+                _ => Err(Box::new(FontError::UnsupportedFontDataSource)),
+            }
         })?;
 
         if faces.is_empty() {
@@ -458,48 +493,6 @@ impl FontLibrary {
     pub fn num_faces(&self) -> usize {
         let faces = self.faces.read().unwrap();
         faces.faces.len()
-    }
-
-    /// Load a font by path
-    ///
-    /// In case the `(path, index)` combination has already been loaded, the
-    /// existing font object's [`FontId`] will be returned.
-    ///
-    /// The `index` is used to select fonts from a font-collection. If the font
-    /// is not a collection, use `0`.
-    pub fn load_path(&self, path: &Path, index: u32) -> Result<FaceId, Box<dyn std::error::Error>> {
-        let path_hash = self.hash_path(path, index);
-
-        // 1st lock: early exit if we already have this font
-        let faces = self.faces.read().unwrap();
-        for (h, id) in &faces.path_hash {
-            if *h == path_hash {
-                return Ok(*id);
-            }
-        }
-        drop(faces);
-
-        // 2nd lock: load and store file data / get reference
-        let mut data = self.data.write().unwrap();
-        let slice = if let Some(entry) = data.get(path) {
-            let slice: &[u8] = &entry[..];
-            // Safety: slice is in self.data and will not be dropped or modified
-            unsafe { extend_lifetime(slice) }
-        } else {
-            let v = std::fs::read(path)?.into_boxed_slice();
-            let slice = &data.entry(path.to_owned()).or_insert(v)[..];
-            // Safety: as above
-            unsafe { extend_lifetime(slice) }
-        };
-        drop(data);
-
-        // 3rd lock: insert into font list
-        let store = FaceStore::new(path.to_owned(), slice, index)?;
-        let mut faces = self.faces.write().unwrap();
-        let id = faces.push(Box::new(store), path_hash);
-
-        log::debug!("Loaded: {:?} = {},{}", id, path.display(), index);
-        Ok(id)
     }
 
     fn hash_path(&self, path: &Path, index: u32) -> u64 {
