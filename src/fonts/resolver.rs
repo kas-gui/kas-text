@@ -35,7 +35,6 @@ fn to_uppercase<'a>(c: Cow<'a, str>) -> Cow<'a, str> {
 
 /// A tool to resolve a single font face given a family and style
 pub struct Resolver {
-    load_system_fonts: bool,
     families_upper: HashMap<String, Vec<ID>>,
     // contract: all keys and values are uppercase
     aliases: HashMap<Cow<'static, str>, Vec<Cow<'static, str>>>,
@@ -82,7 +81,6 @@ impl Resolver {
         );
 
         Resolver {
-            load_system_fonts: true,
             families_upper: HashMap::new(),
             aliases,
         }
@@ -159,13 +157,6 @@ impl Resolver {
                 entry.insert(aliases.collect());
             }
         }
-    }
-
-    /// Control whether system fonts will be loaded on initialization
-    ///
-    /// Default value: true
-    pub fn set_load_system_fonts(&mut self, load: bool) {
-        self.load_system_fonts = load;
     }
 
     /// Init db and self
