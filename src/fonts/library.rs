@@ -383,8 +383,11 @@ impl FontLibrary {
                     let lock = self.faces.read().unwrap();
                     for (h, id) in lock.path_hash.iter().cloned() {
                         if h == path_hash {
-                            faces.push(id);
-                            return Ok(());
+                            let face = &lock.faces[id.get()];
+                            if face.path == *path && face.index == face_info.index {
+                                faces.push(id);
+                                return Ok(());
+                            }
                         }
                     }
                     drop(lock);
