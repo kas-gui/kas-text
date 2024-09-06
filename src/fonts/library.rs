@@ -57,12 +57,8 @@ pub struct InvalidFontId;
 /// Font face identifier
 ///
 /// Identifies a loaded font face within the [`FontLibrary`] by index.
-///
-/// Internally this uses a numeric identifier, which is always less than
-/// [`FontLibrary::num_faces`], assuming that at least one font has been loaded.
-/// [`FontLibrary::face_data`] may be used to retrieve the matching font.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub struct FaceId(pub u32);
+pub struct FaceId(pub(crate) u32);
 impl FaceId {
     /// Get as `usize`
     pub fn get(self) -> usize {
