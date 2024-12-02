@@ -34,28 +34,27 @@ impl TextDisplay {
     ///
     /// This updates the result of [`TextDisplay::prepare_runs`] due to change
     /// in font size.
-    pub fn resize_runs<F: FormattableText + ?Sized>(&mut self, text: &F, dpem: f32) {
+    pub fn resize_runs<F: FormattableText + ?Sized>(&mut self, text: &F, mut dpem: f32) {
         let mut font_tokens = text.font_tokens(dpem);
         let mut next_fmt = font_tokens.next();
 
-        let mut input = shaper::Input {
-            text: text.as_str(),
-            dpem,
-            face_id: crate::fonts::FaceId(0),
-            level: LTR_LEVEL,
-        };
+        let text = text.as_str();
 
         for run in &mut self.runs {
             while let Some(fmt) = next_fmt.as_ref() {
                 if fmt.start > run.range.start {
                     break;
                 }
-                input.dpem = fmt.dpem;
+                dpem = fmt.dpem;
                 next_fmt = font_tokens.next();
             }
 
-            input.face_id = run.face_id;
-            input.level = run.level;
+            let input = shaper::Input {
+                text,
+                dpem,
+                face_id: run.face_id,
+                level: run.level,
+            };
             let mut breaks = Default::default();
             std::mem::swap(&mut breaks, &mut run.breaks);
             if run.level.is_rtl() {

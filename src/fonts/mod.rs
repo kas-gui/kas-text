@@ -65,7 +65,6 @@
 //! -   [`crate::DPU`]: pixels per font unit
 
 use crate::GlyphId;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 mod face;
 mod families;
@@ -73,24 +72,11 @@ mod library;
 mod resolver;
 
 pub use face::{FaceRef, ScaledFaceRef};
-pub use library::{clone_db, db, library, FaceData, FaceId, FontId, FontLibrary, InvalidFontId};
+pub use library::{clone_db, db, library, FaceId, FontId, FontLibrary, InvalidFontId};
 pub use resolver::*;
 
 impl From<GlyphId> for ttf_parser::GlyphId {
     fn from(id: GlyphId) -> Self {
         ttf_parser::GlyphId(id.0)
     }
-}
-
-static LOADED: AtomicBool = AtomicBool::new(false);
-fn set_loaded() {
-    LOADED.store(true, Ordering::Relaxed);
-}
-/// Returns true if any fonts have been loaded
-///
-/// Note: this uses atomics with relaxed ordering. This is *safe* to use in
-/// threaded contexts, but may return an out-dated value.
-/// This will *probably* not be an issue in practice.
-pub fn any_loaded() -> bool {
-    LOADED.load(Ordering::Relaxed)
 }

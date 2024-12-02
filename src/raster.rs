@@ -226,11 +226,11 @@ fn raster_ab(config: &Config, desc: SpriteDescriptor) -> Option<Sprite> {
 
     let (mut x, y) = desc.fractional_position(config);
     if config.sb_align && desc.dpem(config) >= config.subpixel_threshold {
-        let sf = FaceRef(&face_store.face).scale_by_dpem(dpem);
+        let sf = FaceRef(face_store.face()).scale_by_dpem(dpem);
         x -= sf.h_side_bearing(id);
     }
 
-    let font = &face_store.ab_glyph;
+    let font = face_store.ab_glyph();
     let scale = dpem * font.height_unscaled() / font.units_per_em().unwrap();
     let glyph = ab_glyph::Glyph {
         id: ab_glyph::GlyphId(id.0),
@@ -260,7 +260,7 @@ fn raster_ab(config: &Config, desc: SpriteDescriptor) -> Option<Sprite> {
 #[cfg(feature = "fontdue")]
 fn raster_fontdue(config: &Config, desc: SpriteDescriptor) -> Option<Sprite> {
     let face = desc.face();
-    let face = &fonts::library().get_face_store(face).fontdue;
+    let face = fonts::library().get_face_store(face).fontdue();
 
     let (metrics, data) = face.rasterize_indexed(desc.glyph().0, desc.dpem(config));
 

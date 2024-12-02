@@ -24,6 +24,8 @@ enum FontError {
     NotReady,
     #[error("no matching font found")]
     NotFound,
+    #[error("unsupported: loading fonts from data source")]
+    UnsupportedFontDataSource,
     #[error("font load error")]
     TtfParser(#[from] ttf_parser::FaceParsingError),
     #[cfg(feature = "ab_glyph")]
@@ -55,12 +57,8 @@ pub struct InvalidFontId;
 /// Font face identifier
 ///
 /// Identifies a loaded font face within the [`FontLibrary`] by index.
-///
-/// Internally this uses a numeric identifier, which is always less than
-/// [`FontLibrary::num_faces`], assuming that at least one font has been loaded.
-/// [`FontLibrary::face_data`] may be used to retrieve the matching font.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub struct FaceId(pub u32);
+pub struct FaceId(pub(crate) u32);
 impl FaceId {
     /// Get as `usize`
     pub fn get(self) -> usize {
@@ -88,15 +86,15 @@ impl FontId {
 pub(crate) struct FaceStore<'a> {
     path: PathBuf,
     index: u32,
-    pub(crate) face: Face<'a>,
+    face: Face<'a>,
     #[cfg(feature = "harfbuzz_rs")]
-    pub(crate) harfbuzz: harfbuzz_rs::Shared<harfbuzz_rs::Face<'a>>,
+    harfbuzz: harfbuzz_rs::Shared<harfbuzz_rs::Face<'a>>,
     #[cfg(all(not(feature = "harfbuzz_rs"), feature = "rustybuzz"))]
-    pub(crate) rustybuzz: rustybuzz::Face<'a>,
+    rustybuzz: rustybuzz::Face<'a>,
     #[cfg(feature = "ab_glyph")]
-    pub(crate) ab_glyph: ab_glyph::FontRef<'a>,
+    ab_glyph: ab_glyph::FontRef<'a>,
     #[cfg(feature = "fontdue")]
-    pub(crate) fontdue: fontdue::Font,
+    fontdue: fontdue::Font,
 }
 
 impl<'a> FaceStore<'a> {
@@ -127,6 +125,35 @@ impl<'a> FaceStore<'a> {
                 fontdue::Font::from_bytes(data, settings)?
             },
         })
+    }
+
+    /// Access the [`Face`] object
+    pub(crate) fn face(&self) -> &Face<'a> {
+        &self.face
+    }
+
+    /// Access the [`harfbuzz_rs`] object
+    #[cfg(feature = "harfbuzz")]
+    pub(crate) fn harfbuzz(&self) -> &harfbuzz_rs::Shared<harfbuzz_rs::Face<'a>> {
+        &self.harfbuzz
+    }
+
+    /// Access the [`rustybuzz`] object
+    #[cfg(all(not(feature = "harfbuzz_rs"), feature = "rustybuzz"))]
+    pub(crate) fn rustybuzz(&self) -> &rustybuzz::Face<'a> {
+        &self.rustybuzz
+    }
+
+    /// Access the [`ab_glyph`] object
+    #[cfg(feature = "ab_glyph")]
+    pub(crate) fn ab_glyph(&self) -> &ab_glyph::FontRef<'a> {
+        &self.ab_glyph
+    }
+
+    /// Access the [`fontdue`] object
+    #[cfg(feature = "fontdue")]
+    pub(crate) fn fontdue(&self) -> &fontdue::Font {
+        &self.fontdue
     }
 }
 
@@ -201,13 +228,10 @@ impl FontLibrary {
     /// This method constructs the [`fontdb::Database`], loads fonts
     /// and resolves the default font (i.e. `FontId(0)`).
     ///
-    /// If a custom font loader is provided, this should load all desired fonts
-    /// (optionally including system fonts).
-    /// Otherwise, only system fonts will be loaded.
-    ///
-    /// This *must* be called before any other font selection method, and before
+    /// Either this method or [`FontLibrary::init_custom`] *must* be called
+    /// before any other font selection method, and before
     /// querying any font-derived properties (such as text dimensions).
-    /// It is safe to call multiple times.
+    /// It is safe (but ineffective) to call multiple times.
     #[inline]
     pub fn init(&self) -> Result<(), Box<dyn std::error::Error>> {
         self.init_custom(|db| db.load_system_fonts())
@@ -215,11 +239,12 @@ impl FontLibrary {
 
     /// Initialize with custom fonts
     ///
-    /// This method is an alternative to [`FontLibrary::init`], allowing custom
-    /// font loading.
+    /// This method may be called instead of [`FontLibrary::init`] to customize
+    /// initial font loading: the `loader` method must load all required fonts
+    /// (system and/or custom fonts).
     ///
-    /// The loader method must load all required fonts. It is called only if
-    /// initialization is not yet complete.
+    /// Calling this method repeatedly is safe but ineffective.
+    /// Loading fonts after initialization is not currently supported.
     pub fn init_custom(
         &self,
         loader: impl FnOnce(&mut Database),
@@ -374,11 +399,47 @@ impl FontLibrary {
             return Err(Box::new(FontError::NotReady));
         };
 
-        selector.select(&resolver, db, |source, index| {
-            Ok(faces.push(match source {
-                fontdb::Source::File(path) => self.load_path(path, index),
-                _ => unimplemented!("loading from source {:?}", source),
-            }?))
+        selector.select(&resolver, db, |face_info| {
+            match &face_info.source {
+                fontdb::Source::File(path) => {
+                    let path_hash = self.hash_path(path, face_info.index);
+
+                    // 1st lock: early exit if we already have this font
+                    let lock = self.faces.read().unwrap();
+                    for (h, id) in lock.path_hash.iter().cloned() {
+                        if h == path_hash {
+                            let face = &lock.faces[id.get()];
+                            if face.path == *path && face.index == face_info.index {
+                                faces.push(id);
+                                return Ok(());
+                            }
+                        }
+                    }
+                    drop(lock);
+
+                    // 2nd lock: load and store file data / get reference
+                    let mut lock = self.data.write().unwrap();
+                    let slice = if let Some(entry) = lock.get(path) {
+                        &entry[..]
+                    } else {
+                        let v = std::fs::read(path)?.into_boxed_slice();
+                        &lock.entry(path.to_owned()).or_insert(v)[..]
+                    };
+                    // Safety: slice is in self.data and will not be dropped or modified
+                    let slice = unsafe { extend_lifetime(slice) };
+                    drop(lock);
+
+                    // 3rd lock: insert into font list
+                    let store = FaceStore::new(path.to_owned(), slice, face_info.index)?;
+                    let mut lock = self.faces.write().unwrap();
+                    let id = lock.push(Box::new(store), path_hash);
+
+                    log::debug!("Loaded: {:?} = {},{}", id, path.display(), face_info.index);
+                    faces.push(id);
+                    Ok(())
+                }
+                _ => Err(Box::new(FontError::UnsupportedFontDataSource)),
+            }
         })?;
 
         if faces.is_empty() {
@@ -401,7 +462,7 @@ impl FontLibrary {
             "FontLibrary: invalid {:?}!",
             id
         );
-        let face: &Face<'static> = &faces.faces[id.get()].face;
+        let face: &Face<'static> = faces.faces[id.get()].face();
         // Safety: elements of self.faces are never dropped or modified
         let face = unsafe { extend_lifetime(face) };
         FaceRef(face)
@@ -433,7 +494,7 @@ impl FontLibrary {
             "FontLibrary: invalid {:?}!",
             id
         );
-        harfbuzz_rs::Font::new(faces.faces[id.get()].harfbuzz.clone())
+        harfbuzz_rs::Font::new(faces.faces[id.get()].harfbuzz().clone())
     }
 
     /// Get a Rustybuzz font face
@@ -445,72 +506,9 @@ impl FontLibrary {
             "FontLibrary: invalid {:?}!",
             id
         );
-        let face: &rustybuzz::Face<'static> = &faces.faces[id.get()].rustybuzz;
+        let face: &rustybuzz::Face<'static> = faces.faces[id.get()].rustybuzz();
         // Safety: elements of self.fonts are never dropped or modified
         unsafe { extend_lifetime(face) }
-    }
-
-    /// Get the number of loaded font faces
-    ///
-    /// [`FaceId`] values are indices assigned consecutively and are permanent.
-    /// For any `x < self.num_faces()`, `FaceId(x)` is a valid font face identifier.
-    ///
-    /// This value may increase as fonts may be loaded on demand. It will not
-    /// decrease since fonts are never unloaded during program execution.
-    pub fn num_faces(&self) -> usize {
-        let faces = self.faces.read().unwrap();
-        faces.faces.len()
-    }
-
-    /// Access loaded font face data
-    pub fn face_data<'a>(&'a self) -> FaceData<'a> {
-        FaceData {
-            faces: self.faces.read().unwrap(),
-            data: self.data.read().unwrap(),
-        }
-    }
-
-    /// Load a font by path
-    ///
-    /// In case the `(path, index)` combination has already been loaded, the
-    /// existing font object's [`FontId`] will be returned.
-    ///
-    /// The `index` is used to select fonts from a font-collection. If the font
-    /// is not a collection, use `0`.
-    pub fn load_path(&self, path: &Path, index: u32) -> Result<FaceId, Box<dyn std::error::Error>> {
-        let path_hash = self.hash_path(path, index);
-
-        // 1st lock: early exit if we already have this font
-        let faces = self.faces.read().unwrap();
-        for (h, id) in &faces.path_hash {
-            if *h == path_hash {
-                return Ok(*id);
-            }
-        }
-        drop(faces);
-
-        // 2nd lock: load and store file data / get reference
-        let mut data = self.data.write().unwrap();
-        let slice = if let Some(entry) = data.get(path) {
-            let slice: &[u8] = &entry[..];
-            // Safety: slice is in self.data and will not be dropped or modified
-            unsafe { extend_lifetime(slice) }
-        } else {
-            let v = std::fs::read(path)?.into_boxed_slice();
-            let slice = &data.entry(path.to_owned()).or_insert(v)[..];
-            // Safety: as above
-            unsafe { extend_lifetime(slice) }
-        };
-        drop(data);
-
-        // 3rd lock: insert into font list
-        let store = FaceStore::new(path.to_owned(), slice, index)?;
-        let mut faces = self.faces.write().unwrap();
-        let id = faces.push(Box::new(store), path_hash);
-
-        log::debug!("Loaded: {:?} = {},{}", id, path.display(), index);
-        super::set_loaded();
-        Ok(id)
     }
 
     fn hash_path(&self, path: &Path, index: u32) -> u64 {
@@ -521,40 +519,6 @@ impl FontLibrary {
         path.hash(&mut hasher);
         hasher.write_u32(index);
         hasher.finish()
-    }
-}
-
-/// Provides access to font data
-///
-/// Each valid [`FaceId`] is an index to a loaded font face. Since faces are
-/// never unloaded or replaced, [`FaceId::get`] is a valid index into these
-/// arrays for any valid [`FaceId`].
-pub struct FaceData<'a> {
-    faces: RwLockReadGuard<'a, FaceList>,
-    data: RwLockReadGuard<'a, HashMap<PathBuf, Box<[u8]>>>,
-}
-impl<'a> FaceData<'a> {
-    /// Number of available font faces
-    pub fn len(&self) -> usize {
-        self.faces.faces.len()
-    }
-
-    /// Access font path and face index
-    ///
-    /// Note: use [`FaceData::get_data`] to access the font file data, already
-    /// loaded into memory.
-    pub fn get_path(&self, index: usize) -> (&Path, u32) {
-        let f = &self.faces.faces[index];
-        (&f.path, f.index)
-    }
-
-    /// Access font data and face index
-    pub fn get_data(&self, index: usize) -> (&'static [u8], u32) {
-        let f = &self.faces.faces[index];
-        let data = self.data.get(&f.path).unwrap();
-        // Safety: data is in FontLibrary::data and will not be dropped or modified
-        let data = unsafe { extend_lifetime(data) };
-        (data, f.index)
     }
 }
 

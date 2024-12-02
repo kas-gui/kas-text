@@ -9,7 +9,8 @@ use super::{EditableText, FontToken, FormattableText};
 use crate::Effect;
 
 impl<'t> FormattableText for &'t str {
-    type FontTokenIter<'a> = std::iter::Empty<FontToken>
+    type FontTokenIter<'a>
+        = std::iter::Empty<FontToken>
     where
         Self: 'a;
 
