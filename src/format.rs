@@ -129,9 +129,10 @@ impl<'t> PartialEq for &'t dyn FormattableTextDyn {
 }
 
 impl<'t> FormattableText for &'t dyn FormattableTextDyn {
-    type FontTokenIter<'a> = OwningVecIter<FontToken>
+    type FontTokenIter<'a>
+        = OwningVecIter<FontToken>
     where
-        Self: 'a,;
+        Self: 'a;
 
     #[inline]
     fn str_len(&self) -> usize {
