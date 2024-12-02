@@ -2,12 +2,15 @@
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.7.0] — 2024-12-02
 
-Update dependencies:
-
--   Rust (MSRV): 1.80.0 (#87)
--   `fontdb`: 0.21.0 (#86)
+-   Add `Direction::AutoRtl`, `text_is_rtl` (#80)
+-   Set the default font size to 16px (#80)
+-   `Text` API: do not expose `prepare_runs`, `required_action` (#81); more tweaks (#84)
+-   Move status tracking and `Env` fields into `Text` (#82)
+-   Remove `TextApi`, `TextApiExt` and `EditableTextApi` traits (#85)
+-   Revise `fonts` module: rename `selector::Database` to `Resolver`, separate out `fontdb::Database`, revise `init` (#87, #88)
+-   Bump MSRV to 1.80.0 (#87)
 
 ## [0.6.0] — 2022-12-13
 
