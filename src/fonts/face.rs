@@ -11,9 +11,9 @@ use ttf_parser::Face;
 
 /// Handle to a loaded font face
 #[derive(Copy, Clone, Debug)]
-pub struct FaceRef(pub(crate) &'static Face<'static>);
+pub struct FaceRef<'a>(pub(crate) &'a Face<'a>);
 
-impl FaceRef {
+impl<'a> FaceRef<'a> {
     /// Get glyph identifier for a char
     ///
     /// If the char is not found, `GlyphId(0)` is returned (the 'missing glyph'
@@ -46,7 +46,7 @@ impl FaceRef {
     ///
     /// Units: `dpem` is dots (pixels) per Em (module documentation).
     #[inline]
-    pub fn scale_by_dpem(self, dpem: f32) -> ScaledFaceRef {
+    pub fn scale_by_dpem(self, dpem: f32) -> ScaledFaceRef<'a> {
         ScaledFaceRef(self.0, self.dpu(dpem))
     }
 
@@ -54,7 +54,7 @@ impl FaceRef {
     ///
     /// Units: `dpu` is dots (pixels) per font-unit (see module documentation).
     #[inline]
-    pub fn scale_by_dpu(self, dpu: DPU) -> ScaledFaceRef {
+    pub fn scale_by_dpu(self, dpu: DPU) -> ScaledFaceRef<'a> {
         ScaledFaceRef(self.0, dpu)
     }
 
@@ -69,8 +69,8 @@ impl FaceRef {
 
 /// Handle to a loaded font face
 #[derive(Copy, Clone, Debug)]
-pub struct ScaledFaceRef(&'static Face<'static>, DPU);
-impl ScaledFaceRef {
+pub struct ScaledFaceRef<'a>(&'a Face<'a>, DPU);
+impl<'a> ScaledFaceRef<'a> {
     /// Unscaled face
     #[inline]
     pub fn face(&self) -> FaceRef {

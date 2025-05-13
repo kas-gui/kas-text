@@ -484,7 +484,7 @@ impl FontLibrary {
     /// Get a font face from its identifier
     ///
     /// Panics if `id` is not valid (required: `id.get() < self.num_faces()`).
-    pub fn get_face(&self, id: FaceId) -> FaceRef {
+    pub fn get_face(&self, id: FaceId) -> FaceRef<'static> {
         let faces = self.faces.read().unwrap();
         assert!(id.get() < faces.faces.len(), "FontLibrary: invalid {id:?}!");
         let face: &Face<'static> = faces.faces[id.get()].face();
