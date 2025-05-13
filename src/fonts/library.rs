@@ -69,6 +69,12 @@ impl FaceId {
     }
 }
 
+impl From<u32> for FaceId {
+    fn from(id: u32) -> Self {
+        FaceId(id)
+    }
+}
+
 /// Font face identifier
 ///
 /// Identifies a font list within the [`FontLibrary`] by index.
