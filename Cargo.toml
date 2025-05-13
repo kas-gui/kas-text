@@ -15,8 +15,8 @@ rust-version = "1.80.0"
 
 [package.metadata.docs.rs]
 # To build locally:
-# RUSTDOCFLAGS="--cfg docsrs" cargo +nightly doc --features num_glyphs,markdown,raster --no-deps --open
-features = ["markdown", "raster", "num_glyphs"]
+# RUSTDOCFLAGS="--cfg docsrs" cargo +nightly doc --features num_glyphs,markdown --no-deps --open
+features = ["markdown", "num_glyphs"]
 
 [features]
 # Support num_glyphs method
@@ -34,10 +34,6 @@ markdown = ["pulldown-cmark"]
 
 # Serialization is optionally supported for some types:
 serde = ["dep:serde", "bitflags/serde"]
-
-# Glyph rastering is optionally supported; "raster" uses the default backend
-# or a backend may be specified directly:
-raster = ["ab_glyph"]
 
 # Backends to expose fonts for
 ab_glyph = ["dep:ab_glyph"]

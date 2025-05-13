@@ -32,9 +32,6 @@ pub use display::*;
 pub mod fonts;
 pub mod format;
 
-#[cfg(any(feature = "ab_glyph", feature = "fontdue"))]
-pub mod raster;
-
 mod text;
 pub use text::*;
 
