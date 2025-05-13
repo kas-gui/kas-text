@@ -34,6 +34,9 @@ enum FontError {
     #[cfg(feature = "fontdue")]
     #[error("font load error")]
     StrError(&'static str),
+    #[cfg(feature = "swash")]
+    #[error("font load error")]
+    Swash,
 }
 
 #[cfg(feature = "fontdue")]
@@ -95,6 +98,8 @@ pub(crate) struct FaceStore<'a> {
     ab_glyph: ab_glyph::FontRef<'a>,
     #[cfg(feature = "fontdue")]
     fontdue: fontdue::Font,
+    #[cfg(feature = "swash")]
+    swash: (u32, swash::CacheKey), // (offset, key)
 }
 
 impl<'a> FaceStore<'a> {
@@ -105,6 +110,7 @@ impl<'a> FaceStore<'a> {
         let face = Face::parse(data, index)?;
         #[cfg(all(not(feature = "harfbuzz_rs"), feature = "rustybuzz"))]
         let rustybuzz = rustybuzz::Face::from_face(face.clone());
+
         Ok(FaceStore {
             path,
             index,
@@ -123,6 +129,12 @@ impl<'a> FaceStore<'a> {
                     load_substitutions: true,
                 };
                 fontdue::Font::from_bytes(data, settings)?
+            },
+            #[cfg(feature = "swash")]
+            swash: {
+                use easy_cast::Cast;
+                let f = swash::FontRef::from_index(data, index.cast()).ok_or(FontError::Swash)?;
+                (f.offset, f.key)
             },
         })
     }
@@ -154,6 +166,16 @@ impl<'a> FaceStore<'a> {
     #[cfg(feature = "fontdue")]
     pub(crate) fn fontdue(&self) -> &fontdue::Font {
         &self.fontdue
+    }
+
+    /// Get a swash `FontRef`
+    #[cfg(feature = "swash")]
+    pub(crate) fn swash(&self) -> swash::FontRef<'_> {
+        swash::FontRef {
+            data: self.face.raw_face().data,
+            offset: self.swash.0,
+            key: self.swash.1,
+        }
     }
 }
 
