@@ -93,7 +93,7 @@ pub struct FaceStore<'a> {
     face: Face<'a>,
     #[cfg(feature = "harfbuzz")]
     harfbuzz: harfbuzz_rs::Shared<harfbuzz_rs::Face<'a>>,
-    #[cfg(all(not(feature = "harfbuzz"), feature = "rustybuzz"))]
+    #[cfg(feature = "rustybuzz")]
     rustybuzz: rustybuzz::Face<'a>,
     #[cfg(feature = "ab_glyph")]
     ab_glyph: ab_glyph::FontRef<'a>,
@@ -109,7 +109,7 @@ impl<'a> FaceStore<'a> {
     /// The `path` is to be stored; its contents are already loaded in `data`.
     fn new(path: PathBuf, data: &'a [u8], index: u32) -> Result<Self, FontError> {
         let face = Face::parse(data, index)?;
-        #[cfg(all(not(feature = "harfbuzz"), feature = "rustybuzz"))]
+        #[cfg(feature = "rustybuzz")]
         let rustybuzz = rustybuzz::Face::from_face(face.clone());
 
         Ok(FaceStore {
@@ -118,7 +118,7 @@ impl<'a> FaceStore<'a> {
             face,
             #[cfg(feature = "harfbuzz")]
             harfbuzz: harfbuzz_rs::Face::from_bytes(data, index).into(),
-            #[cfg(all(not(feature = "harfbuzz"), feature = "rustybuzz"))]
+            #[cfg(feature = "rustybuzz")]
             rustybuzz,
             #[cfg(feature = "ab_glyph")]
             ab_glyph: ab_glyph::FontRef::try_from_slice_and_index(data, index)?,
@@ -152,7 +152,7 @@ impl<'a> FaceStore<'a> {
     }
 
     /// Access the [`rustybuzz`] object
-    #[cfg(all(not(feature = "harfbuzz"), feature = "rustybuzz"))]
+    #[cfg(feature = "rustybuzz")]
     pub fn rustybuzz(&self) -> &rustybuzz::Face<'a> {
         &self.rustybuzz
     }
