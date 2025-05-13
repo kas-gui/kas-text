@@ -395,7 +395,7 @@ impl StackItem {
                 // line. Without better flow control we cannot fix this.
                 match &mut self.list {
                     Some(x) => {
-                        write!(text, "{}\t", x).unwrap();
+                        write!(text, "{x}\t").unwrap();
                         *x += 1;
                     }
                     None => text.push_str("•\t"),

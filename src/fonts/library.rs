@@ -480,11 +480,7 @@ impl FontLibrary {
     /// Panics if `id` is not valid (required: `id.get() < self.num_faces()`).
     pub fn get_face(&self, id: FaceId) -> FaceRef {
         let faces = self.faces.read().unwrap();
-        assert!(
-            id.get() < faces.faces.len(),
-            "FontLibrary: invalid {:?}!",
-            id
-        );
+        assert!(id.get() < faces.faces.len(), "FontLibrary: invalid {id:?}!");
         let face: &Face<'static> = faces.faces[id.get()].face();
         // Safety: elements of self.faces are never dropped or modified
         let face = unsafe { extend_lifetime(face) };
@@ -496,11 +492,7 @@ impl FontLibrary {
     /// Panics if `id` is not valid (required: `id.get() < self.num_faces()`).
     pub fn get_face_store(&self, id: FaceId) -> &'static FaceStore {
         let faces = self.faces.read().unwrap();
-        assert!(
-            id.get() < faces.faces.len(),
-            "FontLibrary: invalid {:?}!",
-            id
-        );
+        assert!(id.get() < faces.faces.len(), "FontLibrary: invalid {id:?}!",);
         let faces: &FaceStore = &faces.faces[id.get()];
         // Safety: elements of self.faces are never dropped or modified
         unsafe { extend_lifetime(faces) }
@@ -513,11 +505,7 @@ impl FontLibrary {
         id: FaceId,
     ) -> harfbuzz_rs::Owned<harfbuzz_rs::Font<'static>> {
         let faces = self.faces.read().unwrap();
-        assert!(
-            id.get() < faces.faces.len(),
-            "FontLibrary: invalid {:?}!",
-            id
-        );
+        assert!(id.get() < faces.faces.len(), "FontLibrary: invalid {id:?}!",);
         harfbuzz_rs::Font::new(faces.faces[id.get()].harfbuzz().clone())
     }
 
@@ -525,11 +513,7 @@ impl FontLibrary {
     #[cfg(all(not(feature = "harfbuzz_rs"), feature = "rustybuzz"))]
     pub(crate) fn get_rustybuzz(&self, id: FaceId) -> &rustybuzz::Face<'static> {
         let faces = self.faces.read().unwrap();
-        assert!(
-            id.get() < faces.faces.len(),
-            "FontLibrary: invalid {:?}!",
-            id
-        );
+        assert!(id.get() < faces.faces.len(), "FontLibrary: invalid {id:?}!",);
         let face: &rustybuzz::Face<'static> = faces.faces[id.get()].rustybuzz();
         // Safety: elements of self.fonts are never dropped or modified
         unsafe { extend_lifetime(face) }
