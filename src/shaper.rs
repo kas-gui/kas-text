@@ -265,13 +265,13 @@ pub(crate) fn shape(
     let sf = face.scale_by_dpu(dpu);
 
     if dpem >= 0.0 {
-        #[cfg(feature = "harfbuzz_rs")]
+        #[cfg(feature = "harfbuzz")]
         let r = shape_harfbuzz(text, range, dpem, face_id, level, &mut breaks);
 
-        #[cfg(all(not(feature = "harfbuzz_rs"), feature = "rustybuzz"))]
+        #[cfg(all(not(feature = "harfbuzz"), feature = "rustybuzz"))]
         let r = shape_rustybuzz(text, range, dpem, face_id, level, &mut breaks);
 
-        #[cfg(all(not(feature = "harfbuzz_rs"), not(feature = "rustybuzz")))]
+        #[cfg(all(not(feature = "harfbuzz"), not(feature = "rustybuzz")))]
         let r = shape_simple(sf, text, range, level, &mut breaks);
 
         glyphs = r.0;
@@ -321,7 +321,7 @@ pub(crate) fn shape(
 }
 
 // Use HarfBuzz lib
-#[cfg(feature = "harfbuzz_rs")]
+#[cfg(feature = "harfbuzz")]
 fn shape_harfbuzz(
     text: &str,
     range: Range,
@@ -408,7 +408,7 @@ fn shape_harfbuzz(
 }
 
 // Use Rustybuzz lib
-#[cfg(all(not(feature = "harfbuzz_rs"), feature = "rustybuzz"))]
+#[cfg(all(not(feature = "harfbuzz"), feature = "rustybuzz"))]
 fn shape_rustybuzz(
     text: &str,
     range: Range,
@@ -492,7 +492,7 @@ fn shape_rustybuzz(
 }
 
 // Simple implementation (kerning but no shaping)
-#[cfg(all(not(feature = "harfbuzz_rs"), not(feature = "rustybuzz")))]
+#[cfg(all(not(feature = "harfbuzz"), not(feature = "rustybuzz")))]
 fn shape_simple(
     sf: crate::fonts::ScaledFaceRef,
     text: &str,

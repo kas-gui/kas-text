@@ -25,7 +25,7 @@ num_glyphs = []
 # Enable shaping with the default dependency.
 shaping = ["rustybuzz"]
 # Enable shaping via HarfBuzz.
-harfbuzz = ["harfbuzz_rs"]
+harfbuzz = ["dep:harfbuzz_rs"]
 
 # Enable Markdown parsing
 markdown = ["pulldown-cmark"]

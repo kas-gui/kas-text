@@ -91,9 +91,9 @@ pub struct FaceStore<'a> {
     path: PathBuf,
     index: u32,
     face: Face<'a>,
-    #[cfg(feature = "harfbuzz_rs")]
+    #[cfg(feature = "harfbuzz")]
     harfbuzz: harfbuzz_rs::Shared<harfbuzz_rs::Face<'a>>,
-    #[cfg(all(not(feature = "harfbuzz_rs"), feature = "rustybuzz"))]
+    #[cfg(all(not(feature = "harfbuzz"), feature = "rustybuzz"))]
     rustybuzz: rustybuzz::Face<'a>,
     #[cfg(feature = "ab_glyph")]
     ab_glyph: ab_glyph::FontRef<'a>,
@@ -109,16 +109,16 @@ impl<'a> FaceStore<'a> {
     /// The `path` is to be stored; its contents are already loaded in `data`.
     fn new(path: PathBuf, data: &'a [u8], index: u32) -> Result<Self, FontError> {
         let face = Face::parse(data, index)?;
-        #[cfg(all(not(feature = "harfbuzz_rs"), feature = "rustybuzz"))]
+        #[cfg(all(not(feature = "harfbuzz"), feature = "rustybuzz"))]
         let rustybuzz = rustybuzz::Face::from_face(face.clone());
 
         Ok(FaceStore {
             path,
             index,
             face,
-            #[cfg(feature = "harfbuzz_rs")]
+            #[cfg(feature = "harfbuzz")]
             harfbuzz: harfbuzz_rs::Face::from_bytes(data, index).into(),
-            #[cfg(all(not(feature = "harfbuzz_rs"), feature = "rustybuzz"))]
+            #[cfg(all(not(feature = "harfbuzz"), feature = "rustybuzz"))]
             rustybuzz,
             #[cfg(feature = "ab_glyph")]
             ab_glyph: ab_glyph::FontRef::try_from_slice_and_index(data, index)?,
@@ -152,7 +152,7 @@ impl<'a> FaceStore<'a> {
     }
 
     /// Access the [`rustybuzz`] object
-    #[cfg(all(not(feature = "harfbuzz_rs"), feature = "rustybuzz"))]
+    #[cfg(all(not(feature = "harfbuzz"), feature = "rustybuzz"))]
     pub fn rustybuzz(&self) -> &rustybuzz::Face<'a> {
         &self.rustybuzz
     }
@@ -499,7 +499,7 @@ impl FontLibrary {
     }
 
     /// Get a HarfBuzz font face
-    #[cfg(feature = "harfbuzz_rs")]
+    #[cfg(feature = "harfbuzz")]
     pub(crate) fn get_harfbuzz(
         &self,
         id: FaceId,
@@ -510,7 +510,7 @@ impl FontLibrary {
     }
 
     /// Get a Rustybuzz font face
-    #[cfg(all(not(feature = "harfbuzz_rs"), feature = "rustybuzz"))]
+    #[cfg(all(not(feature = "harfbuzz"), feature = "rustybuzz"))]
     pub(crate) fn get_rustybuzz(&self, id: FaceId) -> &rustybuzz::Face<'static> {
         let faces = self.faces.read().unwrap();
         assert!(id.get() < faces.faces.len(), "FontLibrary: invalid {id:?}!",);
