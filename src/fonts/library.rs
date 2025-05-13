@@ -86,7 +86,8 @@ impl FontId {
     }
 }
 
-pub(crate) struct FaceStore<'a> {
+/// A store of data for a font face, supporting various backends
+pub struct FaceStore<'a> {
     path: PathBuf,
     index: u32,
     face: Face<'a>,
@@ -140,37 +141,37 @@ impl<'a> FaceStore<'a> {
     }
 
     /// Access the [`Face`] object
-    pub(crate) fn face(&self) -> &Face<'a> {
+    pub fn face(&self) -> &Face<'a> {
         &self.face
     }
 
     /// Access the [`harfbuzz_rs`] object
     #[cfg(feature = "harfbuzz")]
-    pub(crate) fn harfbuzz(&self) -> &harfbuzz_rs::Shared<harfbuzz_rs::Face<'a>> {
+    pub fn harfbuzz(&self) -> &harfbuzz_rs::Shared<harfbuzz_rs::Face<'a>> {
         &self.harfbuzz
     }
 
     /// Access the [`rustybuzz`] object
     #[cfg(all(not(feature = "harfbuzz_rs"), feature = "rustybuzz"))]
-    pub(crate) fn rustybuzz(&self) -> &rustybuzz::Face<'a> {
+    pub fn rustybuzz(&self) -> &rustybuzz::Face<'a> {
         &self.rustybuzz
     }
 
     /// Access the [`ab_glyph`] object
     #[cfg(feature = "ab_glyph")]
-    pub(crate) fn ab_glyph(&self) -> &ab_glyph::FontRef<'a> {
+    pub fn ab_glyph(&self) -> &ab_glyph::FontRef<'a> {
         &self.ab_glyph
     }
 
     /// Access the [`fontdue`] object
     #[cfg(feature = "fontdue")]
-    pub(crate) fn fontdue(&self) -> &fontdue::Font {
+    pub fn fontdue(&self) -> &fontdue::Font {
         &self.fontdue
     }
 
     /// Get a swash `FontRef`
     #[cfg(feature = "swash")]
-    pub(crate) fn swash(&self) -> swash::FontRef<'_> {
+    pub fn swash(&self) -> swash::FontRef<'_> {
         swash::FontRef {
             data: self.face.raw_face().data,
             offset: self.swash.0,
@@ -491,8 +492,9 @@ impl FontLibrary {
     }
 
     /// Get access to the [`FaceStore`]
-    #[cfg(any(feature = "ab_glyph", feature = "fontdue"))]
-    pub(crate) fn get_face_store(&self, id: FaceId) -> &'static FaceStore {
+    ///
+    /// Panics if `id` is not valid (required: `id.get() < self.num_faces()`).
+    pub fn get_face_store(&self, id: FaceId) -> &'static FaceStore {
         let faces = self.faces.read().unwrap();
         assert!(
             id.get() < faces.faces.len(),
