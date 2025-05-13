@@ -151,6 +151,11 @@ impl<'a> FaceStore<'a> {
         &self.face
     }
 
+    /// Access a [`FaceRef`] object
+    pub fn face_ref(&self) -> FaceRef<'_> {
+        FaceRef(&self.face)
+    }
+
     /// Access the [`harfbuzz_rs`] object
     #[cfg(feature = "harfbuzz")]
     pub fn harfbuzz(&self) -> &harfbuzz_rs::Shared<harfbuzz_rs::Face<'a>> {
