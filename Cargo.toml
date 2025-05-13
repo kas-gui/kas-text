@@ -67,3 +67,10 @@ optional = true
 [dependencies.harfbuzz_rs]
 version = "2.0"
 optional = true
+
+[lints.clippy]
+len_zero = "allow"
+type_complexity = "allow"
+unit_arg = "allow"
+needless_lifetimes = "allow"
+neg_cmp_op_on_partial_ord = "allow"

@@ -14,11 +14,6 @@
 //! [`format`]: mod@format
 
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
-#![allow(clippy::len_zero)]
-#![allow(clippy::type_complexity)]
-#![allow(clippy::unit_arg)]
-#![allow(clippy::needless_lifetimes)]
-#![allow(clippy::neg_cmp_op_on_partial_ord)]
 
 pub extern crate fontdb;
 
