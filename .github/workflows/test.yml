@@ -23,11 +23,11 @@ jobs:
         run: |
           cargo fmt --all -- --check
       - name: doc
-        run: RUSTDOCFLAGS="--cfg doc_cfg" cargo doc --features markdown,raster,num_glyphs --no-deps
+        run: RUSTDOCFLAGS="--cfg doc_cfg" cargo doc --features markdown,num_glyphs --no-deps
       - name: Test Harfbuzz
         run: cargo test --all-targets --features harfbuzz
       - name: Clippy
-        run: cargo +nightly clippy --features shaping,markdown,raster,serde,num_glyphs
+        run: cargo +nightly clippy --features shaping,markdown,serde,num_glyphs
       - name: Test (all features including GAT)
         run: cargo test --all-features
 
@@ -54,6 +54,6 @@ jobs:
           toolchain: ${{ matrix.toolchain }}
           override: true
       - name: Test (reduced features)
-        run: cargo test --all-targets --features markdown,raster
+        run: cargo test --all-targets --features markdown
       - name: Test (all features except GAT)
-        run: cargo test --features markdown,shaping,raster,serde,num_glyphs
+        run: cargo test --features markdown,shaping,serde,num_glyphs

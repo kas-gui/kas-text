@@ -194,23 +194,23 @@ impl Resolver {
         // Set family names in DB (only used in case the DB is used
         // externally, e.g. to render an SVG with resvg).
         if let Some(name) = self.font_family_from_alias(db, "SERIF") {
-            info!("Default serif font: {}", name);
+            info!("Default serif font: {name}");
             db.set_serif_family(name);
         }
         if let Some(name) = self.font_family_from_alias(db, "SANS-SERIF") {
-            info!("Default sans-serif font: {}", name);
+            info!("Default sans-serif font: {name}");
             db.set_sans_serif_family(name);
         }
         if let Some(name) = self.font_family_from_alias(db, "MONOSPACE") {
-            info!("Default monospace font: {}", name);
+            info!("Default monospace font: {name}");
             db.set_monospace_family(name);
         }
         if let Some(name) = self.font_family_from_alias(db, "CURSIVE") {
-            info!("Default cursive font: {}", name);
+            info!("Default cursive font: {name}");
             db.set_cursive_family(name);
         }
         if let Some(name) = self.font_family_from_alias(db, "FANTASY") {
-            info!("Default fantasy font: {}", name);
+            info!("Default fantasy font: {name}");
             db.set_fantasy_family(name);
         }
     }
@@ -313,7 +313,7 @@ impl<'a> FontSelector<'a> {
     where
         F: FnMut(&'b FaceInfo) -> Result<(), Box<dyn std::error::Error>>,
     {
-        debug!("select(): {:?}", self);
+        debug!("select(): {self:?}");
         // TODO(opt): improve, perhaps moving some computation earlier (e.g.
         // culling aliases which do not resolve fonts), and use faster alias expansion.
         let mut families: Vec<Cow<'b, str>> = self.families.clone();

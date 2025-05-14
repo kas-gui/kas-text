@@ -72,7 +72,7 @@ mod library;
 mod resolver;
 
 pub use face::{FaceRef, ScaledFaceRef};
-pub use library::{clone_db, db, library, FaceId, FontId, FontLibrary, InvalidFontId};
+pub use library::{clone_db, db, library, FaceId, FaceStore, FontId, FontLibrary, InvalidFontId};
 pub use resolver::*;
 
 impl From<GlyphId> for ttf_parser::GlyphId {

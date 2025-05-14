@@ -13,12 +13,7 @@
 //!
 //! [`format`]: mod@format
 
-#![cfg_attr(docsrs, feature(doc_cfg))]
-#![allow(clippy::len_zero)]
-#![allow(clippy::type_complexity)]
-#![allow(clippy::unit_arg)]
-#![allow(clippy::needless_lifetimes)]
-#![allow(clippy::neg_cmp_op_on_partial_ord)]
+#![cfg_attr(docsrs, feature(doc_auto_cfg))]
 
 pub extern crate fontdb;
 
@@ -36,9 +31,6 @@ pub use display::*;
 
 pub mod fonts;
 pub mod format;
-
-#[cfg(any(feature = "ab_glyph", feature = "fontdue"))]
-pub mod raster;
 
 mod text;
 pub use text::*;

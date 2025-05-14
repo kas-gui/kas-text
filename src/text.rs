@@ -567,7 +567,6 @@ impl<T: FormattableText + ?Sized> Text<T> {
     ///
     /// See [`TextDisplay::num_glyphs`].
     #[inline]
-    #[cfg_attr(docsrs, doc(cfg(feature = "num_glyphs")))]
     #[cfg(feature = "num_glyphs")]
     pub fn num_glyphs(&self) -> Result<usize, NotReady> {
         Ok(self.wrapped_display()?.num_glyphs())
