@@ -15,7 +15,13 @@
 
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
 
+#[cfg(feature = "ab_glyph")]
+pub extern crate ab_glyph;
 pub extern crate fontdb;
+#[cfg(feature = "fontdue")]
+pub extern crate fontdue;
+#[cfg(feature = "swash")]
+pub extern crate swash;
 
 mod env;
 pub use env::*;
