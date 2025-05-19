@@ -400,10 +400,14 @@ impl FontLibrary {
         drop(fonts);
 
         let mut faces = Vec::new();
+        let mut families = Vec::new();
         let mut resolver = self.resolver.lock().unwrap();
 
         selector.select(&mut resolver, |query_font| {
-            assert!(!query_font.synthesis.any(), "synthesis is unsupported");
+            if log::log_enabled!(log::Level::Debug) {
+                families.push(query_font.family);
+            }
+            // TODO: use query_font.synthesis
 
             let source_hash = {
                 use std::hash::{DefaultHasher, Hash, Hasher};
@@ -435,6 +439,12 @@ impl FontLibrary {
             faces.push(id);
             Ok(QueryStatus::Continue)
         })?;
+
+        for family in families {
+            if let Some(name) = resolver.font_family(family.0) {
+                log::debug!("match: {name}");
+            }
+        }
 
         if faces.is_empty() {
             return Err(Box::new(FontError::NotFound));

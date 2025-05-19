@@ -11,7 +11,7 @@ use easy_cast::Cast;
 use fontdb::Database;
 pub use fontdb::{Stretch, Style, Weight};
 use fontique::{
-    Attributes, Collection, FontStyle, FontWeight, FontWidth, GenericFamily, QueryFont,
+    Attributes, Collection, FamilyId, FontStyle, FontWeight, FontWidth, GenericFamily, QueryFont,
     QueryStatus, SourceCache,
 };
 use log::{debug, info};
@@ -38,6 +38,11 @@ impl Resolver {
             collection: Collection::new(Default::default()),
             cache: SourceCache::new(Default::default()),
         }
+    }
+
+    /// Get a font family name from an id
+    pub fn font_family(&mut self, id: FamilyId) -> Option<&str> {
+        self.collection.family_name(id)
     }
 
     /// Get a font family name for some generic font family
