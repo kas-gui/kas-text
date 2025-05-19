@@ -71,6 +71,7 @@ mod library;
 mod resolver;
 
 pub use face::{FaceRef, ScaledFaceRef};
+pub use fontique::GenericFamily;
 pub use library::{clone_db, db, library, FaceId, FaceStore, FontId, FontLibrary, InvalidFontId};
 pub use resolver::*;
 
