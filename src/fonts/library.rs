@@ -10,7 +10,6 @@
 use super::{FaceRef, FontSelector, Resolver};
 use crate::conv::{to_u32, to_usize};
 use fontdb::Database;
-use log::warn;
 use std::collections::hash_map::{Entry, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock, OnceLock, RwLock, RwLockReadGuard};
@@ -244,52 +243,24 @@ pub struct FontLibrary {
 
 /// Font management
 impl FontLibrary {
-    /// Adjust the font resolver
-    ///
-    /// This method may only be called before [`FontLibrary::init`].
-    /// If called afterwards this will just return `None`.
-    pub fn adjust_resolver<F: FnOnce(&mut Resolver) -> T, T>(&self, f: F) -> Option<T> {
-        if DB.get().is_some() {
-            warn!("unable to update resolver after kas_text::fonts::library().init()");
-            return None;
-        }
-
-        Some(f(&mut self.resolver.write().unwrap()))
-    }
-
     /// Initialize
     ///
     /// This method constructs the [`fontdb::Database`], loads fonts
     /// and resolves the default font (i.e. `FontId(0)`).
     ///
-    /// Either this method or [`FontLibrary::init_custom`] *must* be called
-    /// before any other font selection method, and before
+    /// This method *must* be called before any other font selection method,
+    /// and before
     /// querying any font-derived properties (such as text dimensions).
     /// It is safe (but ineffective) to call multiple times.
     #[inline]
     pub fn init(&self) -> Result<(), Box<dyn std::error::Error>> {
-        self.init_custom(|db| db.load_system_fonts())
-    }
-
-    /// Initialize with custom fonts
-    ///
-    /// This method may be called instead of [`FontLibrary::init`] to customize
-    /// initial font loading: the `loader` method must load all required fonts
-    /// (system and/or custom fonts).
-    ///
-    /// Calling this method repeatedly is safe but ineffective.
-    /// Loading fonts after initialization is not currently supported.
-    pub fn init_custom(
-        &self,
-        loader: impl FnOnce(&mut Database),
-    ) -> Result<(), Box<dyn std::error::Error>> {
         if DB.get().is_some() {
             return Ok(());
         }
 
         let mut db = Arc::new(Database::new());
-        let dbm = Arc::make_mut(&mut db);
-        loader(dbm);
+        let dbm = Arc::get_mut(&mut db).unwrap();
+        dbm.load_system_fonts();
 
         self.resolver.write().unwrap().init(dbm);
 
