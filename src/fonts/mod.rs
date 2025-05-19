@@ -67,7 +67,6 @@
 use crate::GlyphId;
 
 mod face;
-mod families;
 mod library;
 mod resolver;
 

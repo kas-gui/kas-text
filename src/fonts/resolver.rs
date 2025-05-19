@@ -7,24 +7,17 @@
 //!
 //! Many items are copied from font-kit to avoid any public dependency.
 
-use super::families;
-use fontdb::{Database, FaceInfo, Source, ID};
+use easy_cast::Cast;
+use fontdb::Database;
 pub use fontdb::{Stretch, Style, Weight};
-use log::{debug, info, trace};
+use fontique::{
+    Attributes, Collection, FontStyle, FontWeight, FontWidth, GenericFamily, QueryFont,
+    QueryStatus, SourceCache,
+};
+use log::{debug, info};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
-use std::collections::hash_map::{Entry, HashMap};
-use std::fmt;
-
-/// How to add new aliases when others exist
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub enum AddMode {
-    Prepend,
-    Append,
-    Replace,
-}
 
 fn to_uppercase<'a>(c: Cow<'a, str>) -> Cow<'a, str> {
     match c {
@@ -35,181 +28,47 @@ fn to_uppercase<'a>(c: Cow<'a, str>) -> Cow<'a, str> {
 
 /// A tool to resolve a single font face given a family and style
 pub struct Resolver {
-    families_upper: HashMap<String, Vec<ID>>,
-    // contract: all keys and values are uppercase
-    aliases: HashMap<Cow<'static, str>, Vec<Cow<'static, str>>>,
+    collection: Collection,
+    cache: SourceCache,
 }
 
 impl Resolver {
     pub(crate) fn new() -> Self {
-        let mut aliases = HashMap::new();
-        // TODO: update families instead of mapping to uppercase here
-        aliases.insert(
-            "SERIF".into(),
-            families::DEFAULT_SERIF
-                .iter()
-                .map(|s| to_uppercase((*s).into()))
-                .collect(),
-        );
-        aliases.insert(
-            "SANS-SERIF".into(),
-            families::DEFAULT_SANS_SERIF
-                .iter()
-                .map(|s| to_uppercase((*s).into()))
-                .collect(),
-        );
-        aliases.insert(
-            "MONOSPACE".into(),
-            families::DEFAULT_MONOSPACE
-                .iter()
-                .map(|s| to_uppercase((*s).into()))
-                .collect(),
-        );
-        aliases.insert(
-            "CURSIVE".into(),
-            families::DEFAULT_CURSIVE
-                .iter()
-                .map(|s| to_uppercase((*s).into()))
-                .collect(),
-        );
-        aliases.insert(
-            "FANTASY".into(),
-            families::DEFAULT_FANTASY
-                .iter()
-                .map(|s| to_uppercase((*s).into()))
-                .collect(),
-        );
-
         Resolver {
-            families_upper: HashMap::new(),
-            aliases,
+            collection: Collection::new(Default::default()),
+            cache: SourceCache::new(Default::default()),
         }
     }
 
-    /// Access the list of discovered font families
-    ///
-    /// All family names are uppercase.
-    pub fn families_upper(&self) -> impl Iterator<Item = &str> {
-        self.families_upper.keys().map(|s| s.as_str())
-    }
-
-    /// List all font family alias keys
-    ///
-    /// All family names are uppercase.
-    pub fn alias_keys(&self) -> impl Iterator<Item = &str> {
-        self.aliases.keys().map(|k| k.as_ref())
-    }
-
-    /// List all aliases for the given family
-    ///
-    /// The `family` parameter must be upper case (or no matches will be found).
-    /// All returned family names are uppercase.
-    pub fn aliases_of(&self, family: &str) -> Option<impl Iterator<Item = &str>> {
-        self.aliases
-            .get(family)
-            .map(|result| result.iter().map(|s| s.as_ref()))
-    }
-
-    /// Resolve the substituted font family name for this family
-    ///
-    /// The input must be upper case. The output will be the loaded font's case.
-    /// Example: `SANS-SERIF`
-    pub fn font_family_from_alias(&self, db: &Database, family: &str) -> Option<String> {
-        let families_upper = &self.families_upper;
-        self.aliases
-            .get(family)
-            .and_then(|list| list.iter().next())
-            .map(|name| {
-                let id = families_upper.get(name.as_ref()).unwrap()[0];
-                db.face(id).unwrap().families.first().unwrap().0.clone()
-            })
-    }
-
-    /// Add font aliases for family
-    ///
-    /// When searching for `family`, all `aliases` will be searched too. Both
-    /// the `family` parameter and all `aliases` are converted to upper case.
-    ///
-    /// This method may only be used before initialization.
-    pub fn add_aliases<I>(&mut self, family: Cow<'static, str>, aliases: I, mode: AddMode)
-    where
-        I: Iterator<Item = Cow<'static, str>>,
-    {
-        let aliases = aliases.map(to_uppercase);
-
-        match self.aliases.entry(to_uppercase(family)) {
-            Entry::Occupied(mut entry) => {
-                let existing = entry.get_mut();
-                match mode {
-                    AddMode::Prepend => {
-                        existing.splice(0..0, aliases);
-                    }
-                    AddMode::Append => {
-                        existing.extend(aliases);
-                    }
-                    AddMode::Replace => {
-                        existing.clear();
-                        existing.extend(aliases);
-                    }
-                }
-            }
-            Entry::Vacant(entry) => {
-                entry.insert(aliases.collect());
-            }
-        }
+    /// Get a font family name for some generic font family
+    pub fn font_family_from_generic(&mut self, generic: GenericFamily) -> Option<&str> {
+        let id = self.collection.generic_families(generic).next()?;
+        self.collection.family_name(id)
     }
 
     /// Init db and self
     pub(crate) fn init(&mut self, db: &mut Database) {
         info!("Found {} fonts", db.len());
 
-        let families_upper = &mut self.families_upper;
-        for face in db.faces() {
-            trace!("Discovered: {}", DisplayFaceInfo(face));
-            // Use the first name, which according to docs is always en_US
-            // (unless missing from the font).
-            if let Some(family_name) = face.families.first().map(|pair| &pair.0) {
-                families_upper
-                    .entry(family_name.to_uppercase())
-                    .or_default()
-                    .push(face.id);
-            }
-        }
-
-        for aliases in self.aliases.values_mut() {
-            // Remove aliases to missing fonts:
-            aliases.retain(|name| families_upper.contains_key(name.as_ref()));
-
-            // Remove duplicates (this is O(n²), but n is usually small):
-            let mut i = 0;
-            while i < aliases.len() {
-                if aliases[0..i].contains(&aliases[i]) {
-                    aliases.remove(i);
-                } else {
-                    i += 1;
-                }
-            }
-        }
-
         // Set family names in DB (only used in case the DB is used
         // externally, e.g. to render an SVG with resvg).
-        if let Some(name) = self.font_family_from_alias(db, "SERIF") {
+        if let Some(name) = self.font_family_from_generic(GenericFamily::Serif) {
             info!("Default serif font: {name}");
             db.set_serif_family(name);
         }
-        if let Some(name) = self.font_family_from_alias(db, "SANS-SERIF") {
+        if let Some(name) = self.font_family_from_generic(GenericFamily::SansSerif) {
             info!("Default sans-serif font: {name}");
             db.set_sans_serif_family(name);
         }
-        if let Some(name) = self.font_family_from_alias(db, "MONOSPACE") {
+        if let Some(name) = self.font_family_from_generic(GenericFamily::Monospace) {
             info!("Default monospace font: {name}");
             db.set_monospace_family(name);
         }
-        if let Some(name) = self.font_family_from_alias(db, "CURSIVE") {
+        if let Some(name) = self.font_family_from_generic(GenericFamily::Cursive) {
             info!("Default cursive font: {name}");
             db.set_cursive_family(name);
         }
-        if let Some(name) = self.font_family_from_alias(db, "FANTASY") {
+        if let Some(name) = self.font_family_from_generic(GenericFamily::Fantasy) {
             info!("Default fantasy font: {name}");
             db.set_fantasy_family(name);
         }
@@ -243,25 +102,7 @@ impl<'a> FontSelector<'a> {
         FontSelector::default()
     }
 
-    /// Set self to `rhs`
-    ///
-    /// This may save a reallocation over direct assignment.
-    #[inline]
-    pub fn assign(&mut self, rhs: &Self) {
-        self.families.clear();
-        self.families.extend_from_slice(&rhs.families);
-        self.weight = rhs.weight;
-        self.stretch = rhs.stretch;
-        self.style = rhs.style;
-    }
-
     /// Set family name(s)
-    ///
-    /// This supports generic names `serif`, `sans-serif`, `monospace`,
-    /// `cursive` and `fantasy`. It also allows specific family names, though
-    /// does not currently define compatibility aliases for these (e.g. `arial`
-    /// will match the Arial font if found, but should not currently be expected
-    /// to resolve other, compatible, fonts).
     ///
     /// If multiple names are passed, the first to successfully resolve a font
     /// is used. Glyph-level fallback (missing glyph substitution) is not
@@ -298,218 +139,46 @@ impl<'a> FontSelector<'a> {
 
     /// Resolve font faces for each matching font
     ///
-    /// This implements CSS selection logic as defined by
-    /// [https://www.w3.org/TR/2018/REC-css-fonts-3-20180920/#font-style-matching](),
-    /// steps 1-4. The result is a list of matching font faces which may later
-    /// be matched against characters for character-level fallback (step 5).
-    ///
     /// All font faces matching steps 1-4 will be returned through the `add_face` closure.
-    pub(crate) fn select<'b, F>(
-        &'b self,
-        reslover: &'b Resolver,
-        db: &'b Database,
+    pub(crate) fn select<F>(
+        &self,
+        resolver: &mut Resolver,
         mut add_face: F,
     ) -> Result<(), Box<dyn std::error::Error>>
     where
-        F: FnMut(&'b FaceInfo) -> Result<(), Box<dyn std::error::Error>>,
+        F: FnMut(&QueryFont) -> Result<QueryStatus, Box<dyn std::error::Error>>,
     {
         debug!("select(): {self:?}");
-        // TODO(opt): improve, perhaps moving some computation earlier (e.g.
-        // culling aliases which do not resolve fonts), and use faster alias expansion.
-        let mut families: Vec<Cow<'b, str>> = self.families.clone();
-        let sans_serif = Cow::<'static, str>::from("SANS-SERIF");
-        if !families.contains(&sans_serif) {
-            // All families fall back to sans-serif, ensuring we almost always have a usable font
-            families.push(sans_serif);
-        }
 
-        // Append aliases
-        // This is vaguely step 2, but allows generic names to resolve to multiple targets.
-        let mut i = 0;
-        while i < families.len() {
-            if let Some(aliases) = reslover.aliases.get(&families[i]) {
-                let mut j = i + 1;
-                for alias in aliases {
-                    if !families.contains(alias) {
-                        families.insert(j, alias.clone());
-                        j += 1;
-                    }
-                }
-            }
-            i += 1;
-        }
-
-        let mut candidates = Vec::new();
-        // Step 3: find any matching font faces, case-insensitively
-        for family in families {
-            if let Some(ids) = reslover.families_upper.get(family.as_ref()) {
-                for id in ids {
-                    let candidate = db.face(*id).unwrap();
-                    trace!("candidate: {}", DisplayFaceInfo(candidate));
-                    candidates.push(candidate);
-                }
-            }
-
-            // Step 4: if any match from a family, narrow to a single face.
-            if !candidates.is_empty() {
-                if let Some(index) = self.find_best_match(&candidates) {
-                    let candidate = candidates[index];
-                    add_face(candidate)?;
-                }
-                candidates.clear();
-            }
-        }
-
-        Ok(())
-    }
-
-    // https://www.w3.org/TR/2018/REC-css-fonts-3-20180920/#font-style-matching
-    // Based on https://github.com/RazrFalcon/fontdb, itself based on https://github.com/servo/font-kit
-    #[inline(never)]
-    fn find_best_match(&self, candidates: &[&FaceInfo]) -> Option<usize> {
-        debug_assert!(!candidates.is_empty());
-
-        // Step 4.
-        let mut matching_set: Vec<usize> = (0..candidates.len()).collect();
-
-        // Step 4a (`font-stretch`).
-        let matches = matching_set
-            .iter()
-            .any(|&index| candidates[index].stretch == self.stretch);
-        let matching_stretch = if matches {
-            // Exact match.
-            self.stretch
-        } else if self.stretch <= Stretch::Normal {
-            // Closest stretch, first checking narrower values and then wider values.
-            let stretch = matching_set
-                .iter()
-                .filter(|&&index| candidates[index].stretch < self.stretch)
-                .min_by_key(|&&index| {
-                    self.stretch.to_number() - candidates[index].stretch.to_number()
-                });
-
-            match stretch {
-                Some(&matching_index) => candidates[matching_index].stretch,
-                None => {
-                    let matching_index = *matching_set.iter().min_by_key(|&&index| {
-                        candidates[index].stretch.to_number() - self.stretch.to_number()
-                    })?;
-
-                    candidates[matching_index].stretch
-                }
-            }
+        let mut query = resolver.collection.query(&mut resolver.cache);
+        if self.families.is_empty() {
+            query.set_families([
+                GenericFamily::SystemUi,
+                GenericFamily::UiSansSerif,
+                GenericFamily::SansSerif,
+            ]);
         } else {
-            // Closest stretch, first checking wider values and then narrower values.
-            let stretch = matching_set
-                .iter()
-                .filter(|&&index| candidates[index].stretch > self.stretch)
-                .min_by_key(|&&index| {
-                    candidates[index].stretch.to_number() - self.stretch.to_number()
-                });
+            query.set_families(self.families.iter().map(|f| &**f));
+        }
+        query.set_attributes(Attributes {
+            width: FontWidth::NORMAL,
+            style: match self.style {
+                Style::Normal => FontStyle::Normal,
+                Style::Italic => FontStyle::Italic,
+                Style::Oblique => FontStyle::Oblique(None),
+            },
+            weight: FontWeight::new(self.weight.0.cast()),
+        });
 
-            match stretch {
-                Some(&matching_index) => candidates[matching_index].stretch,
-                None => {
-                    let matching_index = *matching_set.iter().min_by_key(|&&index| {
-                        self.stretch.to_number() - candidates[index].stretch.to_number()
-                    })?;
-
-                    candidates[matching_index].stretch
-                }
+        let mut result = Ok(());
+        query.matches_with(|face| match add_face(face) {
+            Ok(status) => status,
+            Err(e) => {
+                result = Err(e);
+                QueryStatus::Stop
             }
-        };
-        matching_set.retain(|&index| candidates[index].stretch == matching_stretch);
-
-        // Step 4b (`font-style`).
-        let style_preference = match self.style {
-            Style::Italic => [Style::Italic, Style::Oblique, Style::Normal],
-            Style::Oblique => [Style::Oblique, Style::Italic, Style::Normal],
-            Style::Normal => [Style::Normal, Style::Oblique, Style::Italic],
-        };
-        let matching_style = *style_preference.iter().find(|&query_style| {
-            matching_set
-                .iter()
-                .any(|&index| candidates[index].style == *query_style)
-        })?;
-
-        matching_set.retain(|&index| candidates[index].style == matching_style);
-
-        // Step 4c (`font-weight`).
-        //
-        // The spec doesn't say what to do if the weight is between 400 and 500 exclusive, so we
-        // just use 450 as the cutoff.
-        let weight = self.weight.0;
-        let matches = (400..450).contains(&weight)
-            && matching_set
-                .iter()
-                .any(|&index| candidates[index].weight.0 == 500);
-
-        let matching_weight = if matches {
-            // Check 500 first.
-            Weight::MEDIUM
-        } else if (450..=500).contains(&weight)
-            && matching_set
-                .iter()
-                .any(|&index| candidates[index].weight.0 == 400)
-        {
-            // Check 400 first.
-            Weight::NORMAL
-        } else if weight <= 500 {
-            // Closest weight, first checking thinner values and then fatter ones.
-            let idx = matching_set
-                .iter()
-                .filter(|&&index| candidates[index].weight.0 <= weight)
-                .min_by_key(|&&index| weight - candidates[index].weight.0);
-
-            match idx {
-                Some(&matching_index) => candidates[matching_index].weight,
-                None => {
-                    let matching_index = *matching_set
-                        .iter()
-                        .min_by_key(|&&index| candidates[index].weight.0 - weight)?;
-                    candidates[matching_index].weight
-                }
-            }
-        } else {
-            // Closest weight, first checking fatter values and then thinner ones.
-            let idx = matching_set
-                .iter()
-                .filter(|&&index| candidates[index].weight.0 >= weight)
-                .min_by_key(|&&index| candidates[index].weight.0 - weight);
-
-            match idx {
-                Some(&matching_index) => candidates[matching_index].weight,
-                None => {
-                    let matching_index = *matching_set
-                        .iter()
-                        .min_by_key(|&&index| weight - candidates[index].weight.0)?;
-                    candidates[matching_index].weight
-                }
-            }
-        };
-        matching_set.retain(|&index| candidates[index].weight == matching_weight);
-
-        // Ignore step 4d (`font-size`).
-
-        // Return the result.
-        matching_set.into_iter().next()
-    }
-}
-
-struct DisplayFaceInfo<'a>(&'a FaceInfo);
-impl<'a> fmt::Display for DisplayFaceInfo<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        let family = &self.0.families.first().unwrap().0;
-        let path = match &self.0.source {
-            Source::Binary(_) => None,
-            Source::File(path) => Some(path.display()),
-            Source::SharedFile(path, _) => Some(path.display()),
-        };
-        write!(
-            f,
-            "family=\"{}\", source={:?},{}",
-            family, path, self.0.index
-        )
+        });
+        result
     }
 }
 
