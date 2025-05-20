@@ -19,8 +19,6 @@ pub(crate) use ttf_parser::Face;
 /// Font loading errors
 #[derive(Error, Debug)]
 enum FontError {
-    #[error("no matching font found")]
-    NotFound,
     #[error("font load error")]
     TtfParser(#[from] ttf_parser::FaceParsingError),
     #[cfg(feature = "ab_glyph")]
@@ -280,8 +278,6 @@ impl FontLibrary {
 
     /// Get the first face for a font
     ///
-    /// Assumes that `font_id` is valid; if not the method will panic.
-    ///
     /// Each font identifier has at least one font face. This resolves the first
     /// (default) one.
     pub fn first_face_for(&self, font_id: FontId) -> Result<FaceId, InvalidFontId> {
@@ -447,7 +443,8 @@ impl FontLibrary {
         }
 
         if faces.is_empty() {
-            return Err(Box::new(FontError::NotFound));
+            log::warn!("select_font: no match for {selector:?}");
+            faces.push(self.first_face_for(FontId::default()).unwrap());
         }
         let font = self.fonts.write().unwrap().push(faces, sel_hash);
         Ok(font)
