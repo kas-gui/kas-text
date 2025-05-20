@@ -398,6 +398,7 @@ impl FontLibrary {
         let mut faces = Vec::new();
         let mut families = Vec::new();
         let mut resolver = self.resolver.lock().unwrap();
+        let mut face_list = self.faces.write().unwrap();
 
         selector.select(&mut resolver, |query_font| {
             if log::log_enabled!(log::Level::Debug) {
@@ -414,23 +415,18 @@ impl FontLibrary {
                 hasher.finish()
             };
 
-            // 1st lock: early exit if we already have this font
-            let lock = self.faces.read().unwrap();
-            for (h, id) in lock.source_hash.iter().cloned() {
+            for (h, id) in face_list.source_hash.iter().cloned() {
                 if h == source_hash {
-                    let face = &lock.faces[id.get()];
+                    let face = &face_list.faces[id.get()];
                     if face.blob.id() == query_font.blob.id() && face.index == query_font.index {
                         faces.push(id);
                         return Ok(QueryStatus::Continue);
                     }
                 }
             }
-            drop(lock);
 
-            // 2nd lock: insert into font list
             let store = FaceStore::new(query_font.blob.clone(), query_font.index)?;
-            let mut lock = self.faces.write().unwrap();
-            let id = lock.push(Box::new(store), source_hash);
+            let id = face_list.push(Box::new(store), source_hash);
 
             faces.push(id);
             Ok(QueryStatus::Continue)
