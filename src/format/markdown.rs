@@ -7,7 +7,7 @@
 
 use super::{EditableText, FontToken, FormattableText};
 use crate::conv::to_u32;
-use crate::fonts::{self, FontId, FontSelector, Style, Weight};
+use crate::fonts::{self, FontId, FontSelector, GenericFamily, Style, Weight};
 use crate::{Effect, EffectFlags};
 use pulldown_cmark::{Event, HeadingLevel, Tag, TagEnd};
 use std::fmt::Write;
@@ -220,7 +220,11 @@ fn parse(input: &str) -> Result<Markdown, Error> {
                 item.start = to_u32(text.len());
 
                 let mut item2 = item.clone();
-                item2.sel.set_families(vec!["monospace".into()]);
+                // NOTE: we shouldn't need to specify both of these but for now
+                // the former does not imply the latter (see parley#323).
+                item2
+                    .sel
+                    .set_families([GenericFamily::UiMonospace, GenericFamily::Monospace]);
                 set_last(&item2);
 
                 text.push_str(&part);
@@ -326,7 +330,7 @@ impl Fmt {
 struct StackItem {
     list: Option<u64>,
     start: u32,
-    sel: FontSelector<'static>,
+    sel: FontSelector,
     rel_size: f32,
     flags: EffectFlags,
 }
@@ -380,7 +384,11 @@ impl StackItem {
             Tag::CodeBlock(_) => {
                 state.start_block(text);
                 self.start = to_u32(text.len());
-                with_clone(self, |item| item.sel.set_families(vec!["monospace".into()]))
+                with_clone(self, |item| {
+                    // NOTE: as above, we shouldn't need to specify both of these:
+                    item.sel
+                        .set_families([GenericFamily::UiMonospace, GenericFamily::Monospace])
+                })
                 // TODO: within a code block, the last \n should be suppressed?
             }
             Tag::HtmlBlock => return Err(Error::NotSupported("embedded HTML")),

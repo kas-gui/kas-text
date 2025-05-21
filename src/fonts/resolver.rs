@@ -11,20 +11,12 @@ use easy_cast::Cast;
 use fontdb::Database;
 pub use fontdb::{Stretch, Style, Weight};
 use fontique::{
-    Attributes, Collection, FamilyId, FontStyle, FontWeight, FontWidth, GenericFamily, QueryFont,
-    QueryStatus, SourceCache,
+    Attributes, Collection, FamilyId, FontStyle, FontWeight, FontWidth, GenericFamily, QueryFamily,
+    QueryFont, QueryStatus, SourceCache,
 };
 use log::{debug, info};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-use std::borrow::Cow;
-
-fn to_uppercase<'a>(c: Cow<'a, str>) -> Cow<'a, str> {
-    match c {
-        Cow::Borrowed(b) if !b.chars().any(|c| c.is_lowercase()) => Cow::Borrowed(b),
-        c => Cow::Owned(c.to_uppercase()),
-    }
-}
 
 /// A tool to resolve a single font face given a family and style
 pub struct Resolver {
@@ -80,15 +72,43 @@ impl Resolver {
     }
 }
 
+/// Family descriptor
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub enum FamilySelector {
+    /// A family named with a `String`
+    Named(String),
+    // /// A family named with a `&str`
+    // NameRef(&'static str),
+    /// A generic family
+    #[cfg_attr(feature = "serde", serde(with = "remote::GenericFamily"))]
+    Generic(GenericFamily),
+}
+
+impl From<GenericFamily> for FamilySelector {
+    fn from(gf: GenericFamily) -> Self {
+        FamilySelector::Generic(gf)
+    }
+}
+
+impl<'a> From<&'a FamilySelector> for QueryFamily<'a> {
+    fn from(family: &'a FamilySelector) -> Self {
+        match family {
+            FamilySelector::Named(name) => QueryFamily::Named(&name),
+            // FamilySelector::NameRef(name) => QueryFamily::Named(name),
+            FamilySelector::Generic(gf) => QueryFamily::Generic(*gf),
+        }
+    }
+}
+
 /// A font face selection tool
 ///
 /// This tool selects a font according to the given criteria from available
 /// system fonts. Selection criteria are based on CSS.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct FontSelector<'a> {
-    // contract: all entries are upper case
-    families: Vec<Cow<'a, str>>,
+pub struct FontSelector {
+    families: Vec<FamilySelector>,
     #[cfg_attr(feature = "serde", serde(default, with = "remote::Weight"))]
     weight: Weight,
     #[cfg_attr(feature = "serde", serde(default, with = "remote::Stretch"))]
@@ -97,7 +117,7 @@ pub struct FontSelector<'a> {
     style: Style,
 }
 
-impl<'a> FontSelector<'a> {
+impl FontSelector {
     /// Synonym for default
     ///
     /// Without further parametrization, this will select a generic sans-serif
@@ -114,14 +134,8 @@ impl<'a> FontSelector<'a> {
     /// currently supported.
     ///
     /// If an empty vector is passed, the default "sans-serif" font is used.
-    #[inline]
-    pub fn set_families(&mut self, mut names: Vec<Cow<'a, str>>) {
-        for x in &mut names {
-            let mut y = Default::default();
-            std::mem::swap(x, &mut y);
-            *x = to_uppercase(y);
-        }
-        self.families = names;
+    pub fn set_families(&mut self, families: impl IntoIterator<Item: Into<FamilySelector>>) {
+        self.families = families.into_iter().map(|item| item.into()).collect();
     }
 
     /// Set style
@@ -163,7 +177,7 @@ impl<'a> FontSelector<'a> {
                 GenericFamily::SansSerif,
             ]);
         } else {
-            query.set_families(self.families.iter().map(|f| &**f));
+            query.set_families(self.families.iter());
         }
         query.set_attributes(Attributes {
             width: FontWidth::NORMAL,
@@ -219,5 +233,24 @@ mod remote {
         Italic,
         /// A typically-sloped version of the regular face.
         Oblique,
+    }
+
+    #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
+    #[repr(u8)]
+    #[serde(remote = "fontique::GenericFamily")]
+    pub enum GenericFamily {
+        Serif = 0,
+        SansSerif = 1,
+        Monospace = 2,
+        Cursive = 3,
+        Fantasy = 4,
+        SystemUi = 5,
+        UiSerif = 6,
+        UiSansSerif = 7,
+        UiMonospace = 8,
+        UiRounded = 9,
+        Emoji = 10,
+        Math = 11,
+        FangSong = 12,
     }
 }
