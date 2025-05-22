@@ -66,13 +66,15 @@
 
 use crate::GlyphId;
 
+mod attributes;
 mod face;
-mod families;
 mod library;
 mod resolver;
 
+pub use attributes::{FontStyle, FontWeight, FontWidth};
 pub use face::{FaceRef, ScaledFaceRef};
-pub use library::{clone_db, db, library, FaceId, FaceStore, FontId, FontLibrary, InvalidFontId};
+pub use fontique::GenericFamily;
+pub use library::{library, FaceId, FaceStore, FontId, FontLibrary, InvalidFontId};
 pub use resolver::*;
 
 impl From<GlyphId> for ttf_parser::GlyphId {
