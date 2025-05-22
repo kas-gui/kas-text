@@ -7,12 +7,11 @@
 //!
 //! Many items are copied from font-kit to avoid any public dependency.
 
-use easy_cast::Cast;
+use super::{FontStyle, FontWeight, FontWidth};
 use fontdb::Database;
-pub use fontdb::{Stretch, Style, Weight};
 use fontique::{
-    Attributes, Collection, FamilyId, FontStyle, FontWeight, FontWidth, GenericFamily, QueryFamily,
-    QueryFont, QueryStatus, SourceCache,
+    Attributes, Collection, FamilyId, GenericFamily, QueryFamily, QueryFont, QueryStatus,
+    SourceCache,
 };
 use log::{debug, info};
 #[cfg(feature = "serde")]
@@ -109,12 +108,12 @@ impl<'a> From<&'a FamilySelector> for QueryFamily<'a> {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct FontSelector {
     families: Vec<FamilySelector>,
-    #[cfg_attr(feature = "serde", serde(default, with = "remote::Weight"))]
-    weight: Weight,
-    #[cfg_attr(feature = "serde", serde(default, with = "remote::Stretch"))]
-    stretch: Stretch,
-    #[cfg_attr(feature = "serde", serde(default, with = "remote::Style"))]
-    style: Style,
+    #[cfg_attr(feature = "serde", serde(default))]
+    weight: FontWeight,
+    #[cfg_attr(feature = "serde", serde(default))]
+    width: FontWidth,
+    #[cfg_attr(feature = "serde", serde(default))]
+    style: FontStyle,
 }
 
 impl FontSelector {
@@ -140,20 +139,20 @@ impl FontSelector {
 
     /// Set style
     #[inline]
-    pub fn set_style(&mut self, style: Style) {
+    pub fn set_style(&mut self, style: FontStyle) {
         self.style = style;
     }
 
     /// Set weight
     #[inline]
-    pub fn set_weight(&mut self, weight: Weight) {
+    pub fn set_weight(&mut self, weight: FontWeight) {
         self.weight = weight;
     }
 
-    /// Set stretch
+    /// Set width (stretch)
     #[inline]
-    pub fn set_stretch(&mut self, stretch: Stretch) {
-        self.stretch = stretch;
+    pub fn set_width(&mut self, width: FontWidth) {
+        self.width = width;
     }
 
     /// Resolve font faces for each matching font
@@ -180,13 +179,9 @@ impl FontSelector {
             query.set_families(self.families.iter());
         }
         query.set_attributes(Attributes {
-            width: FontWidth::NORMAL,
-            style: match self.style {
-                Style::Normal => FontStyle::Normal,
-                Style::Italic => FontStyle::Italic,
-                Style::Oblique => FontStyle::Oblique(None),
-            },
-            weight: FontWeight::new(self.weight.0.cast()),
+            width: self.width.into(),
+            style: self.style.into(),
+            weight: self.weight.into(),
         });
 
         let mut result = Ok(());
@@ -205,35 +200,6 @@ impl FontSelector {
 #[cfg(feature = "serde")]
 mod remote {
     use serde::{Deserialize, Serialize};
-
-    #[derive(Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Debug, Hash, Serialize, Deserialize)]
-    #[serde(remote = "fontdb::Weight")]
-    pub struct Weight(pub u16);
-
-    #[derive(Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Debug, Hash, Serialize, Deserialize)]
-    #[serde(remote = "fontdb::Stretch")]
-    pub enum Stretch {
-        UltraCondensed,
-        ExtraCondensed,
-        Condensed,
-        SemiCondensed,
-        Normal,
-        SemiExpanded,
-        Expanded,
-        ExtraExpanded,
-        UltraExpanded,
-    }
-
-    #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, Serialize, Deserialize)]
-    #[serde(remote = "fontdb::Style")]
-    pub enum Style {
-        /// A face that is neither italic not obliqued.
-        Normal,
-        /// A form that is generally cursive in nature.
-        Italic,
-        /// A typically-sloped version of the regular face.
-        Oblique,
-    }
 
     #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
     #[repr(u8)]

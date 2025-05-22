@@ -7,7 +7,7 @@
 
 use super::{EditableText, FontToken, FormattableText};
 use crate::conv::to_u32;
-use crate::fonts::{self, FontId, FontSelector, GenericFamily, Style, Weight};
+use crate::fonts::{self, FontId, FontSelector, FontStyle, FontWeight, GenericFamily};
 use crate::{Effect, EffectFlags};
 use pulldown_cmark::{Event, HeadingLevel, Tag, TagEnd};
 use std::fmt::Write;
@@ -410,8 +410,8 @@ impl StackItem {
                 }
                 None
             }
-            Tag::Emphasis => with_clone(self, |item| item.sel.set_style(Style::Italic)),
-            Tag::Strong => with_clone(self, |item| item.sel.set_weight(Weight::BOLD)),
+            Tag::Emphasis => with_clone(self, |item| item.sel.set_style(FontStyle::Italic)),
+            Tag::Strong => with_clone(self, |item| item.sel.set_weight(FontWeight::BOLD)),
             Tag::Strikethrough => with_clone(self, |item| {
                 item.flags.set(EffectFlags::STRIKETHROUGH, true)
             }),
