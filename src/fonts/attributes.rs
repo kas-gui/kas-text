@@ -10,6 +10,8 @@
 
 use core::fmt;
 use easy_cast::Cast;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
 /// Visual width of a font-- a relative change from the normal aspect
 /// ratio, typically in the 50% - 200% range.
@@ -33,6 +35,7 @@ use easy_cast::Cast;
 /// [`font-width`]: https://www.w3.org/TR/css-fonts-4/#font-width-prop
 /// [`font-stretch`]: https://www.w3.org/TR/css-fonts-4/#font-stretch-prop
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct FontWidth(u16);
 
 impl FontWidth {
@@ -199,6 +202,13 @@ impl Default for FontWidth {
     }
 }
 
+impl From<FontWidth> for fontique::FontWidth {
+    #[inline]
+    fn from(width: FontWidth) -> Self {
+        fontique::FontWidth::from_ratio(width.ratio())
+    }
+}
+
 /// Visual weight class of a font, typically on a scale from 1 to 1000.
 ///
 /// The default value is [`FontWeight::NORMAL`] or `400`.
@@ -213,6 +223,7 @@ impl Default for FontWidth {
 ///
 /// [`font-weight`]: https://www.w3.org/TR/css-fonts-4/#font-weight-prop
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct FontWeight(u16);
 
 impl FontWeight {
@@ -306,6 +317,13 @@ impl fmt::Display for FontWeight {
     }
 }
 
+impl From<FontWeight> for fontique::FontWeight {
+    #[inline]
+    fn from(weight: FontWeight) -> Self {
+        fontique::FontWeight::new(weight.value().cast())
+    }
+}
+
 /// Visual style or 'slope' of a font.
 ///
 /// The default value is [`FontStyle::Normal`].
@@ -321,6 +339,7 @@ impl fmt::Display for FontWeight {
 ///
 /// [`font-style`]: https://www.w3.org/TR/css-fonts-4/#font-style-prop
 #[derive(Copy, Clone, PartialEq, Eq, Default, Debug, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum FontStyle {
     /// An upright or "roman" style.
     #[default]
@@ -409,5 +428,19 @@ impl fmt::Display for FontStyle {
             }
         };
         write!(f, "{value}")
+    }
+}
+
+impl From<FontStyle> for fontique::FontStyle {
+    #[inline]
+    fn from(style: FontStyle) -> Self {
+        match style {
+            FontStyle::Normal => fontique::FontStyle::Normal,
+            FontStyle::Italic => fontique::FontStyle::Italic,
+            FontStyle::Oblique(None) => fontique::FontStyle::Oblique(None),
+            FontStyle::Oblique(slant) => {
+                fontique::FontStyle::Oblique(Some(FontStyle::oblique_degrees(slant)))
+            }
+        }
     }
 }
