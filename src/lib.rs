@@ -15,8 +15,6 @@
 
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
 
-pub extern crate fontdb;
-
 mod env;
 pub use env::*;
 

@@ -44,7 +44,6 @@ swash = ["dep:swash"]
 cfg-if = "1.0.0"
 easy-cast = "0.5.0"
 bitflags = "2.4.2"
-fontdb = "0.21.0"
 ttf-parser = "0.24.1"
 smallvec = "1.6.1"
 xi-unicode = "0.3.0"

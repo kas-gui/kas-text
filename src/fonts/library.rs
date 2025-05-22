@@ -9,10 +9,9 @@
 
 use super::{FaceRef, FontSelector, Resolver};
 use crate::conv::{to_u32, to_usize};
-use fontdb::Database;
 use fontique::{Blob, QueryStatus};
 use std::collections::hash_map::{Entry, HashMap};
-use std::sync::{Arc, LazyLock, Mutex, MutexGuard, OnceLock, RwLock};
+use std::sync::{LazyLock, Mutex, MutexGuard, RwLock};
 use thiserror::Error;
 pub(crate) use ttf_parser::Face;
 
@@ -244,8 +243,7 @@ pub struct FontLibrary {
 impl FontLibrary {
     /// Initialize
     ///
-    /// This method constructs the [`fontdb::Database`], loads fonts
-    /// and resolves the default font (i.e. `FontId(0)`).
+    /// This method resolves the default font (i.e. `FontId(0)`).
     ///
     /// This method *must* be called before any other font selection method,
     /// and before
@@ -253,17 +251,7 @@ impl FontLibrary {
     /// It is safe (but ineffective) to call multiple times.
     #[inline]
     pub fn init(&self) -> Result<(), Box<dyn std::error::Error>> {
-        if DB.get().is_some() {
-            return Ok(());
-        }
-
-        let mut db = Arc::new(Database::new());
-        let dbm = Arc::get_mut(&mut db).unwrap();
-        dbm.load_system_fonts();
-
-        self.resolver.lock().unwrap().init(dbm);
-
-        if let Ok(()) = DB.set(db) {
+        if self.fonts.read().unwrap().fonts.is_empty() {
             let id = self.select_font(&FontSelector::default())?;
             debug_assert!(id == FontId::default());
         }
@@ -481,22 +469,6 @@ static LIBRARY: LazyLock<FontLibrary> = LazyLock::new(|| FontLibrary {
 /// Access the [`FontLibrary`] singleton
 pub fn library() -> &'static FontLibrary {
     &LIBRARY
-}
-
-static DB: OnceLock<Arc<Database>> = OnceLock::new();
-
-/// Access the font database
-///
-/// Returns `None` when called before [`FontLibrary::init`].
-pub fn db() -> Option<&'static Database> {
-    DB.get().map(|arc| &**arc)
-}
-
-/// Get owning access the font database
-///
-/// Returns `None` when called before [`FontLibrary::init`].
-pub fn clone_db() -> Option<Arc<Database>> {
-    DB.get().cloned()
 }
 
 fn calculate_hash<T: std::hash::Hash>(t: &T) -> u64 {

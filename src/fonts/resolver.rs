@@ -8,12 +8,11 @@
 //! Many items are copied from font-kit to avoid any public dependency.
 
 use super::{FontStyle, FontWeight, FontWidth};
-use fontdb::Database;
 use fontique::{
     Attributes, Collection, FamilyId, GenericFamily, QueryFamily, QueryFont, QueryStatus,
     SourceCache,
 };
-use log::{debug, info};
+use log::debug;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -40,34 +39,6 @@ impl Resolver {
     pub fn font_family_from_generic(&mut self, generic: GenericFamily) -> Option<&str> {
         let id = self.collection.generic_families(generic).next()?;
         self.collection.family_name(id)
-    }
-
-    /// Init db and self
-    pub(crate) fn init(&mut self, db: &mut Database) {
-        info!("Found {} fonts", db.len());
-
-        // Set family names in DB (only used in case the DB is used
-        // externally, e.g. to render an SVG with resvg).
-        if let Some(name) = self.font_family_from_generic(GenericFamily::Serif) {
-            info!("Default serif font: {name}");
-            db.set_serif_family(name);
-        }
-        if let Some(name) = self.font_family_from_generic(GenericFamily::SansSerif) {
-            info!("Default sans-serif font: {name}");
-            db.set_sans_serif_family(name);
-        }
-        if let Some(name) = self.font_family_from_generic(GenericFamily::Monospace) {
-            info!("Default monospace font: {name}");
-            db.set_monospace_family(name);
-        }
-        if let Some(name) = self.font_family_from_generic(GenericFamily::Cursive) {
-            info!("Default cursive font: {name}");
-            db.set_cursive_family(name);
-        }
-        if let Some(name) = self.font_family_from_generic(GenericFamily::Fantasy) {
-            info!("Default fantasy font: {name}");
-            db.set_fantasy_family(name);
-        }
     }
 }
 
