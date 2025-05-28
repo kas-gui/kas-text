@@ -11,9 +11,10 @@ use super::TextDisplay;
 use crate::conv::{to_u32, to_usize};
 use crate::fonts::{self, FontId, InvalidFontId};
 use crate::format::FormattableText;
-use crate::{shaper, Direction, Range};
+use crate::{shaper, Direction};
+use swash::text::cluster::Boundary;
+use swash::text::LineBreak as LB;
 use unicode_bidi::{BidiClass, BidiInfo, LTR_LEVEL, RTL_LEVEL};
-use xi_unicode::LineBreakIterator;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum RunSpecial {
@@ -130,9 +131,8 @@ impl TextDisplay {
         let mut start = 0;
         let mut breaks = Default::default();
 
-        // Iterates over `(pos, hard)` tuples:
-        let mut breaks_iter = LineBreakIterator::new(text);
-        let mut next_break = breaks_iter.next().unwrap_or((0, false));
+        let mut analyzer = swash::text::analyze(text.chars());
+        let mut last_props = None;
 
         let mut last_is_control = false;
         let mut last_is_htab = false;
@@ -147,13 +147,13 @@ impl TextDisplay {
             let is_htab = c == '\t';
             let control_break = is_htab || (last_is_control && !is_control);
 
-            // Is wrapping allowed at this position?
-            let is_break = next_break.0 == pos;
+            let (props, boundary) = analyzer.next().unwrap();
+            last_props = Some(props);
+
             // Forcibly end the line?
-            let hard_break = is_break && next_break.1;
-            if is_break {
-                next_break = breaks_iter.next().unwrap_or((0, false));
-            }
+            let hard_break = boundary == Boundary::Mandatory;
+            // Is wrapping allowed at this position?
+            let is_break = hard_break || boundary == Boundary::Line;
 
             // Force end of current run?
             let bidi_break = levels[pos] != input.level;
@@ -210,10 +210,13 @@ impl TextDisplay {
             input.dpem = dpem;
         }
 
-        // The LineBreakIterator finishes with a break (unless the string is empty).
-        // This is a hard break when the string finishes with an explicit line-break.
-        debug_assert_eq!(next_break.0, text.len());
-        let hard_break = next_break.1;
+        debug_assert!(analyzer.next().is_none());
+        let hard_break = last_props
+            .map(|props| match props.line_break() {
+                LB::BK | LB::CR | LB::LF | LB::NL => true,
+                _ => false,
+            })
+            .unwrap_or(false);
 
         // Conclude: add last run. This may be empty, but we want it anyway.
         if !last_is_control {
@@ -229,7 +232,7 @@ impl TextDisplay {
 
         // Following a hard break we have an implied empty line.
         if hard_break {
-            let range = Range::from(text.len()..text.len());
+            let range = (text.len()..text.len()).into();
             input.level = default_para_level.unwrap_or(LTR_LEVEL);
             breaks = Default::default();
             self.runs
