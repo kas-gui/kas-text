@@ -26,7 +26,6 @@ enum FontError {
     #[cfg(feature = "fontdue")]
     #[error("font load error")]
     StrError(&'static str),
-    #[cfg(feature = "swash")]
     #[error("font load error")]
     Swash,
 }
@@ -97,7 +96,6 @@ pub struct FaceStore {
     ab_glyph: ab_glyph::FontRef<'static>,
     #[cfg(feature = "fontdue")]
     fontdue: fontdue::Font,
-    #[cfg(feature = "swash")]
     swash: (u32, swash::CacheKey), // (offset, key)
 }
 
@@ -134,7 +132,6 @@ impl FaceStore {
                 };
                 fontdue::Font::from_bytes(data, settings)?
             },
-            #[cfg(feature = "swash")]
             swash: {
                 use easy_cast::Cast;
                 let f = swash::FontRef::from_index(data, index.cast()).ok_or(FontError::Swash)?;
@@ -184,7 +181,6 @@ impl FaceStore {
     }
 
     /// Get a swash `FontRef`
-    #[cfg(feature = "swash")]
     pub fn swash(&self) -> swash::FontRef<'_> {
         swash::FontRef {
             data: self.face.raw_face().data,
