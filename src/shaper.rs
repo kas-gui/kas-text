@@ -22,7 +22,7 @@ use crate::display::RunSpecial;
 use crate::fonts::{self, FaceId};
 use crate::{Range, Vec2};
 use fontique::Script;
-use smallvec::SmallVec;
+use tinyvec::TinyVec;
 use unicode_bidi::Level;
 
 /// A type-safe wrapper for glyph ID.
@@ -41,7 +41,7 @@ pub struct Glyph {
     pub position: Vec2,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct GlyphBreak {
     /// Index of char in source text
     pub index: u32,
@@ -91,6 +91,7 @@ pub(crate) struct GlyphRun {
     /// Font size (pixels/em)
     pub dpem: f32,
     pub dpu: DPU,
+
     /// Font face identifier
     pub face_id: FaceId,
     /// Tab or no-break property
@@ -106,7 +107,7 @@ pub(crate) struct GlyphRun {
     ///
     /// Note: it would be equivalent to use a separate `Run` for each sub-range
     /// in the text instead of tracking breaks via this field.
-    pub breaks: SmallVec<[GlyphBreak; 4]>,
+    pub breaks: TinyVec<[GlyphBreak; 4]>,
 
     /// End position, excluding whitespace
     ///
@@ -236,7 +237,7 @@ pub(crate) fn shape(
     input: Input,
     range: Range, // range in text
     // All soft-break locations within this run, excluding the end
-    mut breaks: SmallVec<[GlyphBreak; 4]>,
+    mut breaks: TinyVec<[GlyphBreak; 4]>,
     special: RunSpecial,
 ) -> GlyphRun {
     /*

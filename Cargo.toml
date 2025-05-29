@@ -47,6 +47,7 @@ easy-cast = "0.5.0"
 bitflags = "2.4.2"
 ttf-parser = "0.24.1"
 smallvec = "1.6.1"
+tinyvec = { version = "1.9.0", features = ["alloc"] }
 unicode-bidi = "0.3.4"
 unicode-bidi-mirroring = "0.3.0"
 thiserror = "1.0.20"

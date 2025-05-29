@@ -10,6 +10,7 @@ use crate::conv::to_usize;
 use crate::Text;
 use crate::{shaper, Direction, Vec2};
 use smallvec::SmallVec;
+use tinyvec::TinyVec;
 
 mod glyph_pos;
 mod text_runs;
@@ -109,9 +110,9 @@ pub struct TextDisplay {
     /// Contiguous runs, in logical order
     ///
     /// Within a line, runs may not be in visual order due to BIDI reversals.
-    wrapped_runs: SmallVec<[RunPart; 1]>,
+    wrapped_runs: TinyVec<[RunPart; 1]>,
     /// Visual (wrapped) lines, in visual and logical order
-    lines: SmallVec<[Line; 1]>,
+    lines: TinyVec<[Line; 1]>,
     #[cfg(feature = "num_glyphs")]
     num_glyphs: u32,
     l_bound: f32,
@@ -122,11 +123,14 @@ pub struct TextDisplay {
 #[test]
 fn size_of_elts() {
     use std::mem::size_of;
-    assert_eq!(size_of::<SmallVec<[u8; 0]>>(), 24);
-    assert_eq!(size_of::<shaper::GlyphRun>(), 128);
+    assert_eq!(size_of::<TinyVec<[u8; 0]>>(), 24);
+    assert_eq!(size_of::<shaper::GlyphRun>(), 120);
     assert_eq!(size_of::<RunPart>(), 24);
     assert_eq!(size_of::<Line>(), 24);
-    assert_eq!(size_of::<TextDisplay>(), 240);
+    #[cfg(not(feature = "num_glyphs"))]
+    assert_eq!(size_of::<TextDisplay>(), 208);
+    #[cfg(feature = "num_glyphs")]
+    assert_eq!(size_of::<TextDisplay>(), 216);
 }
 
 impl Default for TextDisplay {
