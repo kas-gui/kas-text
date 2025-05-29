@@ -11,7 +11,7 @@ use super::TextDisplay;
 use crate::conv::{to_u32, to_usize};
 use crate::fonts::{self, FontId, InvalidFontId};
 use crate::format::FormattableText;
-use crate::{shaper, Direction};
+use crate::{script_to_fontique, shaper, Direction};
 use swash::text::cluster::Boundary;
 use swash::text::LineBreak as LB;
 use unicode_bidi::{BidiClass, BidiInfo, LTR_LEVEL, RTL_LEVEL};
@@ -55,6 +55,7 @@ impl TextDisplay {
                 dpem,
                 face_id: run.face_id,
                 level: run.level,
+                script: run.script,
             };
             let mut breaks = Default::default();
             std::mem::swap(&mut breaks, &mut run.breaks);
@@ -126,6 +127,7 @@ impl TextDisplay {
             dpem,
             face_id: fonts.first_face_for(font_id)?,
             level: levels.first().cloned().unwrap_or(LTR_LEVEL),
+            script: UNKNOWN_SCRIPT,
         };
 
         let mut start = 0;
@@ -168,6 +170,10 @@ impl TextDisplay {
                 }
             }
 
+            if input.script == UNKNOWN_SCRIPT && props.script().is_real() {
+                input.script = script_to_fontique(props.script());
+            }
+
             let opt_last_face = if matches!(
                 classes[pos],
                 BidiClass::L | BidiClass::R | BidiClass::AL | BidiClass::EN | BidiClass::AN
@@ -198,6 +204,7 @@ impl TextDisplay {
                 non_control_end = pos;
                 input.level = levels[pos];
                 breaks = Default::default();
+                input.script = UNKNOWN_SCRIPT;
             } else if is_break && !is_control {
                 // We do break runs when hitting control chars, but only when
                 // encountering the next non-control character.
@@ -267,3 +274,15 @@ impl TextDisplay {
         Ok(())
     }
 }
+
+trait ScriptExt {
+    fn is_real(self) -> bool;
+}
+impl ScriptExt for swash::text::Script {
+    fn is_real(self) -> bool {
+        use swash::text::Script::*;
+        !matches!(self, Common | Unknown | Inherited)
+    }
+}
+
+pub(crate) const UNKNOWN_SCRIPT: fontique::Script = fontique::Script(*b"Zzzz");
