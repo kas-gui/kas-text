@@ -126,6 +126,7 @@ fn size_of_elts() {
     assert_eq!(size_of::<shaper::GlyphRun>(), 128);
     assert_eq!(size_of::<RunPart>(), 24);
     assert_eq!(size_of::<Line>(), 24);
+    assert_eq!(size_of::<TextDisplay>(), 240);
 }
 
 impl Default for TextDisplay {
