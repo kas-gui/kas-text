@@ -195,13 +195,9 @@ impl FontSelector {
     /// Resolve font faces for each matching font
     ///
     /// All font faces matching steps 1-4 will be returned through the `add_face` closure.
-    pub(crate) fn select<F>(
-        &self,
-        resolver: &mut Resolver,
-        mut add_face: F,
-    ) -> Result<(), Box<dyn std::error::Error>>
+    pub(crate) fn select<F>(&self, resolver: &mut Resolver, add_face: F)
     where
-        F: FnMut(&QueryFont) -> Result<QueryStatus, Box<dyn std::error::Error>>,
+        F: FnMut(&QueryFont) -> QueryStatus,
     {
         debug!("select(): {self:?}");
 
@@ -217,15 +213,7 @@ impl FontSelector {
             weight: self.weight.into(),
         });
 
-        let mut result = Ok(());
-        query.matches_with(|face| match add_face(face) {
-            Ok(status) => status,
-            Err(e) => {
-                result = Err(e);
-                QueryStatus::Stop
-            }
-        });
-        result
+        query.matches_with(add_face);
     }
 }
 

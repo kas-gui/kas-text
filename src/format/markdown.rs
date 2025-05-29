@@ -315,7 +315,7 @@ impl Fmt {
     fn new(fonts: &fonts::FontLibrary, item: &StackItem) -> Self {
         Fmt {
             start: item.start,
-            font_id: fonts.select_font(&item.sel).unwrap(),
+            font_id: fonts.select_font(&item.sel),
             rel_size: item.rel_size,
             flags: item.flags,
         }

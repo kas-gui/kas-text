@@ -252,7 +252,7 @@ impl FontLibrary {
     #[inline]
     pub fn init(&self) -> Result<(), Box<dyn std::error::Error>> {
         if self.fonts.read().unwrap().fonts.is_empty() {
-            let id = self.select_font(&FontSelector::default())?;
+            let id = self.select_font(&FontSelector::default());
             debug_assert!(id == FontId::default());
         }
 
@@ -370,15 +370,12 @@ impl FontLibrary {
     ///
     /// This method uses internal caching to enable fast look-ups of existing
     /// (loaded) fonts. Resolving new fonts may be slower.
-    pub fn select_font(
-        &self,
-        selector: &FontSelector,
-    ) -> Result<FontId, Box<dyn std::error::Error>> {
+    pub fn select_font(&self, selector: &FontSelector) -> FontId {
         let sel_hash = calculate_hash(&selector);
         let fonts = self.fonts.read().unwrap();
         for (h, id) in &fonts.sel_hash {
             if *h == sel_hash {
-                return Ok(*id);
+                return *id;
             }
         }
         drop(fonts);
@@ -408,17 +405,23 @@ impl FontLibrary {
                     let face = &face_list.faces[id.get()];
                     if face.blob.id() == query_font.blob.id() && face.index == query_font.index {
                         faces.push(id);
-                        return Ok(QueryStatus::Continue);
+                        return QueryStatus::Continue;
                     }
                 }
             }
 
-            let store = FaceStore::new(query_font.blob.clone(), query_font.index)?;
-            let id = face_list.push(Box::new(store), source_hash);
+            match FaceStore::new(query_font.blob.clone(), query_font.index) {
+                Ok(store) => {
+                    let id = face_list.push(Box::new(store), source_hash);
+                    faces.push(id);
+                }
+                Err(err) => {
+                    log::error!("Failed to load font: {err}");
+                }
+            }
 
-            faces.push(id);
-            Ok(QueryStatus::Continue)
-        })?;
+            QueryStatus::Continue
+        });
 
         for family in families {
             if let Some(name) = resolver.font_family(family.0) {
@@ -431,7 +434,7 @@ impl FontLibrary {
             faces.push(self.first_face_for(FontId::default()).unwrap());
         }
         let font = self.fonts.write().unwrap().push(faces, sel_hash);
-        Ok(font)
+        font
     }
 }
 
