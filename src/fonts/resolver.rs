@@ -15,11 +15,16 @@ use fontique::{
 use log::debug;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+use std::collections::hash_map::Entry;
+use std::collections::HashMap;
+use std::hash::{BuildHasher, Hash, Hasher};
 
 /// A tool to resolve a single font face given a family and style
 pub struct Resolver {
     collection: Collection,
     cache: SourceCache,
+    /// Cached family selectors:
+    families: HashMap<FamilySelector, FamilySet>,
 }
 
 impl Resolver {
@@ -27,6 +32,7 @@ impl Resolver {
         Resolver {
             collection: Collection::new(Default::default()),
             cache: SourceCache::new(Default::default()),
+            families: HashMap::new(),
         }
     }
 
@@ -40,34 +46,120 @@ impl Resolver {
         let id = self.collection.generic_families(generic).next()?;
         self.collection.family_name(id)
     }
+
+    /// Construct a [`FamilySelector`] for the given `families`
+    pub fn select_families<I, F>(&mut self, families: I) -> FamilySelector
+    where
+        I: IntoIterator<Item = F>,
+        F: Into<FamilyName>,
+    {
+        let set = FamilySet(families.into_iter().map(|f| f.into()).collect());
+        let mut hasher = self.families.hasher().build_hasher();
+        set.hash(&mut hasher);
+        let sel = FamilySelector(hasher.finish() | (1 << 63));
+
+        match self.families.entry(sel) {
+            Entry::Vacant(entry) => {
+                entry.insert(set);
+            }
+            Entry::Occupied(entry) => {
+                // Unlikely but possible case:
+                log::warn!("Resolver::select_families: hash collision for family selector {set:?} and {:?}", entry.get());
+                // TODO: inject a random value into the FamilySet and rehash?
+            }
+        }
+
+        sel
+    }
+
+    /// Resolve families from a [`FamilySelector`]
+    ///
+    /// Returns an empty [`Vec`] on error.
+    pub fn resolve_families(&self, selector: &FamilySelector) -> Vec<FamilyName> {
+        if let Some(gf) = selector.as_generic() {
+            vec![FamilyName::Generic(gf)]
+        } else if let Some(set) = self.families.get(selector) {
+            set.0.clone()
+        } else {
+            vec![]
+        }
+    }
 }
 
-/// Family descriptor
+/// A family name
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub enum FamilySelector {
+pub enum FamilyName {
     /// A family named with a `String`
     Named(String),
-    // /// A family named with a `&str`
-    // NameRef(&'static str),
     /// A generic family
     #[cfg_attr(feature = "serde", serde(with = "remote::GenericFamily"))]
     Generic(GenericFamily),
 }
 
-impl From<GenericFamily> for FamilySelector {
+impl From<GenericFamily> for FamilyName {
     fn from(gf: GenericFamily) -> Self {
-        FamilySelector::Generic(gf)
+        FamilyName::Generic(gf)
     }
 }
 
-impl<'a> From<&'a FamilySelector> for QueryFamily<'a> {
-    fn from(family: &'a FamilySelector) -> Self {
+impl<'a> From<&'a FamilyName> for QueryFamily<'a> {
+    fn from(family: &'a FamilyName) -> Self {
         match family {
-            FamilySelector::Named(name) => QueryFamily::Named(&name),
-            // FamilySelector::NameRef(name) => QueryFamily::Named(name),
-            FamilySelector::Generic(gf) => QueryFamily::Generic(*gf),
+            FamilyName::Named(name) => QueryFamily::Named(&name),
+            FamilyName::Generic(gf) => QueryFamily::Generic(*gf),
         }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct FamilySet(Vec<FamilyName>);
+
+/// A (cached) family selector
+///
+/// This may be constructed directly for some generic families; for other
+/// families use [`Resolver::select_families`].
+///
+/// This is a small, `Copy` type (a newtype over `u64`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct FamilySelector(u64);
+
+impl FamilySelector {
+    /// Use a serif font
+    pub const SERIF: FamilySelector = FamilySelector(0);
+
+    /// Use a sans-serif font
+    pub const SANS_SERIF: FamilySelector = FamilySelector(1);
+
+    /// Use a monospace font
+    pub const MONOSPACE: FamilySelector = FamilySelector(2);
+
+    /// Use a cursive font
+    pub const CURSIVE: FamilySelector = FamilySelector(3);
+
+    /// Use the system UI font
+    pub const SYSTEM_UI: FamilySelector = FamilySelector(5);
+
+    /// Use an emoji font
+    pub const FANG_SONG: FamilySelector = FamilySelector(12);
+
+    fn as_generic(self) -> Option<GenericFamily> {
+        match self.0 {
+            0 => Some(GenericFamily::Serif),
+            1 => Some(GenericFamily::SansSerif),
+            2 => Some(GenericFamily::Monospace),
+            3 => Some(GenericFamily::Cursive),
+            5 => Some(GenericFamily::SystemUi),
+            12 => Some(GenericFamily::FangSong),
+            _ => None,
+        }
+    }
+}
+
+/// Default-constructs to [`FamilySelector::SYSTEM_UI`].
+impl Default for FamilySelector {
+    fn default() -> Self {
+        FamilySelector::SYSTEM_UI
     }
 }
 
@@ -75,16 +167,19 @@ impl<'a> From<&'a FamilySelector> for QueryFamily<'a> {
 ///
 /// This tool selects a font according to the given criteria from available
 /// system fonts. Selection criteria are based on CSS.
-#[derive(Clone, Debug, Default, Eq, PartialEq, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+///
+/// This can be converted [from](From) a [`FamilySelector`], selecting the
+/// default styles.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash)]
 pub struct FontSelector {
-    families: Vec<FamilySelector>,
-    #[cfg_attr(feature = "serde", serde(default))]
-    weight: FontWeight,
-    #[cfg_attr(feature = "serde", serde(default))]
-    width: FontWidth,
-    #[cfg_attr(feature = "serde", serde(default))]
-    style: FontStyle,
+    /// Family selector
+    pub family: FamilySelector,
+    /// Weight
+    pub weight: FontWeight,
+    /// Width
+    pub width: FontWidth,
+    /// Italic / oblique style
+    pub style: FontStyle,
 }
 
 impl FontSelector {
@@ -95,35 +190,6 @@ impl FontSelector {
     #[inline]
     pub fn new() -> Self {
         FontSelector::default()
-    }
-
-    /// Set family name(s)
-    ///
-    /// If multiple names are passed, the first to successfully resolve a font
-    /// is used. Glyph-level fallback (missing glyph substitution) is not
-    /// currently supported.
-    ///
-    /// If an empty vector is passed, the default "sans-serif" font is used.
-    pub fn set_families(&mut self, families: impl IntoIterator<Item: Into<FamilySelector>>) {
-        self.families = families.into_iter().map(|item| item.into()).collect();
-    }
-
-    /// Set style
-    #[inline]
-    pub fn set_style(&mut self, style: FontStyle) {
-        self.style = style;
-    }
-
-    /// Set weight
-    #[inline]
-    pub fn set_weight(&mut self, weight: FontWeight) {
-        self.weight = weight;
-    }
-
-    /// Set width (stretch)
-    #[inline]
-    pub fn set_width(&mut self, width: FontWidth) {
-        self.width = width;
     }
 
     /// Resolve font faces for each matching font
@@ -140,14 +206,10 @@ impl FontSelector {
         debug!("select(): {self:?}");
 
         let mut query = resolver.collection.query(&mut resolver.cache);
-        if self.families.is_empty() {
-            query.set_families([
-                GenericFamily::SystemUi,
-                GenericFamily::UiSansSerif,
-                GenericFamily::SansSerif,
-            ]);
-        } else {
-            query.set_families(self.families.iter());
+        if let Some(gf) = self.family.as_generic() {
+            query.set_families([gf]);
+        } else if let Some(set) = resolver.families.get(&self.family) {
+            query.set_families(set.0.iter());
         }
         query.set_attributes(Attributes {
             width: self.width.into(),
@@ -164,6 +226,16 @@ impl FontSelector {
             }
         });
         result
+    }
+}
+
+impl From<FamilySelector> for FontSelector {
+    #[inline]
+    fn from(family: FamilySelector) -> Self {
+        FontSelector {
+            family,
+            ..Default::default()
+        }
     }
 }
 

@@ -7,7 +7,7 @@
 
 use super::{EditableText, FontToken, FormattableText};
 use crate::conv::to_u32;
-use crate::fonts::{self, FontId, FontSelector, FontStyle, FontWeight, GenericFamily};
+use crate::fonts::{self, FamilySelector, FontId, FontSelector, FontStyle, FontWeight};
 use crate::{Effect, EffectFlags};
 use pulldown_cmark::{Event, HeadingLevel, Tag, TagEnd};
 use std::fmt::Write;
@@ -220,11 +220,7 @@ fn parse(input: &str) -> Result<Markdown, Error> {
                 item.start = to_u32(text.len());
 
                 let mut item2 = item.clone();
-                // NOTE: we shouldn't need to specify both of these but for now
-                // the former does not imply the latter (see parley#323).
-                item2
-                    .sel
-                    .set_families([GenericFamily::UiMonospace, GenericFamily::Monospace]);
+                item2.sel.family = FamilySelector::MONOSPACE;
                 set_last(&item2);
 
                 text.push_str(&part);
@@ -385,9 +381,7 @@ impl StackItem {
                 state.start_block(text);
                 self.start = to_u32(text.len());
                 with_clone(self, |item| {
-                    // NOTE: as above, we shouldn't need to specify both of these:
-                    item.sel
-                        .set_families([GenericFamily::UiMonospace, GenericFamily::Monospace])
+                    item.sel.family = FamilySelector::MONOSPACE;
                 })
                 // TODO: within a code block, the last \n should be suppressed?
             }
@@ -410,8 +404,8 @@ impl StackItem {
                 }
                 None
             }
-            Tag::Emphasis => with_clone(self, |item| item.sel.set_style(FontStyle::Italic)),
-            Tag::Strong => with_clone(self, |item| item.sel.set_weight(FontWeight::BOLD)),
+            Tag::Emphasis => with_clone(self, |item| item.sel.style = FontStyle::Italic),
+            Tag::Strong => with_clone(self, |item| item.sel.weight = FontWeight::BOLD),
             Tag::Strikethrough => with_clone(self, |item| {
                 item.flags.set(EffectFlags::STRIKETHROUGH, true)
             }),
