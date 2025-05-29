@@ -8,27 +8,6 @@
 //! Fonts are managed by the [`FontLibrary`], of which a static singleton
 //! exists and can be accessed via [`library()`].
 //!
-//! ### `FontId` and the default font
-//!
-//! The [`FontId`] type is a numeric identifier for a selected font. It may be
-//! default-constructed to access the *default* font, with number 0.
-//!
-//! To make this work, the user of this library *must* load the default font
-//! before all other fonts and before any operation requiring font metrics:
-//! ```
-//! if let Err(e) = kas_text::fonts::library().init() {
-//!     panic!("Error loading font: {}", e);
-//! }
-//! // from now on, kas_text::fonts::FontId::default() identifies the default font
-//! ```
-//!
-//! ### `FaceId` vs `FontId`
-//!
-//! Why do both [`FaceId`] and [`FontId`] exist? Font fallbacks. A [`FontId`]
-//! identifies a list of font faces; when selecting glyphs the first face which
-//! includes that glyph is selected. Thus, when iterating over glyphs for
-//! rendering purposes, each has an associated [`FaceId`].
-//!
 //! ### Font sizes
 //!
 //! Typically, font sizes are specified in "Points". Several other units and

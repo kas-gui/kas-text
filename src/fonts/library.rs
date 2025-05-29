@@ -239,19 +239,6 @@ pub struct FontLibrary {
 
 /// Font management
 impl FontLibrary {
-    /// Initialize
-    ///
-    /// This method resolves the default font (i.e. `FontId(0)`).
-    ///
-    /// This method *must* be called before any other font selection method,
-    /// and before
-    /// querying any font-derived properties (such as text dimensions).
-    /// It is safe (but ineffective) to call multiple times.
-    #[inline]
-    pub fn init(&self) -> Result<(), Box<dyn std::error::Error>> {
-        Ok(())
-    }
-
     /// Get a reference to the font resolver
     pub fn resolver(&self) -> MutexGuard<Resolver> {
         self.resolver.lock().unwrap()

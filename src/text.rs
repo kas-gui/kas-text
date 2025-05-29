@@ -25,12 +25,8 @@ use crate::{Align, Direction, Glyph, Status, Vec2};
 /// [state of preparation][TextDisplay#status-of-preparation] and will perform
 /// steps as required. To use this struct:
 /// ```
-/// use kas_text::{fonts, Text, Vec2};
+/// use kas_text::{Text, Vec2};
 /// use std::path::Path;
-///
-/// // Load system fonts and select a default:
-/// let fonts = fonts::library();
-/// fonts.init().expect("failed to select default font");
 ///
 /// let mut text = Text::new("Hello, world!");
 /// text.configure().unwrap();
