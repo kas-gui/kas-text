@@ -9,7 +9,7 @@
 
 use super::{FaceRef, FontSelector, Resolver};
 use crate::conv::{to_u32, to_usize};
-use fontique::{Blob, QueryStatus};
+use fontique::{Blob, QueryStatus, Script};
 use std::collections::hash_map::{Entry, HashMap};
 use std::sync::{LazyLock, Mutex, MutexGuard, RwLock};
 use thiserror::Error;
@@ -48,6 +48,13 @@ impl From<&'static str> for FontError {
 #[error("invalid FontId")]
 pub struct InvalidFontId;
 
+/// No matching font found
+///
+/// Text layout failed.
+#[derive(Error, Debug)]
+#[error("no font match")]
+pub struct NoFontMatch;
+
 /// Font face identifier
 ///
 /// Identifies a loaded font face within the [`FontLibrary`] by index.
@@ -69,12 +76,7 @@ impl From<u32> for FaceId {
 /// Font face identifier
 ///
 /// Identifies a font list within the [`FontLibrary`] by index.
-///
-/// This type may be default-constructed to use the default font (whichever is
-/// loaded to the [`FontLibrary`] first). If no font is loaded, attempting to
-/// access a font with a (default-constructed) `FontId` will cause a panic in
-/// the [`FontLibrary`] method used.
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct FontId(u32);
 impl FontId {
     /// Get as `usize`
@@ -247,11 +249,6 @@ impl FontLibrary {
     /// It is safe (but ineffective) to call multiple times.
     #[inline]
     pub fn init(&self) -> Result<(), Box<dyn std::error::Error>> {
-        if self.fonts.read().unwrap().fonts.is_empty() {
-            let id = self.select_font(&FontSelector::default());
-            debug_assert!(id == FontId::default());
-        }
-
         Ok(())
     }
 
@@ -281,6 +278,17 @@ impl FontLibrary {
     pub fn get_first_face(&self, font_id: FontId) -> Result<FaceRef, InvalidFontId> {
         let face_id = self.first_face_for(font_id)?;
         Ok(self.get_face(face_id))
+    }
+
+    /// Check whether a [`FaceId`] is part of a [`FontId`]
+    pub fn contains_face(&self, font_id: FontId, face_id: FaceId) -> Result<bool, InvalidFontId> {
+        let fonts = self.fonts.read().unwrap();
+        for (id, list, _) in &fonts.fonts {
+            if *id == font_id {
+                return Ok(list.contains(&face_id));
+            }
+        }
+        Err(InvalidFontId)
     }
 
     /// Resolve the font face for a character
@@ -339,39 +347,29 @@ impl FontLibrary {
         })
     }
 
-    /// Resolve the font face for a character
-    ///
-    /// If `last_face_id` is a face used by `font_id` and this face covers `c`,
-    /// then return `last_face_id`. (This is to avoid changing the font face
-    /// unnecessarily, such as when encountering a space amid Arabic text.)
-    ///
-    /// Otherwise, return the first face of `font_id` which covers `c`.
-    ///
-    /// Otherwise (if no face covers `c`) return the first face for `font_id`.
-    #[inline]
-    pub fn face_for_char_or_first(
-        &self,
-        font_id: FontId,
-        last_face_id: Option<FaceId>,
-        c: char,
-    ) -> Result<FaceId, InvalidFontId> {
-        match self.face_for_char(font_id, last_face_id, c) {
-            Ok(Some(face_id)) => Ok(face_id),
-            Ok(None) => self.first_face_for(font_id),
-            Err(e) => Err(e),
-        }
-    }
-
     /// Select a font
     ///
     /// This method uses internal caching to enable fast look-ups of existing
     /// (loaded) fonts. Resolving new fonts may be slower.
-    pub fn select_font(&self, selector: &FontSelector) -> FontId {
-        let sel_hash = calculate_hash(&selector);
+    pub fn select_font(
+        &self,
+        selector: &FontSelector,
+        script: Script,
+    ) -> Result<FontId, NoFontMatch> {
+        let sel_hash = {
+            use std::collections::hash_map::DefaultHasher;
+            use std::hash::{Hash, Hasher};
+
+            let mut s = DefaultHasher::new();
+            selector.hash(&mut s);
+            script.hash(&mut s);
+            s.finish()
+        };
+
         let fonts = self.fonts.read().unwrap();
         for (h, id) in &fonts.sel_hash {
             if *h == sel_hash {
-                return *id;
+                return Ok(*id);
             }
         }
         drop(fonts);
@@ -381,7 +379,7 @@ impl FontLibrary {
         let mut resolver = self.resolver.lock().unwrap();
         let mut face_list = self.faces.write().unwrap();
 
-        selector.select(&mut resolver, |query_font| {
+        selector.select(&mut resolver, script, |query_font| {
             if log::log_enabled!(log::Level::Debug) {
                 families.push(query_font.family);
             }
@@ -426,11 +424,10 @@ impl FontLibrary {
         }
 
         if faces.is_empty() {
-            log::warn!("select_font: no match for {selector:?}");
-            faces.push(self.first_face_for(FontId::default()).unwrap());
+            return Err(NoFontMatch);
         }
         let font = self.fonts.write().unwrap().push(faces, sel_hash);
-        font
+        Ok(font)
     }
 }
 
@@ -468,13 +465,4 @@ static LIBRARY: LazyLock<FontLibrary> = LazyLock::new(|| FontLibrary {
 /// Access the [`FontLibrary`] singleton
 pub fn library() -> &'static FontLibrary {
     &LIBRARY
-}
-
-fn calculate_hash<T: std::hash::Hash>(t: &T) -> u64 {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::Hasher;
-
-    let mut s = DefaultHasher::new();
-    t.hash(&mut s);
-    s.finish()
 }

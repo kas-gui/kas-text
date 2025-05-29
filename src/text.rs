@@ -6,7 +6,7 @@
 //! Text object
 
 use crate::display::{Effect, MarkerPosIter, NotReady, TextDisplay};
-use crate::fonts::{self, FaceId, FontId, InvalidFontId};
+use crate::fonts::{FaceId, FontSelector, InvalidFontId};
 use crate::format::{EditableText, FormattableText};
 use crate::{Align, Direction, Glyph, Status, Vec2};
 
@@ -15,12 +15,11 @@ use crate::{Align, Direction, Glyph, Status, Vec2};
 /// This struct contains:
 /// -   A [`FormattableText`]
 /// -   A [`TextDisplay`]
-/// -   Type-setting configuration. Values have reasonable defaults:
-///     -   The default font will be the first loaded font: see [fonts].
-///     -   The default font size is 16px (the web default).
-///     -   Default text direction and alignment is inferred from the text.
-///     -   Line-wrapping requires a call to [`Text::set_wrap_width`].
-///     -   The bounds used for alignment [must be set][Text::set_bounds].
+/// -   A [`FontSelector`]
+/// -   Font size; this defaults to 16px (the web default).
+/// -   Text direction and alignment; by default this is inferred from the text.
+/// -   Line-wrap width; see [`Text::set_wrap_width`].
+/// -   The bounds used for alignment; these [must be set][Text::set_bounds].
 ///
 /// This struct tracks the [`TextDisplay`]'s
 /// [state of preparation][TextDisplay#status-of-preparation] and will perform
@@ -46,7 +45,7 @@ use crate::{Align, Direction, Glyph, Status, Vec2};
 pub struct Text<T: FormattableText + ?Sized> {
     /// Bounds to use for alignment
     bounds: Vec2,
-    font_id: FontId,
+    font: FontSelector,
     dpem: f32,
     wrap_width: f32,
     /// Alignment (`horiz`, `vert`)
@@ -78,7 +77,7 @@ impl<T: FormattableText> Text<T> {
     pub fn new(text: T) -> Self {
         Text {
             bounds: Vec2::INFINITY,
-            font_id: FontId::default(),
+            font: FontSelector::default(),
             dpem: 16.0,
             wrap_width: f32::INFINITY,
             align: Default::default(),
@@ -167,22 +166,22 @@ impl<T: FormattableText + ?Sized> Text<T> {
         self.text.as_str().to_string()
     }
 
-    /// Get the default font
+    /// Get the font selector
     #[inline]
-    pub fn font(&self) -> FontId {
-        self.font_id
+    pub fn font(&self) -> FontSelector {
+        self.font
     }
 
-    /// Set the default [`FontId`]
+    /// Set the font selector
     ///
-    /// This `font_id` is used by all unformatted texts and by any formatted
-    /// texts which don't immediately set formatting.
+    /// This font selector is used by all unformatted texts and by formatted
+    /// texts which don't immediately replace the selector.
     ///
     /// It is necessary to [`prepare`][Self::prepare] the text after calling this.
     #[inline]
-    pub fn set_font(&mut self, font_id: FontId) {
-        if font_id != self.font_id {
-            self.font_id = font_id;
+    pub fn set_font(&mut self, font: FontSelector) {
+        if font != self.font {
+            self.font = font;
             self.set_max_status(Status::Configured);
         }
     }
@@ -397,9 +396,6 @@ impl<T: FormattableText + ?Sized> Text<T> {
     /// Text objects must be configured before use.
     #[inline]
     pub fn configure(&mut self) -> Result<(), InvalidFontId> {
-        // Validate default_font_id
-        let _ = fonts::library().first_face_for(self.font_id)?;
-
         self.status = self.status.max(Status::Configured);
         Ok(())
     }
@@ -410,7 +406,7 @@ impl<T: FormattableText + ?Sized> Text<T> {
             Status::New => return Err(NotReady),
             Status::Configured => self
                 .display
-                .prepare_runs(&self.text, self.direction, self.font_id, self.dpem)
+                .prepare_runs(&self.text, self.direction, self.font, self.dpem)
                 .map_err(|_| {
                     debug_assert!(false, "font_id should be validated by configure");
                     NotReady
@@ -421,23 +417,6 @@ impl<T: FormattableText + ?Sized> Text<T> {
 
         self.status = Status::LevelRuns;
         Ok(())
-    }
-
-    /// Returns the height of horizontal text
-    ///
-    /// Returns an error if called before [`Self::configure`].
-    ///
-    /// This depends on the font and font size, but is independent of the text.
-    pub fn line_height(&self) -> Result<f32, NotReady> {
-        self.check_status(Status::Configured)?;
-
-        fonts::library()
-            .get_first_face(self.font())
-            .map(|face| face.height(self.font_size()))
-            .map_err(|_| {
-                debug_assert!(false, "font_id should be validated by configure");
-                NotReady
-            })
     }
 
     /// Measure required width, up to some `max_width`

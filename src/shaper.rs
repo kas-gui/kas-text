@@ -223,7 +223,6 @@ pub(crate) struct Input<'a> {
     /// Contiguous text
     pub text: &'a str,
     pub dpem: f32,
-    pub face_id: FaceId,
     pub level: Level,
     pub script: Script,
 }
@@ -236,6 +235,7 @@ pub(crate) struct Input<'a> {
 pub(crate) fn shape(
     input: Input,
     range: Range, // range in text
+    face_id: FaceId,
     // All soft-break locations within this run, excluding the end
     mut breaks: TinyVec<[GlyphBreak; 4]>,
     special: RunSpecial,
@@ -258,16 +258,16 @@ pub(crate) fn shape(
     let mut no_space_end = 0.0;
     let mut caret = 0.0;
 
-    let face = fonts::library().get_face(input.face_id);
+    let face = fonts::library().get_face(face_id);
     let dpu = face.dpu(input.dpem);
     let sf = face.scale_by_dpu(dpu);
 
     if input.dpem >= 0.0 {
         #[cfg(feature = "harfbuzz")]
-        let r = shape_harfbuzz(input, range, &mut breaks);
+        let r = shape_harfbuzz(input, range, face_id, &mut breaks);
 
         #[cfg(all(not(feature = "harfbuzz"), feature = "rustybuzz"))]
-        let r = shape_rustybuzz(input, range, &mut breaks);
+        let r = shape_rustybuzz(input, range, face_id, &mut breaks);
 
         #[cfg(all(not(feature = "harfbuzz"), not(feature = "rustybuzz")))]
         let r = shape_simple(sf, input, range, &mut breaks);
@@ -307,7 +307,7 @@ pub(crate) fn shape(
         range,
         dpem: input.dpem,
         dpu,
-        face_id: input.face_id,
+        face_id,
         special,
         level: input.level,
         script: input.script,
@@ -324,12 +324,12 @@ pub(crate) fn shape(
 fn shape_harfbuzz(
     input: Input<'_>,
     range: Range,
+    face_id: FaceId,
     breaks: &mut [GlyphBreak],
 ) -> (Vec<Glyph>, f32, f32) {
     let Input {
         text,
         dpem,
-        face_id,
         level,
         script,
     } = input;
@@ -417,12 +417,12 @@ fn shape_harfbuzz(
 fn shape_rustybuzz(
     input: Input<'_>,
     range: Range,
+    face_id: FaceId,
     breaks: &mut [GlyphBreak],
 ) -> (Vec<Glyph>, f32, f32) {
     let Input {
         text,
         dpem,
-        face_id,
         level,
         script,
     } = input;

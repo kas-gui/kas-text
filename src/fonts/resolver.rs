@@ -9,7 +9,7 @@
 
 use super::{FontStyle, FontWeight, FontWidth};
 use fontique::{
-    Attributes, Collection, FamilyId, GenericFamily, QueryFamily, QueryFont, QueryStatus,
+    Attributes, Collection, FamilyId, GenericFamily, QueryFamily, QueryFont, QueryStatus, Script,
     SourceCache,
 };
 use log::debug;
@@ -195,7 +195,7 @@ impl FontSelector {
     /// Resolve font faces for each matching font
     ///
     /// All font faces matching steps 1-4 will be returned through the `add_face` closure.
-    pub(crate) fn select<F>(&self, resolver: &mut Resolver, add_face: F)
+    pub(crate) fn select<F>(&self, resolver: &mut Resolver, script: Script, add_face: F)
     where
         F: FnMut(&QueryFont) -> QueryStatus,
     {
@@ -207,11 +207,14 @@ impl FontSelector {
         } else if let Some(set) = resolver.families.get(&self.family) {
             query.set_families(set.0.iter());
         }
+
         query.set_attributes(Attributes {
             width: self.width.into(),
             style: self.style.into(),
             weight: self.weight.into(),
         });
+
+        query.set_fallbacks(script);
 
         query.matches_with(add_face);
     }

@@ -7,7 +7,7 @@
 
 use super::{EditableText, FontToken, FormattableText};
 use crate::conv::to_u32;
-use crate::fonts::{self, FamilySelector, FontId, FontSelector, FontStyle, FontWeight};
+use crate::fonts::{FamilySelector, FontSelector, FontStyle, FontWeight};
 use crate::{Effect, EffectFlags};
 use pulldown_cmark::{Event, HeadingLevel, Tag, TagEnd};
 use std::fmt::Write;
@@ -88,7 +88,7 @@ impl<'a> Iterator for FontTokenIter<'a> {
             self.index += 1;
             Some(FontToken {
                 start: fmt.start,
-                font_id: fmt.font_id,
+                font: fmt.font,
                 dpem: self.base_dpem * fmt.rel_size,
             })
         } else {
@@ -177,9 +177,8 @@ impl EditableText for Markdown {
 fn parse(input: &str) -> Result<Markdown, Error> {
     let mut text = String::with_capacity(input.len());
     let mut fmt: Vec<Fmt> = Vec::new();
-    let fonts = fonts::library();
     let mut set_last = |item: &StackItem| {
-        let f = Fmt::new(fonts, item);
+        let f = Fmt::new(item);
         if let Some(last) = fmt.last_mut() {
             if last.start >= item.start {
                 *last = f;
@@ -306,16 +305,16 @@ impl State {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Fmt {
     start: u32,
-    font_id: FontId,
+    font: FontSelector,
     rel_size: f32,
     flags: EffectFlags,
 }
 
 impl Fmt {
-    fn new(fonts: &fonts::FontLibrary, item: &StackItem) -> Self {
+    fn new(item: &StackItem) -> Self {
         Fmt {
             start: item.start,
-            font_id: fonts.select_font(&item.sel),
+            font: item.sel,
             rel_size: item.rel_size,
             flags: item.flags,
         }

@@ -5,7 +5,7 @@
 
 //! Parsers for formatted text
 
-use crate::fonts::FontId;
+use crate::fonts::FontSelector;
 use crate::{Effect, OwningVecIter};
 #[allow(unused)]
 use crate::{Text, TextDisplay}; // for doc-links
@@ -196,11 +196,11 @@ pub struct FontToken {
     /// (Note that we use `u32` not `usize` since it can be assumed text length
     /// will never exceed `u32::MAX`.)
     pub start: u32,
-    /// Font identifier
-    pub font_id: FontId,
     /// Font size, in dots-per-em (pixel width of an 'M')
     ///
     /// This may be calculated from point size as `pt_size * dpp`, where `dpp`
     /// is the number of pixels per point (see [`crate::fonts`] documentation).
     pub dpem: f32,
+    /// Font selector
+    pub font: FontSelector,
 }
