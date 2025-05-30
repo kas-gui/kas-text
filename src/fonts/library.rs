@@ -39,11 +39,8 @@ impl From<&'static str> for FontError {
 
 /// Bad [`FontId`] or no font loaded
 ///
-/// Since [`FontId`] supports default construction, this error can occur when
-/// text preparation is run before a default font is loaded.
-///
-/// It is safe to ignore this error, though (successful) text preparation will
-/// still be required before display.
+/// This error should be impossible to observe, but exists to avoid panic in
+/// lower level methods.
 #[derive(Error, Debug)]
 #[error("invalid FontId")]
 pub struct InvalidFontId;

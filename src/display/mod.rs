@@ -21,7 +21,7 @@ use wrap_lines::{Line, RunPart};
 
 /// Error returned on operations if not ready
 ///
-/// This error is returned if `configure` or `prepare` must be called.
+/// This error is returned if `prepare` must be called.
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq, thiserror::Error)]
 #[error("not ready")]
 pub struct NotReady;

@@ -6,7 +6,7 @@
 //! Text object
 
 use crate::display::{Effect, MarkerPosIter, NotReady, TextDisplay};
-use crate::fonts::{FaceId, FontSelector, InvalidFontId};
+use crate::fonts::{FaceId, FontSelector, NoFontMatch};
 use crate::format::{EditableText, FormattableText};
 use crate::{Align, Direction, Glyph, Status, Vec2};
 
@@ -29,7 +29,6 @@ use crate::{Align, Direction, Glyph, Status, Vec2};
 /// use std::path::Path;
 ///
 /// let mut text = Text::new("Hello, world!");
-/// text.configure().unwrap();
 /// text.set_bounds(Vec2(200.0, 50.0));
 /// text.prepare().unwrap();
 ///
@@ -130,7 +129,7 @@ impl<T: FormattableText> Text<T> {
         }
 
         self.text = text;
-        self.set_max_status(Status::Configured);
+        self.set_max_status(Status::New);
     }
 }
 
@@ -178,7 +177,7 @@ impl<T: FormattableText + ?Sized> Text<T> {
     pub fn set_font(&mut self, font: FontSelector) {
         if font != self.font {
             self.font = font;
-            self.set_max_status(Status::Configured);
+            self.set_max_status(Status::New);
         }
     }
 
@@ -230,7 +229,7 @@ impl<T: FormattableText + ?Sized> Text<T> {
     pub fn set_direction(&mut self, direction: Direction) {
         if direction != self.direction {
             self.direction = direction;
-            self.set_max_status(Status::Configured);
+            self.set_max_status(Status::New);
         }
     }
 
@@ -387,26 +386,13 @@ impl<T: FormattableText + ?Sized> Text<T> {
         Ok(self.unchecked_display())
     }
 
-    /// Configure text
-    ///
-    /// Text objects must be configured before use.
     #[inline]
-    pub fn configure(&mut self) -> Result<(), InvalidFontId> {
-        self.status = self.status.max(Status::Configured);
-        Ok(())
-    }
-
-    #[inline]
-    fn prepare_runs(&mut self) -> Result<(), NotReady> {
+    fn prepare_runs(&mut self) -> Result<(), NoFontMatch> {
         match self.status {
-            Status::New => return Err(NotReady),
-            Status::Configured => self
-                .display
-                .prepare_runs(&self.text, self.direction, self.font, self.dpem)
-                .map_err(|_| {
-                    debug_assert!(false, "font_id should be validated by configure");
-                    NotReady
-                })?,
+            Status::New => {
+                self.display
+                    .prepare_runs(&self.text, self.direction, self.font, self.dpem)?
+            }
             Status::ResizeLevelRuns => self.display.resize_runs(&self.text, self.dpem),
             _ => (),
         }
@@ -417,8 +403,6 @@ impl<T: FormattableText + ?Sized> Text<T> {
 
     /// Measure required width, up to some `max_width`
     ///
-    /// [`configure`][Self::configure] must be called before this method.
-    ///
     /// This method partially prepares the [`TextDisplay`] as required.
     ///
     /// This method allows calculation of the width requirement of a text object
@@ -426,16 +410,14 @@ impl<T: FormattableText + ?Sized> Text<T> {
     /// exceeds `max_width`, the algorithm stops early, returning `max_width`.
     ///
     /// The return value is unaffected by alignment and wrap configuration.
-    pub fn measure_width(&mut self, max_width: f32) -> Result<f32, NotReady> {
+    pub fn measure_width(&mut self, max_width: f32) -> Result<f32, NoFontMatch> {
         self.prepare_runs()?;
 
         Ok(self.display.measure_width(max_width))
     }
 
     /// Measure required vertical height, wrapping as configured
-    ///
-    /// [`configure`][Self::configure] must be called before this method.
-    pub fn measure_height(&mut self) -> Result<f32, NotReady> {
+    pub fn measure_height(&mut self) -> Result<f32, NoFontMatch> {
         if self.status >= Status::Wrapped {
             let (tl, br) = self.display.bounding_box();
             return Ok(br.1 - tl.1);
@@ -447,8 +429,7 @@ impl<T: FormattableText + ?Sized> Text<T> {
 
     /// Prepare text for display, as necessary
     ///
-    /// [`Self::configure`] and [`Self::set_bounds`] must be called before this
-    /// method.
+    /// [`Self::set_bounds`] must be called before this method.
     ///
     /// Does all preparation steps necessary in order to display or query the
     /// layout of this text. Text is aligned within the given `bounds`.
@@ -462,7 +443,7 @@ impl<T: FormattableText + ?Sized> Text<T> {
             return Err(NotReady);
         }
 
-        self.prepare_runs()?;
+        self.prepare_runs().unwrap();
         debug_assert!(self.status >= Status::LevelRuns);
 
         if self.status == Status::LevelRuns {
@@ -611,7 +592,7 @@ impl<T: EditableText + ?Sized> Text<T> {
     #[inline]
     pub fn insert_char(&mut self, index: usize, c: char) {
         self.text.insert_char(index, c);
-        self.set_max_status(Status::Configured);
+        self.set_max_status(Status::New);
     }
 
     /// Replace a section of text
@@ -630,7 +611,7 @@ impl<T: EditableText + ?Sized> Text<T> {
     #[inline]
     pub fn replace_range(&mut self, range: std::ops::Range<usize>, replace_with: &str) {
         self.text.replace_range(range, replace_with);
-        self.set_max_status(Status::Configured);
+        self.set_max_status(Status::New);
     }
 
     /// Set text to a raw `String`
@@ -641,7 +622,7 @@ impl<T: EditableText + ?Sized> Text<T> {
     #[inline]
     pub fn set_string(&mut self, string: String) {
         self.text.set_string(string);
-        self.set_max_status(Status::Configured);
+        self.set_max_status(Status::New);
     }
 
     /// Swap the raw text with a `String`
@@ -656,6 +637,6 @@ impl<T: EditableText + ?Sized> Text<T> {
     #[inline]
     pub fn swap_string(&mut self, string: &mut String) {
         self.text.swap_string(string);
-        self.set_max_status(Status::Configured);
+        self.set_max_status(Status::New);
     }
 }
