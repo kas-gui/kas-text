@@ -199,12 +199,20 @@ impl FontSelector {
     where
         F: FnMut(&QueryFont) -> QueryStatus,
     {
-        debug!("select(): {self:?}");
-
         let mut query = resolver.collection.query(&mut resolver.cache);
         if let Some(gf) = self.family.as_generic() {
+            debug!(
+                "select: Script::{:?}, GenericFamily::{:?}, {:?}, {:?}, {:?}",
+                &script, gf, &self.weight, &self.width, &self.style
+            );
+
             query.set_families([gf]);
         } else if let Some(set) = resolver.families.get(&self.family) {
+            debug!(
+                "select: Script::{:?}, {:?}, {:?}, {:?}, {:?}",
+                &script, set, &self.weight, &self.width, &self.style
+            );
+
             query.set_families(set.0.iter());
         }
 
