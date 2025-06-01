@@ -42,7 +42,7 @@ use crate::{Align, Direction, Glyph, Status, Vec2};
 ///     println!("{face:?} - {dpem}px - {glyph:?}");
 /// });
 /// ```
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct Text<T: FormattableText + ?Sized> {
     /// Bounds to use for alignment
     bounds: Vec2,
@@ -60,6 +60,13 @@ pub struct Text<T: FormattableText + ?Sized> {
 
     display: TextDisplay,
     text: T,
+}
+
+impl<T: Default + FormattableText + ?Sized> Default for Text<T> {
+    #[inline]
+    fn default() -> Self {
+        Text::new(T::default())
+    }
 }
 
 /// Constructors and other methods requiring `T: Sized`
