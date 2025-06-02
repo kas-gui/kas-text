@@ -21,7 +21,8 @@ use crate::conv::{to_u32, to_usize, DPU};
 use crate::display::RunSpecial;
 use crate::fonts::{self, FaceId};
 use crate::{Range, Vec2};
-use smallvec::SmallVec;
+use fontique::Script;
+use tinyvec::TinyVec;
 use unicode_bidi::Level;
 
 /// A type-safe wrapper for glyph ID.
@@ -40,7 +41,7 @@ pub struct Glyph {
     pub position: Vec2,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct GlyphBreak {
     /// Index of char in source text
     pub index: u32,
@@ -90,12 +91,15 @@ pub(crate) struct GlyphRun {
     /// Font size (pixels/em)
     pub dpem: f32,
     pub dpu: DPU,
+
     /// Font face identifier
     pub face_id: FaceId,
     /// Tab or no-break property
     pub special: RunSpecial,
     /// BIDI level
     pub level: Level,
+    /// Script
+    pub script: Script,
 
     /// Sequence of all glyphs, in left-to-right order
     pub glyphs: Vec<Glyph>,
@@ -103,7 +107,7 @@ pub(crate) struct GlyphRun {
     ///
     /// Note: it would be equivalent to use a separate `Run` for each sub-range
     /// in the text instead of tracking breaks via this field.
-    pub breaks: SmallVec<[GlyphBreak; 5]>,
+    pub breaks: TinyVec<[GlyphBreak; 4]>,
 
     /// End position, excluding whitespace
     ///
@@ -219,8 +223,8 @@ pub(crate) struct Input<'a> {
     /// Contiguous text
     pub text: &'a str,
     pub dpem: f32,
-    pub face_id: FaceId,
     pub level: Level,
+    pub script: Script,
 }
 
 /// Shape a `run` of text
@@ -231,17 +235,11 @@ pub(crate) struct Input<'a> {
 pub(crate) fn shape(
     input: Input,
     range: Range, // range in text
+    face_id: FaceId,
     // All soft-break locations within this run, excluding the end
-    mut breaks: SmallVec<[GlyphBreak; 5]>,
+    mut breaks: TinyVec<[GlyphBreak; 4]>,
     special: RunSpecial,
 ) -> GlyphRun {
-    let Input {
-        text,
-        dpem,
-        face_id,
-        level,
-    } = input;
-
     /*
     print!("shape[{:?}]:\t", special);
     let mut start = range.start();
@@ -252,7 +250,7 @@ pub(crate) fn shape(
     println!("\"{}\"", &text[start..range.end()]);
     */
 
-    if level.is_rtl() {
+    if input.level.is_rtl() {
         breaks.reverse();
     }
 
@@ -261,25 +259,25 @@ pub(crate) fn shape(
     let mut caret = 0.0;
 
     let face = fonts::library().get_face(face_id);
-    let dpu = face.dpu(dpem);
+    let dpu = face.dpu(input.dpem);
     let sf = face.scale_by_dpu(dpu);
 
-    if dpem >= 0.0 {
+    if input.dpem >= 0.0 {
         #[cfg(feature = "harfbuzz")]
-        let r = shape_harfbuzz(text, range, dpem, face_id, level, &mut breaks);
+        let r = shape_harfbuzz(input, range, face_id, &mut breaks);
 
         #[cfg(all(not(feature = "harfbuzz"), feature = "rustybuzz"))]
-        let r = shape_rustybuzz(text, range, dpem, face_id, level, &mut breaks);
+        let r = shape_rustybuzz(input, range, face_id, &mut breaks);
 
         #[cfg(all(not(feature = "harfbuzz"), not(feature = "rustybuzz")))]
-        let r = shape_simple(sf, text, range, level, &mut breaks);
+        let r = shape_simple(sf, input, range, &mut breaks);
 
         glyphs = r.0;
         no_space_end = r.1;
         caret = r.2;
     }
 
-    if level.is_rtl() {
+    if input.level.is_rtl() {
         // With RTL text, no_space_end means start_no_space; recalculate
         let mut break_i = breaks.len().wrapping_sub(1);
         let mut start_no_space = caret;
@@ -292,7 +290,7 @@ pub(crate) fn shape(
                 breaks[break_i].no_space_end = start_no_space - side_bearing(last_id);
                 break_i = break_i.wrapping_sub(1);
             }
-            if !text[to_usize(glyph.index)..]
+            if !input.text[to_usize(glyph.index)..]
                 .chars()
                 .next()
                 .map(|c| c.is_whitespace())
@@ -307,11 +305,12 @@ pub(crate) fn shape(
 
     GlyphRun {
         range,
-        dpem,
+        dpem: input.dpem,
         dpu,
         face_id,
         special,
-        level,
+        level: input.level,
+        script: input.script,
 
         glyphs,
         breaks,
@@ -323,13 +322,18 @@ pub(crate) fn shape(
 // Use HarfBuzz lib
 #[cfg(feature = "harfbuzz")]
 fn shape_harfbuzz(
-    text: &str,
+    input: Input<'_>,
     range: Range,
-    dpem: f32,
     face_id: FaceId,
-    level: Level,
     breaks: &mut [GlyphBreak],
 ) -> (Vec<Glyph>, f32, f32) {
+    let Input {
+        text,
+        dpem,
+        level,
+        script,
+    } = input;
+
     let mut font = fonts::library().get_face_store(face_id).harfbuzz_owned();
 
     // ppem affects hinting but does not scale layout, so this has little effect:
@@ -351,6 +355,7 @@ fn shape_harfbuzz(
             false => harfbuzz_rs::Direction::Ltr,
             true => harfbuzz_rs::Direction::Rtl,
         })
+        .set_script(harfbuzz_rs::Tag(u32::from_be_bytes(script.0)))
         .add_str(slice);
     let features = [];
 
@@ -410,13 +415,18 @@ fn shape_harfbuzz(
 // Use Rustybuzz lib
 #[cfg(all(not(feature = "harfbuzz"), feature = "rustybuzz"))]
 fn shape_rustybuzz(
-    text: &str,
+    input: Input<'_>,
     range: Range,
-    dpem: f32,
     face_id: FaceId,
-    level: Level,
     breaks: &mut [GlyphBreak],
 ) -> (Vec<Glyph>, f32, f32) {
+    let Input {
+        text,
+        dpem,
+        level,
+        script,
+    } = input;
+
     let fonts = fonts::library();
     let store = fonts.get_face_store(face_id);
     let dpu = store.face_ref().dpu(dpem);
@@ -436,6 +446,10 @@ fn shape_rustybuzz(
         true => rustybuzz::Direction::RightToLeft,
     });
     buffer.push_str(slice);
+    let tag = ttf_parser::Tag(u32::from_be_bytes(script.0));
+    if let Some(script) = rustybuzz::Script::from_iso15924_tag(tag) {
+        buffer.set_script(script);
+    }
     let features = [];
 
     let output = rustybuzz::shape(face, &features, buffer);
@@ -496,11 +510,12 @@ fn shape_rustybuzz(
 #[cfg(all(not(feature = "harfbuzz"), not(feature = "rustybuzz")))]
 fn shape_simple(
     sf: crate::fonts::ScaledFaceRef,
-    text: &str,
+    input: Input<'_>,
     range: Range,
-    level: Level,
     breaks: &mut [GlyphBreak],
 ) -> (Vec<Glyph>, f32, f32) {
+    let Input { text, level, .. } = input;
+
     use unicode_bidi_mirroring::get_mirrored;
 
     let slice = &text[range];

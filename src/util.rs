@@ -11,8 +11,6 @@ pub enum Status {
     /// Nothing done yet
     #[default]
     New,
-    /// Configured
-    Configured,
     /// As [`Self::LevelRuns`], except these need resizing
     ResizeLevelRuns,
     /// Source text has been broken into level runs

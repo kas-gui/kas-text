@@ -11,9 +11,10 @@ use crate::fonts::{self, FontLibrary};
 use crate::shaper::{GlyphRun, PartMetrics};
 use crate::{Align, Range, Vec2};
 use smallvec::SmallVec;
+use tinyvec::TinyVec;
 use unicode_bidi::{Level, LTR_LEVEL};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct RunPart {
     pub text_end: u32,
     pub glyph_run: u32,
@@ -21,7 +22,7 @@ pub struct RunPart {
     pub offset: Vec2,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Line {
     pub text_range: Range, // range in text
     pub run_range: Range,  // range in wrapped_runs
@@ -323,9 +324,9 @@ struct PartInfo {
 
 #[derive(Default)]
 struct LineAdder {
-    wrapped_runs: SmallVec<[RunPart; 1]>,
+    wrapped_runs: TinyVec<[RunPart; 1]>,
     parts: Vec<PartInfo>,
-    lines: SmallVec<[Line; 1]>,
+    lines: TinyVec<[Line; 1]>,
     line_gap: f32,
     l_bound: f32,
     r_bound: f32,

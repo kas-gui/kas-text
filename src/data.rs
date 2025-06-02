@@ -90,7 +90,7 @@ impl From<Vec2> for (f32, f32) {
 /// Note that we consider `u32` large enough for any text we wish to display
 /// and the library is too complex to be useful on 16-bit CPUs, so using `u32`
 /// makes more sense than `usize`.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Range {
     pub start: u32,

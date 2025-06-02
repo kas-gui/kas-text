@@ -9,11 +9,12 @@
 
 use super::TextDisplay;
 use crate::conv::{to_u32, to_usize};
-use crate::fonts::{self, FontId, InvalidFontId};
+use crate::fonts::{self, FontSelector, NoFontMatch};
 use crate::format::FormattableText;
-use crate::{shaper, Direction, Range};
+use crate::{script_to_fontique, shaper, Direction};
+use swash::text::cluster::Boundary;
+use swash::text::LineBreak as LB;
 use unicode_bidi::{BidiClass, BidiInfo, LTR_LEVEL, RTL_LEVEL};
-use xi_unicode::LineBreakIterator;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum RunSpecial {
@@ -52,15 +53,15 @@ impl TextDisplay {
             let input = shaper::Input {
                 text,
                 dpem,
-                face_id: run.face_id,
                 level: run.level,
+                script: run.script,
             };
             let mut breaks = Default::default();
             std::mem::swap(&mut breaks, &mut run.breaks);
             if run.level.is_rtl() {
                 breaks.reverse();
             }
-            *run = shaper::shape(input, run.range, breaks, run.special);
+            *run = shaper::shape(input, run.range, run.face_id, breaks, run.special);
         }
     }
 
@@ -68,7 +69,7 @@ impl TextDisplay {
     ///
     /// [Requires status][Self#status-of-preparation]: none.
     ///
-    /// Must be called again if any of `text`, `direction` or `font_id` change.
+    /// Must be called again if any of `text`, `direction` or `font` change.
     /// If only `dpem` changes, [`Self::resize_runs`] may be called instead.
     ///
     /// The text is broken into a set of contiguous "level runs". These runs are
@@ -79,9 +80,9 @@ impl TextDisplay {
         &mut self,
         text: &F,
         direction: Direction,
-        mut font_id: FontId,
+        mut font: FontSelector,
         mut dpem: f32,
-    ) -> Result<(), InvalidFontId> {
+    ) -> Result<(), NoFontMatch> {
         // This method constructs a list of "hard lines" (the initial line and any
         // caused by a hard break), each composed of a list of "level runs" (the
         // result of splitting and reversing according to Unicode TR9 aka
@@ -94,7 +95,7 @@ impl TextDisplay {
         let mut next_fmt = font_tokens.next();
         if let Some(fmt) = next_fmt.as_ref() {
             if fmt.start == 0 {
-                font_id = fmt.font_id;
+                font = fmt.font;
                 dpem = fmt.dpem;
                 next_fmt = font_tokens.next();
             }
@@ -123,16 +124,17 @@ impl TextDisplay {
         let mut input = shaper::Input {
             text,
             dpem,
-            face_id: fonts.first_face_for(font_id)?,
             level: levels.first().cloned().unwrap_or(LTR_LEVEL),
+            script: UNKNOWN_SCRIPT,
         };
 
         let mut start = 0;
         let mut breaks = Default::default();
 
-        // Iterates over `(pos, hard)` tuples:
-        let mut breaks_iter = LineBreakIterator::new(text);
-        let mut next_break = breaks_iter.next().unwrap_or((0, false));
+        let mut analyzer = swash::text::analyze(text.chars());
+        let mut last_props = None;
+
+        let mut face_id = None;
 
         let mut last_is_control = false;
         let mut last_is_htab = false;
@@ -147,13 +149,13 @@ impl TextDisplay {
             let is_htab = c == '\t';
             let control_break = is_htab || (last_is_control && !is_control);
 
-            // Is wrapping allowed at this position?
-            let is_break = next_break.0 == pos;
+            let (props, boundary) = analyzer.next().unwrap();
+            last_props = Some(props);
+
             // Forcibly end the line?
-            let hard_break = is_break && next_break.1;
-            if is_break {
-                next_break = breaks_iter.next().unwrap_or((0, false));
-            }
+            let hard_break = boundary == Boundary::Mandatory;
+            // Is wrapping allowed at this position?
+            let is_break = hard_break || boundary == Boundary::Line;
 
             // Force end of current run?
             let bidi_break = levels[pos] != input.level;
@@ -162,10 +164,14 @@ impl TextDisplay {
             if let Some(fmt) = next_fmt.as_ref() {
                 if to_usize(fmt.start) == pos {
                     fmt_break = true;
-                    font_id = fmt.font_id;
+                    font = fmt.font;
                     dpem = fmt.dpem;
                     next_fmt = font_tokens.next();
                 }
+            }
+
+            if input.script == UNKNOWN_SCRIPT && props.script().is_real() {
+                input.script = script_to_fontique(props.script());
             }
 
             let opt_last_face = if matches!(
@@ -174,10 +180,14 @@ impl TextDisplay {
             ) {
                 None
             } else {
-                Some(input.face_id)
+                face_id
             };
-            let face_id = fonts.face_for_char_or_first(font_id, opt_last_face, c)?;
-            let font_break = pos > 0 && face_id != input.face_id;
+            let font_id = fonts.select_font(&font, input.script)?;
+            let new_face_id = fonts
+                .face_for_char(font_id, opt_last_face, c)
+                .expect("invalid FontId")
+                .or(face_id);
+            let font_break = face_id.is_some() && new_face_id != face_id;
 
             if hard_break || control_break || bidi_break || fmt_break || font_break {
                 // TODO: sometimes this results in empty runs immediately
@@ -192,12 +202,16 @@ impl TextDisplay {
                     _ if last_is_control || is_break => RunSpecial::None,
                     _ => RunSpecial::NoBreak,
                 };
-                self.runs.push(shaper::shape(input, range, breaks, special));
+
+                let face = face_id.expect("have a set face_id");
+                self.runs
+                    .push(shaper::shape(input, range, face, breaks, special));
 
                 start = pos;
                 non_control_end = pos;
                 input.level = levels[pos];
                 breaks = Default::default();
+                input.script = UNKNOWN_SCRIPT;
             } else if is_break && !is_control {
                 // We do break runs when hitting control chars, but only when
                 // encountering the next non-control character.
@@ -206,14 +220,17 @@ impl TextDisplay {
 
             last_is_control = is_control;
             last_is_htab = is_htab;
-            input.face_id = face_id;
+            face_id = new_face_id;
             input.dpem = dpem;
         }
 
-        // The LineBreakIterator finishes with a break (unless the string is empty).
-        // This is a hard break when the string finishes with an explicit line-break.
-        debug_assert_eq!(next_break.0, text.len());
-        let hard_break = next_break.1;
+        debug_assert!(analyzer.next().is_none());
+        let hard_break = last_props
+            .map(|props| match props.line_break() {
+                LB::BK | LB::CR | LB::LF | LB::NL => true,
+                _ => false,
+            })
+            .unwrap_or(false);
 
         // Conclude: add last run. This may be empty, but we want it anyway.
         if !last_is_control {
@@ -225,15 +242,30 @@ impl TextDisplay {
             _ if last_is_htab => RunSpecial::HTab,
             _ => RunSpecial::None,
         };
-        self.runs.push(shaper::shape(input, range, breaks, special));
+
+        let font_id = fonts.select_font(&font, input.script)?;
+        if let Some(id) = face_id {
+            if !fonts.contains_face(font_id, id).expect("invalid FontId") {
+                face_id = None;
+            }
+        }
+        let face_id =
+            face_id.unwrap_or_else(|| fonts.first_face_for(font_id).expect("invalid FontId"));
+        self.runs
+            .push(shaper::shape(input, range, face_id, breaks, special));
 
         // Following a hard break we have an implied empty line.
         if hard_break {
-            let range = Range::from(text.len()..text.len());
+            let range = (text.len()..text.len()).into();
             input.level = default_para_level.unwrap_or(LTR_LEVEL);
             breaks = Default::default();
-            self.runs
-                .push(shaper::shape(input, range, breaks, RunSpecial::None));
+            self.runs.push(shaper::shape(
+                input,
+                range,
+                face_id,
+                breaks,
+                RunSpecial::None,
+            ));
         }
 
         /*
@@ -264,3 +296,15 @@ impl TextDisplay {
         Ok(())
     }
 }
+
+trait ScriptExt {
+    fn is_real(self) -> bool;
+}
+impl ScriptExt for swash::text::Script {
+    fn is_real(self) -> bool {
+        use swash::text::Script::*;
+        !matches!(self, Common | Unknown | Inherited)
+    }
+}
+
+pub(crate) const UNKNOWN_SCRIPT: fontique::Script = fontique::Script(*b"Zzzz");
