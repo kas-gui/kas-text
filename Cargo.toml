@@ -26,8 +26,6 @@ num_glyphs = []
 shaping = ["rustybuzz"]
 # Enable shaping via rustybuzz.
 rustybuzz = ["dep:rustybuzz"]
-# Enable shaping via HarfBuzz.
-harfbuzz = ["shaping", "dep:harfbuzz_rs"]
 
 # Enable Markdown parsing
 markdown = ["pulldown-cmark"]
@@ -61,10 +59,6 @@ fontique = "0.5.0"
 
 [dependencies.rustybuzz]
 version = "0.20.1"
-optional = true
-
-[dependencies.harfbuzz_rs]
-version = "2.0"
 optional = true
 
 [lints.clippy]

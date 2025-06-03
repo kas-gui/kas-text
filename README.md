@@ -13,7 +13,7 @@ More on what Kas-text does do:
 - [x] Font discovery via [Fontique](https://github.com/linebender/parley?tab=readme-ov-file#fontique)
 - [x] Font loading and management
 - [x] Script-aware font selection and glyph-level fallback
-- [x] Text layout via a choice of [HarfBuzz](https://github.com/harfbuzz/harfbuzz), [rustybuzz](https://github.com/harfbuzz/rustybuzz) or a simple built-in shaper
+- [x] Text layout via a choice of [rustybuzz](https://github.com/harfbuzz/rustybuzz) or a simple built-in shaper
 - [ ] Vertical text support
 - [x] Supports bi-directional texts
 - [x] A low-level API for text editing including logical-order and mouse navigation

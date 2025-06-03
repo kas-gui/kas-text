@@ -87,8 +87,6 @@ pub struct FaceStore {
     blob: Blob<u8>,
     index: u32,
     face: Face<'static>,
-    #[cfg(feature = "harfbuzz")]
-    harfbuzz: harfbuzz_rs::Shared<harfbuzz_rs::Face<'static>>,
     #[cfg(feature = "rustybuzz")]
     rustybuzz: rustybuzz::Face<'static>,
     #[cfg(feature = "ab_glyph")]
@@ -134,8 +132,6 @@ impl FaceStore {
                 rustybuzz
             },
             face,
-            #[cfg(feature = "harfbuzz")]
-            harfbuzz: harfbuzz_rs::Face::from_bytes(data, index).into(),
             #[cfg(feature = "ab_glyph")]
             ab_glyph: {
                 let mut font = ab_glyph::FontRef::try_from_slice_and_index(data, index)?;
@@ -170,18 +166,6 @@ impl FaceStore {
     /// Access a [`FaceRef`] object
     pub fn face_ref(&self) -> FaceRef<'_> {
         FaceRef(&self.face)
-    }
-
-    /// Access the [`harfbuzz_rs`] object
-    #[cfg(feature = "harfbuzz")]
-    pub fn harfbuzz(&self) -> &harfbuzz_rs::Shared<harfbuzz_rs::Face<'static>> {
-        &self.harfbuzz
-    }
-
-    /// Access an owned [`harfbuzz_rs`] object
-    #[cfg(feature = "harfbuzz")]
-    pub fn harfbuzz_owned(&self) -> harfbuzz_rs::Owned<harfbuzz_rs::Font<'static>> {
-        harfbuzz_rs::Font::new(self.harfbuzz.clone())
     }
 
     /// Access the [`rustybuzz`] object

@@ -263,13 +263,10 @@ pub(crate) fn shape(
     let sf = face.scale_by_dpu(dpu);
 
     if input.dpem >= 0.0 {
-        #[cfg(feature = "harfbuzz")]
-        let r = shape_harfbuzz(input, range, face_id, &mut breaks);
-
-        #[cfg(all(not(feature = "harfbuzz"), feature = "rustybuzz"))]
+        #[cfg(feature = "rustybuzz")]
         let r = shape_rustybuzz(input, range, face_id, &mut breaks);
 
-        #[cfg(all(not(feature = "harfbuzz"), not(feature = "rustybuzz")))]
+        #[cfg(not(feature = "rustybuzz"))]
         let r = shape_simple(sf, input, range, &mut breaks);
 
         glyphs = r.0;
@@ -319,101 +316,8 @@ pub(crate) fn shape(
     }
 }
 
-// Use HarfBuzz lib
-#[cfg(feature = "harfbuzz")]
-fn shape_harfbuzz(
-    input: Input<'_>,
-    range: Range,
-    face_id: FaceId,
-    breaks: &mut [GlyphBreak],
-) -> (Vec<Glyph>, f32, f32) {
-    let Input {
-        text,
-        dpem,
-        level,
-        script,
-    } = input;
-
-    let mut font = fonts::library().get_face_store(face_id).harfbuzz_owned();
-
-    // ppem affects hinting but does not scale layout, so this has little effect:
-    font.set_ppem(dpem as u32, dpem as u32);
-
-    // Note: we could alternatively set scale to dpem*x and let unit_factor=1/x,
-    // resulting in sub-pixel precision of x.
-    let upem = font.face().upem();
-    // This is the default: font.set_scale(upem, upem);
-    let unit_factor = dpem / (upem as f32);
-
-    let slice = &text[range];
-    let idx_offset = range.start;
-    let rtl = level.is_rtl();
-
-    // TODO: cache the buffer for reuse later?
-    let buffer = harfbuzz_rs::UnicodeBuffer::new()
-        .set_direction(match rtl {
-            false => harfbuzz_rs::Direction::Ltr,
-            true => harfbuzz_rs::Direction::Rtl,
-        })
-        .set_script(harfbuzz_rs::Tag(u32::from_be_bytes(script.0)))
-        .add_str(slice);
-    let features = [];
-
-    let output = harfbuzz_rs::shape(&font, buffer, &features);
-
-    let unit = |x: harfbuzz_rs::Position| x as f32 * unit_factor;
-
-    let mut caret = 0.0;
-    let mut no_space_end = caret;
-    let mut break_i = 0;
-
-    let mut glyphs = Vec::with_capacity(output.len());
-
-    for (info, pos) in output
-        .get_glyph_infos()
-        .iter()
-        .zip(output.get_glyph_positions().iter())
-    {
-        let index = idx_offset + info.cluster;
-        assert!(info.codepoint <= u16::MAX as u32, "failed to map glyph id");
-        let id = GlyphId(info.codepoint as u16);
-
-        if breaks
-            .get(break_i)
-            .map(|b| b.index == index)
-            .unwrap_or(false)
-        {
-            breaks[break_i].pos = to_u32(glyphs.len());
-            breaks[break_i].no_space_end = no_space_end;
-            break_i += 1;
-        }
-
-        let position = Vec2(caret + unit(pos.x_offset), unit(pos.y_offset));
-        glyphs.push(Glyph {
-            index,
-            id,
-            position,
-        });
-
-        // IIRC this is only applicable to vertical text, which we don't
-        // currently support:
-        debug_assert_eq!(pos.y_advance, 0);
-        caret += unit(pos.x_advance);
-        if text[to_usize(index)..]
-            .chars()
-            .next()
-            .map(|c| !c.is_whitespace())
-            .unwrap()
-        {
-            no_space_end = caret;
-        }
-    }
-
-    (glyphs, no_space_end, caret)
-}
-
 // Use Rustybuzz lib
-#[cfg(all(not(feature = "harfbuzz"), feature = "rustybuzz"))]
+#[cfg(feature = "rustybuzz")]
 fn shape_rustybuzz(
     input: Input<'_>,
     range: Range,
@@ -507,7 +411,7 @@ fn shape_rustybuzz(
 }
 
 // Simple implementation (kerning but no shaping)
-#[cfg(all(not(feature = "harfbuzz"), not(feature = "rustybuzz")))]
+#[cfg(not(feature = "rustybuzz"))]
 fn shape_simple(
     sf: crate::fonts::ScaledFaceRef,
     input: Input<'_>,

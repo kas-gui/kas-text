@@ -35,7 +35,7 @@ pub fn to_usize(x: u32) -> usize {
 pub struct DPU(pub f32);
 
 impl DPU {
-    #[cfg(all(not(feature = "harfbuzz"), feature = "rustybuzz"))]
+    #[cfg(feature = "rustybuzz")]
     pub(crate) fn i32_to_px(self, x: i32) -> f32 {
         x as f32 * self.0
     }
