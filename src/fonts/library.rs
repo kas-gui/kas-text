@@ -110,19 +110,40 @@ impl FaceStore {
         let data = unsafe { extend_lifetime(blob.data()) };
 
         let face = Face::parse(data, index)?;
-        #[cfg(feature = "rustybuzz")]
-        let rustybuzz = rustybuzz::Face::from_face(face.clone());
 
         Ok(FaceStore {
             blob,
             index,
+            #[cfg(feature = "rustybuzz")]
+            rustybuzz: {
+                use {rustybuzz::Variation, ttf_parser::Tag};
+
+                let len = synthesis.variation_settings().len();
+                debug_assert!(len <= 3);
+                let mut vars = [Variation {
+                    tag: Tag(0),
+                    value: 0.0,
+                }; 3];
+                for (r, (tag, value)) in vars.iter_mut().zip(synthesis.variation_settings()) {
+                    r.tag = Tag::from_bytes(&tag.to_be_bytes());
+                    r.value = *value;
+                }
+
+                let mut rustybuzz = rustybuzz::Face::from_face(face.clone());
+                rustybuzz.set_variations(&vars[0..len]);
+                rustybuzz
+            },
             face,
             #[cfg(feature = "harfbuzz")]
             harfbuzz: harfbuzz_rs::Face::from_bytes(data, index).into(),
-            #[cfg(feature = "rustybuzz")]
-            rustybuzz,
             #[cfg(feature = "ab_glyph")]
-            ab_glyph: ab_glyph::FontRef::try_from_slice_and_index(data, index)?,
+            ab_glyph: {
+                let mut font = ab_glyph::FontRef::try_from_slice_and_index(data, index)?;
+                for (tag, value) in synthesis.variation_settings() {
+                    ab_glyph::VariableFont::set_variation(&mut font, &tag.to_be_bytes(), *value);
+                }
+                font
+            },
             #[cfg(feature = "fontdue")]
             fontdue: {
                 let settings = fontdue::FontSettings {
