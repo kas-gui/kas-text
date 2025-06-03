@@ -418,7 +418,7 @@ impl StackItem {
             }
             Tag::Superscript | Tag::Subscript => {
                 // kas-text doesn't support adjusting the baseline
-                return Err(Error::NotSupported("super/subscript"))
+                return Err(Error::NotSupported("super/subscript"));
             }
             Tag::Link { .. } => return Err(Error::NotSupported("link")),
             Tag::Image { .. } => return Err(Error::NotSupported("image")),
