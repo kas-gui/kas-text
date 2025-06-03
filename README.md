@@ -25,7 +25,7 @@ More on what Kas-text does do:
 
 Rich text support is limited to changing font properties (e.g. weight, italic), size, family and underline/strikethrough decorations. A (very limited) Markdown processor is included to facilitate construction of these texts using the lower-level `FormattableText` trait.
 
-Glyph rastering and painting is not implemented here, though `kas-text` can provide font references for [Swash], [Fontdue] (optional) and [ab_glyph] (optional) libraries. Check the [`kas-wgpu`] code for an example of rastering and painting.
+Glyph rastering and painting is not implemented here, though `kas-text` can provide font references for [Swash] and (optionally) [ab_glyph] libraries. Check the [`kas-wgpu`] code for an example of rastering and painting.
 
 Text editing is only supported via a low-level API. [`kas_widgets::edit::EditField`](https://docs.rs/kas-widgets/latest/kas_widgets/edit/struct.EditField.html) is a simple editor built over this API.
 
@@ -75,7 +75,6 @@ the following web page: <https://www.apache.org/licenses/LICENSE-2.0>
 
 
 [ab_glyph]: https://github.com/alexheretic/ab-glyph
-[Fontdue]: https://github.com/mooman219/fontdue
 [Swash]: https://github.com/dfrg/swash
 [Parley]: https://github.com/linebender/parley
 [COSMIC Text]: https://github.com/linebender/parley

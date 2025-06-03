@@ -35,7 +35,6 @@ serde = ["dep:serde", "bitflags/serde"]
 
 # Backends to expose fonts for
 ab_glyph = ["dep:ab_glyph"]
-fontdue = ["dep:fontdue"]
 # Deprecated feature flag (now always enabled):
 swash = []
 
@@ -53,7 +52,6 @@ pulldown-cmark = { version = "0.13.0", optional = true }
 log = "0.4"
 serde = { version = "1.0.123", features = ["derive"], optional = true }
 ab_glyph = { version = "0.2.10", optional = true }
-fontdue = { version = "0.9.2", optional = true }
 swash = "0.2.4"
 fontique = "0.5.0"
 

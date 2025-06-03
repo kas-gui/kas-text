@@ -23,18 +23,8 @@ enum FontError {
     #[cfg(feature = "ab_glyph")]
     #[error("font load error")]
     AbGlyph(#[from] ab_glyph::InvalidFont),
-    #[cfg(feature = "fontdue")]
-    #[error("font load error")]
-    StrError(&'static str),
     #[error("font load error")]
     Swash,
-}
-
-#[cfg(feature = "fontdue")]
-impl From<&'static str> for FontError {
-    fn from(msg: &'static str) -> Self {
-        FontError::StrError(msg)
-    }
 }
 
 /// Bad [`FontId`] or no font loaded
@@ -91,8 +81,6 @@ pub struct FaceStore {
     rustybuzz: rustybuzz::Face<'static>,
     #[cfg(feature = "ab_glyph")]
     ab_glyph: ab_glyph::FontRef<'static>,
-    #[cfg(feature = "fontdue")]
-    fontdue: fontdue::Font,
     swash: (u32, swash::CacheKey), // (offset, key)
     synthesis: Synthesis,
 }
@@ -140,15 +128,6 @@ impl FaceStore {
                 }
                 font
             },
-            #[cfg(feature = "fontdue")]
-            fontdue: {
-                let settings = fontdue::FontSettings {
-                    collection_index: index,
-                    scale: 40.0, // TODO: max expected font size in dpem
-                    load_substitutions: true,
-                };
-                fontdue::Font::from_bytes(data, settings)?
-            },
             swash: {
                 use easy_cast::Cast;
                 let f = swash::FontRef::from_index(data, index.cast()).ok_or(FontError::Swash)?;
@@ -178,12 +157,6 @@ impl FaceStore {
     #[cfg(feature = "ab_glyph")]
     pub fn ab_glyph(&self) -> &ab_glyph::FontRef<'static> {
         &self.ab_glyph
-    }
-
-    /// Access the [`fontdue`] object
-    #[cfg(feature = "fontdue")]
-    pub fn fontdue(&self) -> &fontdue::Font {
-        &self.fontdue
     }
 
     /// Get a swash `FontRef`
