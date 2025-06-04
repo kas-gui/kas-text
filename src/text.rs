@@ -6,9 +6,9 @@
 //! Text object
 
 use crate::display::{Effect, MarkerPosIter, NotReady, TextDisplay};
-use crate::fonts::{FaceId, FontSelector, NoFontMatch};
+use crate::fonts::{FontSelector, NoFontMatch};
 use crate::format::{EditableText, FormattableText};
-use crate::{Align, Direction, Glyph, GlyphRun, Status, Vec2};
+use crate::{Align, Direction, GlyphRun, GlyphRunEffects, Status, Vec2};
 
 /// Text type-setting object (high-level API)
 ///
@@ -540,30 +540,31 @@ impl<T: FormattableText + ?Sized> Text<T> {
 
     /// Iterate over runs of positioned glyphs
     ///
+    /// Decorations are not included in output; for that use [`Self::runs_with_effects`].
+    ///
     /// Runs are yielded in undefined order. The total number of
-    /// glyphs yielded will equal [`Self::num_glyphs`].
+    /// glyphs yielded will equal [`TextDisplay::num_glyphs`].
     pub fn runs(&self) -> Result<impl Iterator<Item = GlyphRun<'_>>, NotReady> {
         Ok(self.display()?.runs())
     }
 
-    /// Like [`TextDisplay::glyphs`] but with added effects
+    /// Iterate over runs of positioned glyphs with effects
     ///
-    /// See [`TextDisplay::glyphs_with_effects`].
-    pub fn glyphs_with_effects<X, F, G>(
-        &self,
-        effects: &[Effect<X>],
+    /// If the list `effects` is empty or has first entry with `start > 0`, the
+    /// result of `Effect::default(default_aux)` is used. The user payload of
+    /// type `X` is simply passed through to `f` and `g` calls and may be useful
+    /// for color information.
+    ///
+    /// This method is significantly more computationally expensive than [`Self::runs`].
+    ///
+    /// Runs are yielded in undefined order. The total number of
+    /// glyphs yielded will equal [`TextDisplay::num_glyphs`].
+    pub fn runs_with_effects<'a, X: Copy>(
+        &'a self,
+        effects: &'a [Effect<X>],
         default_aux: X,
-        f: F,
-        g: G,
-    ) -> Result<(), NotReady>
-    where
-        X: Copy,
-        F: FnMut(FaceId, f32, Glyph, usize, X),
-        G: FnMut(f32, f32, f32, f32, usize, X),
-    {
-        Ok(self
-            .display()?
-            .glyphs_with_effects(effects, default_aux, f, g))
+    ) -> Result<impl Iterator<Item = GlyphRunEffects<'a, X>> + 'a, NotReady> {
+        Ok(self.display()?.runs_with_effects(effects, default_aux))
     }
 
     /// Yield a sequence of rectangles to highlight a given text range
