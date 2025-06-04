@@ -8,7 +8,7 @@
 use crate::display::{Effect, MarkerPosIter, NotReady, TextDisplay};
 use crate::fonts::{FaceId, FontSelector, NoFontMatch};
 use crate::format::{EditableText, FormattableText};
-use crate::{Align, Direction, Glyph, Status, Vec2};
+use crate::{Align, Direction, Glyph, GlyphRun, Status, Vec2};
 
 /// Text type-setting object (high-level API)
 ///
@@ -32,9 +32,12 @@ use crate::{Align, Direction, Glyph, Status, Vec2};
 /// text.set_bounds(Vec2(200.0, 50.0));
 /// text.prepare().unwrap();
 ///
-/// text.glyphs(|face, dpem, glyph| {
-///     println!("{face:?} - {dpem}px - {glyph:?}");
-/// });
+/// for run in text.runs().unwrap() {
+///     let (face, dpem) = (run.face_id(), run.dpem());
+///     for glyph in run.glyphs() {
+///         println!("{face:?} - {dpem}px - {glyph:?}");
+///     }
+/// }
 /// ```
 #[derive(Clone, Debug)]
 pub struct Text<T: FormattableText + ?Sized> {
@@ -535,11 +538,12 @@ impl<T: FormattableText + ?Sized> Text<T> {
         Ok(self.wrapped_display()?.num_glyphs())
     }
 
-    /// Yield a sequence of positioned glyphs
+    /// Iterate over runs of positioned glyphs
     ///
-    /// See [`TextDisplay::glyphs`].
-    pub fn glyphs<F: FnMut(FaceId, f32, Glyph)>(&self, f: F) -> Result<(), NotReady> {
-        Ok(self.display()?.glyphs(f))
+    /// Runs are yielded in undefined order. The total number of
+    /// glyphs yielded will equal [`Self::num_glyphs`].
+    pub fn runs(&self) -> Result<impl Iterator<Item = GlyphRun<'_>>, NotReady> {
+        Ok(self.display()?.runs())
     }
 
     /// Like [`TextDisplay::glyphs`] but with added effects

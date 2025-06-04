@@ -13,7 +13,7 @@
 use super::{Line, TextDisplay};
 use crate::conv::to_usize;
 use crate::fonts::{self, FaceId};
-use crate::{Glyph, Vec2};
+use crate::{shaper, Glyph, Range, Vec2};
 
 /// Effect formatting marker
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -140,6 +140,42 @@ impl DoubleEndedIterator for MarkerPosIter {
 
 impl ExactSizeIterator for MarkerPosIter {}
 
+/// A sequence of positioned glyphs
+///
+/// Yielded by [`TextDisplay::runs`].
+pub struct GlyphRun<'a> {
+    run: &'a shaper::GlyphRun,
+    range: Range,
+    offset: Vec2,
+}
+
+impl<'a> GlyphRun<'a> {
+    /// Get the font face used for this run
+    #[inline]
+    pub fn face_id(&self) -> FaceId {
+        self.run.face_id
+    }
+
+    /// Get the font size used for this run
+    ///
+    /// Units are dots-per-Em (see [crate::fonts]).
+    #[inline]
+    pub fn dpem(&self) -> f32 {
+        self.run.dpem
+    }
+
+    /// Get an iterator over glyphs for this run
+    pub fn glyphs(&self) -> impl Iterator<Item = Glyph> + '_ {
+        self.run.glyphs[self.range.to_std()]
+            .iter()
+            .map(|glyph| Glyph {
+                index: glyph.index,
+                id: glyph.id,
+                position: glyph.position + self.offset,
+            })
+    }
+}
+
 impl TextDisplay {
     /// Find the starting position (top-left) of the glyph at the given index
     ///
@@ -243,41 +279,19 @@ impl TextDisplay {
         to_usize(self.num_glyphs)
     }
 
-    /// Yield a sequence of positioned glyphs
+    /// Iterate over runs of positioned glyphs
     ///
     /// [Requires status][Self#status-of-preparation]:
     /// text is fully prepared for display.
     ///
-    /// Glyphs are yielded in undefined order by a call to `f`. The number of
-    /// glyphs yielded will equal [`TextDisplay::num_glyphs`]. The closure `f`
-    /// receives parameters `face_id, dpem, glyph`.
-    ///
-    /// This may be used as follows:
-    /// ```no_run
-    /// # use kas_text::{Glyph, Text, Vec2};
-    /// # fn draw(_: Vec<(f32, Glyph)>) {}
-    /// let mut text = Text::new("Some example text");
-    /// text.prepare();
-    ///
-    /// let mut glyphs = Vec::with_capacity(text.num_glyphs().unwrap_or(0));
-    /// text.glyphs(|_, dpem, glyph| glyphs.push((dpem, glyph)));
-    /// draw(glyphs);
-    /// ```
-    ///
-    /// This method has fairly low cost: `O(n)` in the number of glyphs with
-    /// low overhead.
-    pub fn glyphs<F: FnMut(FaceId, f32, Glyph)>(&self, mut f: F) {
-        // self.wrapped_runs is in logical order
-        for run_part in self.wrapped_runs.iter().cloned() {
-            let run = &self.runs[to_usize(run_part.glyph_run)];
-            let face_id = run.face_id;
-            let dpem = run.dpem;
-
-            for mut glyph in run.glyphs[run_part.glyph_range.to_std()].iter().cloned() {
-                glyph.position += run_part.offset;
-                f(face_id, dpem, glyph);
-            }
-        }
+    /// Runs are yielded in undefined order. The total number of
+    /// glyphs yielded will equal [`TextDisplay::num_glyphs`].
+    pub fn runs(&self) -> impl Iterator<Item = GlyphRun<'_>> {
+        self.wrapped_runs.iter().map(|part| GlyphRun {
+            run: &self.runs[to_usize(part.glyph_run)],
+            range: part.glyph_range,
+            offset: part.offset,
+        })
     }
 
     /// Like [`TextDisplay::glyphs`] but with added effects
