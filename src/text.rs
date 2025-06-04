@@ -8,7 +8,7 @@
 use crate::display::{Effect, MarkerPosIter, NotReady, TextDisplay};
 use crate::fonts::{FontSelector, NoFontMatch};
 use crate::format::{EditableText, FormattableText};
-use crate::{Align, Direction, GlyphRun, GlyphRunEffects, Status, Vec2};
+use crate::{Align, Direction, GlyphRun, Status, Vec2};
 
 /// Text type-setting object (high-level API)
 ///
@@ -540,15 +540,19 @@ impl<T: FormattableText + ?Sized> Text<T> {
 
     /// Iterate over runs of positioned glyphs
     ///
-    /// Decorations are not included in output; for that use [`Self::runs_with_effects`].
+    /// This method is just sugar for `self.runs_with_effects(&[], ())`.
     ///
     /// Runs are yielded in undefined order. The total number of
     /// glyphs yielded will equal [`TextDisplay::num_glyphs`].
-    pub fn runs(&self) -> Result<impl Iterator<Item = GlyphRun<'_>>, NotReady> {
+    pub fn runs(&self) -> Result<impl Iterator<Item = GlyphRun<'_, ()>>, NotReady> {
         Ok(self.display()?.runs())
     }
 
     /// Iterate over runs of positioned glyphs with effects
+    ///
+    /// The passed `effects` do not have to equal those associated with the text
+    /// `T`; it is fine to use an empty list instead (i.e. [`Self::runs`]) or
+    /// even synthesize a new list of effects.
     ///
     /// If the list `effects` is empty or has first entry with `start > 0`, the
     /// result of `Effect::default(default_aux)` is used. The user payload of
@@ -563,7 +567,7 @@ impl<T: FormattableText + ?Sized> Text<T> {
         &'a self,
         effects: &'a [Effect<X>],
         default_aux: X,
-    ) -> Result<impl Iterator<Item = GlyphRunEffects<'a, X>> + 'a, NotReady> {
+    ) -> Result<impl Iterator<Item = GlyphRun<'a, X>> + 'a, NotReady> {
         Ok(self.display()?.runs_with_effects(effects, default_aux))
     }
 

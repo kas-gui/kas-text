@@ -15,7 +15,7 @@ use tinyvec::TinyVec;
 mod glyph_pos;
 mod text_runs;
 mod wrap_lines;
-pub use glyph_pos::{Effect, EffectFlags, GlyphRun, GlyphRunEffects, MarkerPos, MarkerPosIter};
+pub use glyph_pos::{Effect, EffectFlags, GlyphRun, MarkerPos, MarkerPosIter};
 pub(crate) use text_runs::RunSpecial;
 use wrap_lines::{Line, RunPart};
 

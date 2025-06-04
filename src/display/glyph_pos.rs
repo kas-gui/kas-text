@@ -140,16 +140,18 @@ impl DoubleEndedIterator for MarkerPosIter {
 
 impl ExactSizeIterator for MarkerPosIter {}
 
-/// A sequence of positioned glyphs
+/// A sequence of positioned glyphs with effects
 ///
-/// Yielded by [`TextDisplay::runs`].
-pub struct GlyphRun<'a> {
+/// Yielded by [`TextDisplay::runs`] and [`TextDisplay::runs_with_effects`].
+pub struct GlyphRun<'a, X: Copy> {
     run: &'a shaper::GlyphRun,
     range: Range,
     offset: Vec2,
+    effects: &'a [Effect<X>],
+    default_aux: X,
 }
 
-impl<'a> GlyphRun<'a> {
+impl<'a, X: Copy> GlyphRun<'a, X> {
     /// Get the font face used for this run
     #[inline]
     pub fn face_id(&self) -> FaceId {
@@ -165,6 +167,9 @@ impl<'a> GlyphRun<'a> {
     }
 
     /// Get an iterator over glyphs for this run
+    ///
+    /// This method ignores effects; if you want those call
+    /// [`Self::glyphs_with_effects`] instead.
     pub fn glyphs(&self) -> impl Iterator<Item = Glyph> + '_ {
         self.run.glyphs[self.range.to_std()]
             .iter()
@@ -173,33 +178,6 @@ impl<'a> GlyphRun<'a> {
                 id: glyph.id,
                 position: glyph.position + self.offset,
             })
-    }
-}
-
-/// A sequence of positioned glyphs with effects
-///
-/// Yielded by [`TextDisplay::runs`].
-pub struct GlyphRunEffects<'a, X: Copy> {
-    run: &'a shaper::GlyphRun,
-    range: Range,
-    offset: Vec2,
-    effects: &'a [Effect<X>],
-    default_aux: X,
-}
-
-impl<'a, X: Copy> GlyphRunEffects<'a, X> {
-    /// Get the font face used for this run
-    #[inline]
-    pub fn face_id(&self) -> FaceId {
-        self.run.face_id
-    }
-
-    /// Get the font size used for this run
-    ///
-    /// Units are dots-per-Em (see [crate::fonts]).
-    #[inline]
-    pub fn dpem(&self) -> f32 {
-        self.run.dpem
     }
 
     /// Yield glyphs and effects for this run
@@ -216,9 +194,9 @@ impl<'a, X: Copy> GlyphRunEffects<'a, X> {
     /// the same number; the renderer is responsible for ensuring such lines
     /// are actually visible. The last parameters are `i, aux` as for `f`.
     ///
-    /// Note: this is significantly more computationally expensive than
-    /// [`TextDisplay::glyphs`]. Optionally one may choose to cache the result,
-    /// though this is not really necessary.
+    /// Note: this is more computationally expensive than [`GlyphRun::glyphs`],
+    /// so you may prefer to call that. Optionally one may choose to cache the
+    /// result, though this is not really necessary.
     pub fn glyphs_with_effects<F, G>(&self, mut f: F, mut g: G)
     where
         F: FnMut(Glyph, usize, X),
@@ -483,19 +461,15 @@ impl TextDisplay {
 
     /// Iterate over runs of positioned glyphs
     ///
-    /// Decorations are not included in output; for that use [`Self::runs_with_effects`].
+    /// This method is just sugar for `self.runs_with_effects(&[], ())`.
     ///
     /// [Requires status][Self#status-of-preparation]:
     /// text is fully prepared for display.
     ///
     /// Runs are yielded in undefined order. The total number of
     /// glyphs yielded will equal [`TextDisplay::num_glyphs`].
-    pub fn runs(&self) -> impl Iterator<Item = GlyphRun<'_>> {
-        self.wrapped_runs.iter().map(|part| GlyphRun {
-            run: &self.runs[to_usize(part.glyph_run)],
-            range: part.glyph_range,
-            offset: part.offset,
-        })
+    pub fn runs(&self) -> impl Iterator<Item = GlyphRun<'_, ()>> {
+        self.runs_with_effects(&[], ())
     }
 
     /// Iterate over runs of positioned glyphs with effects
@@ -504,8 +478,6 @@ impl TextDisplay {
     /// result of `Effect::default(default_aux)` is used. The user payload of
     /// type `X` is simply passed through to `f` and `g` calls and may be useful
     /// for color information.
-    ///
-    /// This method is significantly more computationally expensive than [`Self::runs`].
     ///
     /// [Requires status][Self#status-of-preparation]:
     /// text is fully prepared for display.
@@ -516,11 +488,11 @@ impl TextDisplay {
         &'a self,
         effects: &'a [Effect<X>],
         default_aux: X,
-    ) -> impl Iterator<Item = GlyphRunEffects<'a, X>> + 'a {
+    ) -> impl Iterator<Item = GlyphRun<'a, X>> + 'a {
         self.wrapped_runs
             .iter()
             .filter(|part| !part.glyph_range.is_empty())
-            .map(move |part| GlyphRunEffects {
+            .map(move |part| GlyphRun {
                 run: &self.runs[to_usize(part.glyph_run)],
                 range: part.glyph_range,
                 offset: part.offset,
