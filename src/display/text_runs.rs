@@ -160,10 +160,8 @@ impl TextDisplay {
             // Force end of current run?
             let bidi_break = levels[pos] != input.level;
 
-            let mut fmt_break = false;
             if let Some(fmt) = next_fmt.as_ref() {
                 if to_usize(fmt.start) == pos {
-                    fmt_break = true;
                     font = fmt.font;
                     dpem = fmt.dpem;
                     next_fmt = font_tokens.next();
@@ -189,7 +187,7 @@ impl TextDisplay {
                 .or(face_id);
             let font_break = face_id.is_some() && new_face_id != face_id;
 
-            if hard_break || control_break || bidi_break || fmt_break || font_break {
+            if hard_break || control_break || bidi_break || font_break {
                 // TODO: sometimes this results in empty runs immediately
                 // following another run. Ideally we would either merge these
                 // into the previous run or not simply break in this case.

@@ -1,6 +1,6 @@
 [package]
 name = "kas-text"
-version = "0.7.0"
+version = "0.8.0"
 authors = ["Diggory Hardy <git@dhardy.name>"]
 edition = "2021"
 license = "Apache-2.0"
@@ -15,8 +15,8 @@ rust-version = "1.82.0"
 
 [package.metadata.docs.rs]
 # To build locally:
-# RUSTDOCFLAGS="--cfg docsrs" cargo +nightly doc --features num_glyphs,markdown --no-deps --open
-features = ["markdown", "num_glyphs"]
+# RUSTDOCFLAGS="--cfg docsrs" cargo +nightly doc --all-features --no-deps --open
+all-features = true
 
 [features]
 # Support num_glyphs method
@@ -26,8 +26,6 @@ num_glyphs = []
 shaping = ["rustybuzz"]
 # Enable shaping via rustybuzz.
 rustybuzz = ["dep:rustybuzz"]
-# Enable shaping via HarfBuzz.
-harfbuzz = ["shaping", "dep:harfbuzz_rs"]
 
 # Enable Markdown parsing
 markdown = ["pulldown-cmark"]
@@ -35,36 +33,28 @@ markdown = ["pulldown-cmark"]
 # Serialization is optionally supported for some types:
 serde = ["dep:serde", "bitflags/serde"]
 
-# Backends to expose fonts for
+# Optional: expose ab_glyph font face
 ab_glyph = ["dep:ab_glyph"]
-fontdue = ["dep:fontdue"]
-# Deprecated feature flag (now always enabled):
-swash = []
 
 [dependencies]
 cfg-if = "1.0.0"
 easy-cast = "0.5.0"
 bitflags = "2.4.2"
-ttf-parser = "0.24.1"
+ttf-parser = "0.25.1"
 smallvec = "1.6.1"
 tinyvec = { version = "1.9.0", features = ["alloc"] }
 unicode-bidi = "0.3.4"
-unicode-bidi-mirroring = "0.3.0"
-thiserror = "1.0.20"
-pulldown-cmark = { version = "0.12.0", optional = true }
+unicode-bidi-mirroring = "0.4.0"
+thiserror = "2.0.12"
+pulldown-cmark = { version = "0.13.0", optional = true }
 log = "0.4"
 serde = { version = "1.0.123", features = ["derive"], optional = true }
 ab_glyph = { version = "0.2.10", optional = true }
-fontdue = { version = "0.9.2", optional = true }
 swash = "0.2.4"
 fontique = "0.5.0"
 
 [dependencies.rustybuzz]
-version = "0.18.0"
-optional = true
-
-[dependencies.harfbuzz_rs]
-version = "2.0"
+version = "0.20.1"
 optional = true
 
 [lints.clippy]

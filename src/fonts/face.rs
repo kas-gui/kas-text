@@ -57,17 +57,11 @@ impl<'a> FaceRef<'a> {
     pub fn scale_by_dpu(self, dpu: DPU) -> ScaledFaceRef<'a> {
         ScaledFaceRef(self.0, dpu)
     }
-
-    /// Get the height of horizontal text in pixels
-    ///
-    /// Units: `dpem` is dots (pixels) per Em (module documentation).
-    #[inline]
-    pub fn height(&self, dpem: f32) -> f32 {
-        self.scale_by_dpem(dpem).height()
-    }
 }
 
 /// Handle to a loaded font face
+///
+/// TODO: verify whether these values need adjustment for variations.
 #[derive(Copy, Clone, Debug)]
 pub struct ScaledFaceRef<'a>(&'a Face<'a>, DPU);
 impl<'a> ScaledFaceRef<'a> {

@@ -9,7 +9,7 @@
 
 use super::{FaceRef, FontSelector, Resolver};
 use crate::conv::{to_u32, to_usize};
-use fontique::{Blob, QueryStatus, Script};
+use fontique::{Blob, QueryStatus, Script, Synthesis};
 use std::collections::hash_map::{Entry, HashMap};
 use std::sync::{LazyLock, Mutex, MutexGuard, RwLock};
 use thiserror::Error;
@@ -23,18 +23,8 @@ enum FontError {
     #[cfg(feature = "ab_glyph")]
     #[error("font load error")]
     AbGlyph(#[from] ab_glyph::InvalidFont),
-    #[cfg(feature = "fontdue")]
-    #[error("font load error")]
-    StrError(&'static str),
     #[error("font load error")]
     Swash,
-}
-
-#[cfg(feature = "fontdue")]
-impl From<&'static str> for FontError {
-    fn from(msg: &'static str) -> Self {
-        FontError::StrError(msg)
-    }
 }
 
 /// Bad [`FontId`] or no font loaded
@@ -87,55 +77,63 @@ pub struct FaceStore {
     blob: Blob<u8>,
     index: u32,
     face: Face<'static>,
-    #[cfg(feature = "harfbuzz")]
-    harfbuzz: harfbuzz_rs::Shared<harfbuzz_rs::Face<'static>>,
     #[cfg(feature = "rustybuzz")]
     rustybuzz: rustybuzz::Face<'static>,
     #[cfg(feature = "ab_glyph")]
     ab_glyph: ab_glyph::FontRef<'static>,
-    #[cfg(feature = "fontdue")]
-    fontdue: fontdue::Font,
     swash: (u32, swash::CacheKey), // (offset, key)
+    synthesis: Synthesis,
 }
 
 impl FaceStore {
     /// Construct, given a file path, a reference to the loaded data and the face index
     ///
     /// The `path` is to be stored; its contents are already loaded in `data`.
-    fn new(blob: Blob<u8>, index: u32) -> Result<Self, FontError> {
+    fn new(blob: Blob<u8>, index: u32, synthesis: Synthesis) -> Result<Self, FontError> {
         // Safety: this is a private fn used to construct a FaceStore instance
         // to be stored in FontLibrary which is never deallocated. This
         // FaceStore holds onto `blob`, so `data` is valid until program exit.
         let data = unsafe { extend_lifetime(blob.data()) };
 
         let face = Face::parse(data, index)?;
-        #[cfg(feature = "rustybuzz")]
-        let rustybuzz = rustybuzz::Face::from_face(face.clone());
 
         Ok(FaceStore {
             blob,
             index,
-            face,
-            #[cfg(feature = "harfbuzz")]
-            harfbuzz: harfbuzz_rs::Face::from_bytes(data, index).into(),
             #[cfg(feature = "rustybuzz")]
-            rustybuzz,
+            rustybuzz: {
+                use {rustybuzz::Variation, ttf_parser::Tag};
+
+                let len = synthesis.variation_settings().len();
+                debug_assert!(len <= 3);
+                let mut vars = [Variation {
+                    tag: Tag(0),
+                    value: 0.0,
+                }; 3];
+                for (r, (tag, value)) in vars.iter_mut().zip(synthesis.variation_settings()) {
+                    r.tag = Tag::from_bytes(&tag.to_be_bytes());
+                    r.value = *value;
+                }
+
+                let mut rustybuzz = rustybuzz::Face::from_face(face.clone());
+                rustybuzz.set_variations(&vars[0..len]);
+                rustybuzz
+            },
+            face,
             #[cfg(feature = "ab_glyph")]
-            ab_glyph: ab_glyph::FontRef::try_from_slice_and_index(data, index)?,
-            #[cfg(feature = "fontdue")]
-            fontdue: {
-                let settings = fontdue::FontSettings {
-                    collection_index: index,
-                    scale: 40.0, // TODO: max expected font size in dpem
-                    load_substitutions: true,
-                };
-                fontdue::Font::from_bytes(data, settings)?
+            ab_glyph: {
+                let mut font = ab_glyph::FontRef::try_from_slice_and_index(data, index)?;
+                for (tag, value) in synthesis.variation_settings() {
+                    ab_glyph::VariableFont::set_variation(&mut font, &tag.to_be_bytes(), *value);
+                }
+                font
             },
             swash: {
                 use easy_cast::Cast;
                 let f = swash::FontRef::from_index(data, index.cast()).ok_or(FontError::Swash)?;
                 (f.offset, f.key)
             },
+            synthesis,
         })
     }
 
@@ -147,18 +145,6 @@ impl FaceStore {
     /// Access a [`FaceRef`] object
     pub fn face_ref(&self) -> FaceRef<'_> {
         FaceRef(&self.face)
-    }
-
-    /// Access the [`harfbuzz_rs`] object
-    #[cfg(feature = "harfbuzz")]
-    pub fn harfbuzz(&self) -> &harfbuzz_rs::Shared<harfbuzz_rs::Face<'static>> {
-        &self.harfbuzz
-    }
-
-    /// Access an owned [`harfbuzz_rs`] object
-    #[cfg(feature = "harfbuzz")]
-    pub fn harfbuzz_owned(&self) -> harfbuzz_rs::Owned<harfbuzz_rs::Font<'static>> {
-        harfbuzz_rs::Font::new(self.harfbuzz.clone())
     }
 
     /// Access the [`rustybuzz`] object
@@ -173,12 +159,6 @@ impl FaceStore {
         &self.ab_glyph
     }
 
-    /// Access the [`fontdue`] object
-    #[cfg(feature = "fontdue")]
-    pub fn fontdue(&self) -> &fontdue::Font {
-        &self.fontdue
-    }
-
     /// Get a swash `FontRef`
     pub fn swash(&self) -> swash::FontRef<'_> {
         swash::FontRef {
@@ -186,6 +166,11 @@ impl FaceStore {
             offset: self.swash.0,
             key: self.swash.1,
         }
+    }
+
+    /// Get font variation settings
+    pub fn synthesis(&self) -> &Synthesis {
+        &self.synthesis
     }
 }
 
@@ -363,32 +348,31 @@ impl FontLibrary {
         let mut resolver = self.resolver.lock().unwrap();
         let mut face_list = self.faces.write().unwrap();
 
-        selector.select(&mut resolver, script, |query_font| {
+        selector.select(&mut resolver, script, |qf| {
             if log::log_enabled!(log::Level::Debug) {
-                families.push(query_font.family);
+                families.push(qf.family);
             }
-            // TODO: use query_font.synthesis
 
             let source_hash = {
                 use std::hash::{DefaultHasher, Hash, Hasher};
 
                 let mut hasher = DefaultHasher::new();
-                query_font.blob.id().hash(&mut hasher);
-                hasher.write_u32(query_font.index);
+                qf.blob.id().hash(&mut hasher);
+                hasher.write_u32(qf.index);
                 hasher.finish()
             };
 
             for (h, id) in face_list.source_hash.iter().cloned() {
                 if h == source_hash {
                     let face = &face_list.faces[id.get()];
-                    if face.blob.id() == query_font.blob.id() && face.index == query_font.index {
+                    if face.blob.id() == qf.blob.id() && face.index == qf.index {
                         faces.push(id);
                         return QueryStatus::Continue;
                     }
                 }
             }
 
-            match FaceStore::new(query_font.blob.clone(), query_font.index) {
+            match FaceStore::new(qf.blob.clone(), qf.index, qf.synthesis) {
                 Ok(store) => {
                     let id = face_list.push(Box::new(store), source_hash);
                     faces.push(id);

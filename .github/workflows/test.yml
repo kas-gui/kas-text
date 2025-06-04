@@ -23,11 +23,9 @@ jobs:
         run: |
           cargo fmt --all -- --check
       - name: doc
-        run: RUSTDOCFLAGS="--cfg doc_cfg" cargo doc --features markdown,num_glyphs --no-deps
-      - name: Test Harfbuzz
-        run: cargo test --all-targets --features harfbuzz
+        run: RUSTDOCFLAGS="--cfg doc_cfg" cargo doc --all-features --no-deps
       - name: Clippy
-        run: cargo +nightly clippy --features shaping,markdown,serde,num_glyphs
+        run: cargo +nightly clippy --all-features
       - name: Test (all features including GAT)
         run: cargo test --all-features
 
