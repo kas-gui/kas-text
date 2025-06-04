@@ -13,7 +13,7 @@
 use super::{Line, TextDisplay};
 use crate::conv::to_usize;
 use crate::fonts::{self, FaceId};
-use crate::{Glyph, Vec2};
+use crate::{shaper, Glyph, Range, Vec2};
 
 /// Effect formatting marker
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -140,6 +140,222 @@ impl DoubleEndedIterator for MarkerPosIter {
 
 impl ExactSizeIterator for MarkerPosIter {}
 
+/// A sequence of positioned glyphs with effects
+///
+/// Yielded by [`TextDisplay::runs`] and [`TextDisplay::runs_with_effects`].
+pub struct GlyphRun<'a, X: Copy> {
+    run: &'a shaper::GlyphRun,
+    range: Range,
+    offset: Vec2,
+    effects: &'a [Effect<X>],
+    default_aux: X,
+}
+
+impl<'a, X: Copy> GlyphRun<'a, X> {
+    /// Get the font face used for this run
+    #[inline]
+    pub fn face_id(&self) -> FaceId {
+        self.run.face_id
+    }
+
+    /// Get the font size used for this run
+    ///
+    /// Units are dots-per-Em (see [crate::fonts]).
+    #[inline]
+    pub fn dpem(&self) -> f32 {
+        self.run.dpem
+    }
+
+    /// Get an iterator over glyphs for this run
+    ///
+    /// This method ignores effects; if you want those call
+    /// [`Self::glyphs_with_effects`] instead.
+    pub fn glyphs(&self) -> impl Iterator<Item = Glyph> + '_ {
+        self.run.glyphs[self.range.to_std()]
+            .iter()
+            .map(|glyph| Glyph {
+                index: glyph.index,
+                id: glyph.id,
+                position: glyph.position + self.offset,
+            })
+    }
+
+    /// Yield glyphs and effects for this run
+    ///
+    /// The callback `f` receives `glyph, i, aux` where
+    /// `dpu` and `height` are both measures of the font size (pixels per font
+    /// unit and pixels per height, respectively), and `i` is the index within
+    /// `effects` (or `usize::MAX` when a default-constructed effect token is
+    /// used).
+    ///
+    /// The callback `g` receives positioning for each underline/strike-through
+    /// segment: `x1, x2, y_top, h` where `h` is the thickness (height). Note
+    /// that it is possible to have `h < 1.0` and `y_top, y_top + h` to round to
+    /// the same number; the renderer is responsible for ensuring such lines
+    /// are actually visible. The last parameters are `i, aux` as for `f`.
+    ///
+    /// Note: this is more computationally expensive than [`GlyphRun::glyphs`],
+    /// so you may prefer to call that. Optionally one may choose to cache the
+    /// result, though this is not really necessary.
+    pub fn glyphs_with_effects<F, G>(&self, mut f: F, mut g: G)
+    where
+        F: FnMut(Glyph, usize, X),
+        G: FnMut(f32, f32, f32, f32, usize, X),
+    {
+        let sf = fonts::library()
+            .get_face(self.run.face_id)
+            .scale_by_dpu(self.run.dpu);
+
+        let ltr = self.run.level.is_ltr();
+
+        let mut underline = None;
+        let mut strikethrough = None;
+
+        let mut effect_cur = usize::MAX;
+        let mut effect_next = 0;
+
+        // We iterate in left-to-right order regardless of text direction.
+        // Start by finding the effect applicable to the left-most glyph.
+        let left_index = self.run.glyphs[self.range.start()].index;
+        while self
+            .effects
+            .get(effect_next)
+            .map(|e| e.start <= left_index)
+            .unwrap_or(false)
+        {
+            effect_cur = effect_next;
+            effect_next += 1;
+        }
+
+        let mut next_start = self
+            .effects
+            .get(effect_next)
+            .map(|e| e.start)
+            .unwrap_or(u32::MAX);
+
+        let mut fmt = self
+            .effects
+            .get(effect_cur)
+            .cloned()
+            .unwrap_or(Effect::default(self.default_aux));
+
+        let mut effect_i = effect_cur;
+
+        // In case an effect applies to the left-most glyph, it starts from that
+        // glyph's x coordinate.
+        if !fmt.flags.is_empty() {
+            let glyph = &self.run.glyphs[self.range.start()];
+            let position = glyph.position + self.offset;
+            if fmt.flags.contains(EffectFlags::UNDERLINE) {
+                if let Some(metrics) = sf.underline_metrics() {
+                    let y_top = position.1 - metrics.position;
+                    let h = metrics.thickness;
+                    let x1 = position.0;
+                    underline = Some((x1, y_top, h, fmt.aux));
+                }
+            }
+            if fmt.flags.contains(EffectFlags::STRIKETHROUGH) {
+                if let Some(metrics) = sf.strikethrough_metrics() {
+                    let y_top = position.1 - metrics.position;
+                    let h = metrics.thickness;
+                    let x1 = position.0;
+                    strikethrough = Some((x1, y_top, h, fmt.aux));
+                }
+            }
+        }
+
+        // Iterate over glyphs in left-to-right order.
+        for mut glyph in self.run.glyphs[self.range.to_std()].iter().cloned() {
+            glyph.position += self.offset;
+
+            // Does the effect change?
+            if (ltr && next_start <= glyph.index) || (!ltr && fmt.start > glyph.index) {
+                if ltr {
+                    // Find the next active effect
+                    loop {
+                        effect_cur = effect_next;
+                        effect_next += 1;
+                        if self
+                            .effects
+                            .get(effect_next)
+                            .map(|e| e.start > glyph.index)
+                            .unwrap_or(true)
+                        {
+                            break;
+                        }
+                    }
+                    next_start = self
+                        .effects
+                        .get(effect_next)
+                        .map(|e| e.start)
+                        .unwrap_or(u32::MAX);
+                } else {
+                    // Find the previous active effect
+                    loop {
+                        effect_cur = effect_cur.wrapping_sub(1);
+                        if self.effects.get(effect_cur).map(|e| e.start).unwrap_or(0) <= glyph.index
+                        {
+                            break;
+                        }
+                    }
+                }
+                fmt = self
+                    .effects
+                    .get(effect_cur)
+                    .cloned()
+                    .unwrap_or(Effect::default(self.default_aux));
+
+                if underline.is_some() != fmt.flags.contains(EffectFlags::UNDERLINE) {
+                    if let Some((x1, y_top, h, aux)) = underline {
+                        let x2 = glyph.position.0;
+                        g(x1, x2, y_top, h, effect_i, aux);
+                        underline = None;
+                    } else if let Some(metrics) = sf.underline_metrics() {
+                        let y_top = glyph.position.1 - metrics.position;
+                        let h = metrics.thickness;
+                        let x1 = glyph.position.0;
+                        underline = Some((x1, y_top, h, fmt.aux));
+                    }
+                }
+                if strikethrough.is_some() != fmt.flags.contains(EffectFlags::STRIKETHROUGH) {
+                    if let Some((x1, y_top, h, aux)) = strikethrough {
+                        let x2 = glyph.position.0;
+                        g(x1, x2, y_top, h, effect_i, aux);
+                        strikethrough = None;
+                    } else if let Some(metrics) = sf.strikethrough_metrics() {
+                        let y_top = glyph.position.1 - metrics.position;
+                        let h = metrics.thickness;
+                        let x1 = glyph.position.0;
+                        strikethrough = Some((x1, y_top, h, fmt.aux));
+                    }
+                }
+
+                effect_i = effect_cur;
+            }
+
+            f(glyph, effect_cur, fmt.aux);
+        }
+
+        // Effects end at the following glyph's start (or end of this run part)
+        if let Some((x1, y_top, h, aux)) = underline {
+            let x2 = if self.range.end() < self.run.glyphs.len() {
+                self.run.glyphs[self.range.end()].position.0
+            } else {
+                self.run.caret
+            } + self.offset.0;
+            g(x1, x2, y_top, h, effect_i, aux);
+        }
+        if let Some((x1, y_top, h, aux)) = strikethrough {
+            let x2 = if self.range.end() < self.run.glyphs.len() {
+                self.run.glyphs[self.range.end()].position.0
+            } else {
+                self.run.caret
+            } + self.offset.0;
+            g(x1, x2, y_top, h, effect_i, aux);
+        }
+    }
+}
+
 impl TextDisplay {
     /// Find the starting position (top-left) of the glyph at the given index
     ///
@@ -243,230 +459,46 @@ impl TextDisplay {
         to_usize(self.num_glyphs)
     }
 
-    /// Yield a sequence of positioned glyphs
+    /// Iterate over runs of positioned glyphs
+    ///
+    /// This method is just sugar for `self.runs_with_effects(&[], ())`.
     ///
     /// [Requires status][Self#status-of-preparation]:
     /// text is fully prepared for display.
     ///
-    /// Glyphs are yielded in undefined order by a call to `f`. The number of
-    /// glyphs yielded will equal [`TextDisplay::num_glyphs`]. The closure `f`
-    /// receives parameters `face_id, dpem, glyph`.
-    ///
-    /// This may be used as follows:
-    /// ```no_run
-    /// # use kas_text::{Glyph, Text, Vec2};
-    /// # fn draw(_: Vec<(f32, Glyph)>) {}
-    /// let mut text = Text::new("Some example text");
-    /// text.prepare();
-    ///
-    /// let mut glyphs = Vec::with_capacity(text.num_glyphs().unwrap_or(0));
-    /// text.glyphs(|_, dpem, glyph| glyphs.push((dpem, glyph)));
-    /// draw(glyphs);
-    /// ```
-    ///
-    /// This method has fairly low cost: `O(n)` in the number of glyphs with
-    /// low overhead.
-    pub fn glyphs<F: FnMut(FaceId, f32, Glyph)>(&self, mut f: F) {
-        // self.wrapped_runs is in logical order
-        for run_part in self.wrapped_runs.iter().cloned() {
-            let run = &self.runs[to_usize(run_part.glyph_run)];
-            let face_id = run.face_id;
-            let dpem = run.dpem;
-
-            for mut glyph in run.glyphs[run_part.glyph_range.to_std()].iter().cloned() {
-                glyph.position += run_part.offset;
-                f(face_id, dpem, glyph);
-            }
-        }
+    /// Runs are yielded in undefined order. The total number of
+    /// glyphs yielded will equal [`TextDisplay::num_glyphs`].
+    pub fn runs(&self) -> impl Iterator<Item = GlyphRun<'_, ()>> {
+        self.runs_with_effects(&[], ())
     }
 
-    /// Like [`TextDisplay::glyphs`] but with added effects
-    ///
-    /// [Requires status][Self#status-of-preparation]:
-    /// text is fully prepared for display.
+    /// Iterate over runs of positioned glyphs with effects
     ///
     /// If the list `effects` is empty or has first entry with `start > 0`, the
     /// result of `Effect::default(default_aux)` is used. The user payload of
     /// type `X` is simply passed through to `f` and `g` calls and may be useful
     /// for color information.
     ///
-    /// The callback `f` receives `face_id, dpem, glyph, i, aux` where
-    /// `dpu` and `height` are both measures of the font size (pixels per font
-    /// unit and pixels per height, respectively), and `i` is the index within
-    /// `effects` (or `usize::MAX` when a default-constructed effect token is
-    /// used).
+    /// [Requires status][Self#status-of-preparation]:
+    /// text is fully prepared for display.
     ///
-    /// The callback `g` receives positioning for each underline/strike-through
-    /// segment: `x1, x2, y_top, h` where `h` is the thickness (height). Note
-    /// that it is possible to have `h < 1.0` and `y_top, y_top + h` to round to
-    /// the same number; the renderer is responsible for ensuring such lines
-    /// are actually visible. The last parameters are `i, aux` as for `f`.
-    ///
-    /// Note: this is significantly more computationally expensive than
-    /// [`TextDisplay::glyphs`]. Optionally one may choose to cache the result,
-    /// though this is not really necessary.
-    pub fn glyphs_with_effects<X, F, G>(
-        &self,
-        effects: &[Effect<X>],
+    /// Runs are yielded in undefined order. The total number of
+    /// glyphs yielded will equal [`TextDisplay::num_glyphs`].
+    pub fn runs_with_effects<'a, X: Copy>(
+        &'a self,
+        effects: &'a [Effect<X>],
         default_aux: X,
-        mut f: F,
-        mut g: G,
-    ) where
-        X: Copy,
-        F: FnMut(FaceId, f32, Glyph, usize, X),
-        G: FnMut(f32, f32, f32, f32, usize, X),
-    {
-        let fonts = fonts::library();
-
-        let mut effect_cur = usize::MAX;
-        let mut effect_next = 0;
-        let mut next_start = effects
-            .get(effect_next)
-            .map(|e| e.start)
-            .unwrap_or(u32::MAX);
-
-        // self.wrapped_runs is in logical order
-        for run_part in self.wrapped_runs.iter().cloned() {
-            if run_part.glyph_range.is_empty() {
-                continue;
-            }
-
-            let run = &self.runs[to_usize(run_part.glyph_run)];
-            let face_id = run.face_id;
-            let dpem = run.dpem;
-
-            let mut underline = None;
-            let mut strikethrough = None;
-
-            let ltr = run.level.is_ltr();
-            if !ltr {
-                let last_index = run.glyphs[run_part.glyph_range.start()].index;
-                while effects
-                    .get(effect_next)
-                    .map(|e| e.start <= last_index)
-                    .unwrap_or(false)
-                {
-                    effect_cur = effect_next;
-                    effect_next += 1;
-                }
-                next_start = effects
-                    .get(effect_next)
-                    .map(|e| e.start)
-                    .unwrap_or(u32::MAX);
-            }
-            let mut fmt = effects
-                .get(effect_cur)
-                .cloned()
-                .unwrap_or(Effect::default(default_aux));
-
-            if !fmt.flags.is_empty() {
-                let sf = fonts.get_face(run.face_id).scale_by_dpu(run.dpu);
-                let glyph = &run.glyphs[run_part.glyph_range.start()];
-                let position = glyph.position + run_part.offset;
-                if fmt.flags.contains(EffectFlags::UNDERLINE) {
-                    if let Some(metrics) = sf.underline_metrics() {
-                        let y_top = position.1 - metrics.position;
-                        let h = metrics.thickness;
-                        let x1 = position.0;
-                        underline = Some((x1, y_top, h, fmt.aux));
-                    }
-                }
-                if fmt.flags.contains(EffectFlags::STRIKETHROUGH) {
-                    if let Some(metrics) = sf.strikethrough_metrics() {
-                        let y_top = position.1 - metrics.position;
-                        let h = metrics.thickness;
-                        let x1 = position.0;
-                        strikethrough = Some((x1, y_top, h, fmt.aux));
-                    }
-                }
-            }
-
-            for mut glyph in run.glyphs[run_part.glyph_range.to_std()].iter().cloned() {
-                glyph.position += run_part.offset;
-
-                // If run is RTL, glyph index is decreasing
-                if (ltr && next_start <= glyph.index) || (!ltr && fmt.start > glyph.index) {
-                    if ltr {
-                        loop {
-                            effect_cur = effect_next;
-                            effect_next += 1;
-                            if effects
-                                .get(effect_next)
-                                .map(|e| e.start > glyph.index)
-                                .unwrap_or(true)
-                            {
-                                break;
-                            }
-                        }
-                        next_start = effects
-                            .get(effect_next)
-                            .map(|e| e.start)
-                            .unwrap_or(u32::MAX);
-                    } else {
-                        loop {
-                            effect_cur = effect_cur.wrapping_sub(1);
-                            if effects.get(effect_cur).map(|e| e.start).unwrap_or(0) <= glyph.index
-                            {
-                                break;
-                            }
-                        }
-                    }
-                    fmt = effects
-                        .get(effect_cur)
-                        .cloned()
-                        .unwrap_or(Effect::default(default_aux));
-
-                    if underline.is_some() != fmt.flags.contains(EffectFlags::UNDERLINE) {
-                        let sf = fonts.get_face(run.face_id).scale_by_dpu(run.dpu);
-                        if let Some((x1, y_top, h, aux)) = underline {
-                            let x2 = glyph.position.0;
-                            g(x1, x2, y_top, h, effect_cur, aux);
-                            underline = None;
-                        } else if let Some(metrics) = sf.underline_metrics() {
-                            let y_top = glyph.position.1 - metrics.position;
-                            let h = metrics.thickness;
-                            let x1 = glyph.position.0;
-                            underline = Some((x1, y_top, h, fmt.aux));
-                        }
-                    }
-                    if strikethrough.is_some() != fmt.flags.contains(EffectFlags::STRIKETHROUGH) {
-                        let sf = fonts.get_face(run.face_id).scale_by_dpu(run.dpu);
-                        if let Some((x1, y_top, h, aux)) = strikethrough {
-                            let x2 = glyph.position.0;
-                            g(x1, x2, y_top, h, effect_cur, aux);
-                            strikethrough = None;
-                        } else if let Some(metrics) = sf.strikethrough_metrics() {
-                            let y_top = glyph.position.1 - metrics.position;
-                            let h = metrics.thickness;
-                            let x1 = glyph.position.0;
-                            strikethrough = Some((x1, y_top, h, fmt.aux));
-                        }
-                    }
-                }
-
-                f(face_id, dpem, glyph, effect_cur, fmt.aux);
-            }
-
-            // In case of RTL, we need to correct the value for the next run
-            effect_cur = effect_next.wrapping_sub(1);
-
-            if let Some((x1, y_top, h, aux)) = underline {
-                let x2 = if run_part.glyph_range.end() < run.glyphs.len() {
-                    run.glyphs[run_part.glyph_range.end()].position.0
-                } else {
-                    run.caret
-                } + run_part.offset.0;
-                g(x1, x2, y_top, h, effect_cur, aux);
-            }
-            if let Some((x1, y_top, h, aux)) = strikethrough {
-                let x2 = if run_part.glyph_range.end() < run.glyphs.len() {
-                    run.glyphs[run_part.glyph_range.end()].position.0
-                } else {
-                    run.caret
-                } + run_part.offset.0;
-                g(x1, x2, y_top, h, effect_cur, aux);
-            }
-        }
+    ) -> impl Iterator<Item = GlyphRun<'a, X>> + 'a {
+        self.wrapped_runs
+            .iter()
+            .filter(|part| !part.glyph_range.is_empty())
+            .map(move |part| GlyphRun {
+                run: &self.runs[to_usize(part.glyph_run)],
+                range: part.glyph_range,
+                offset: part.offset,
+                effects,
+                default_aux,
+            })
     }
 
     /// Yield a sequence of rectangles to highlight a given text range
