@@ -10,7 +10,7 @@
 use super::{FontStyle, FontWeight, FontWidth};
 use fontique::{
     Attributes, Collection, FamilyId, GenericFamily, QueryFamily, QueryFont, QueryStatus, Script,
-    SourceCache,
+    SourceCache, UnicodeRange,
 };
 use log::debug;
 #[cfg(feature = "serde")]
@@ -195,21 +195,26 @@ impl FontSelector {
     /// Resolve font faces for each matching font
     ///
     /// All font faces matching steps 1-4 will be returned through the `add_face` closure.
-    pub(crate) fn select<F>(&self, resolver: &mut Resolver, script: Script, add_face: F)
-    where
+    pub(crate) fn select<F>(
+        &self,
+        resolver: &mut Resolver,
+        script: Script,
+        range: Option<UnicodeRange>,
+        add_face: F,
+    ) where
         F: FnMut(&QueryFont) -> QueryStatus,
     {
         let mut query = resolver.collection.query(&mut resolver.cache);
         if let Some(gf) = self.family.as_generic() {
             debug!(
-                "select: Script::{:?}, GenericFamily::{:?}, {:?}, {:?}, {:?}",
+                "select: Script::{:?}, {range:?}, GenericFamily::{:?}, {:?}, {:?}, {:?}",
                 &script, gf, &self.weight, &self.width, &self.style
             );
 
             query.set_families([gf]);
         } else if let Some(set) = resolver.families.get(&self.family) {
             debug!(
-                "select: Script::{:?}, {:?}, {:?}, {:?}, {:?}",
+                "select: Script::{:?}, {range:?}, {:?}, {:?}, {:?}, {:?}",
                 &script, set, &self.weight, &self.width, &self.style
             );
 
@@ -223,6 +228,8 @@ impl FontSelector {
         });
 
         query.set_fallbacks(script);
+
+        query.set_range(range);
 
         query.matches_with(add_face);
     }

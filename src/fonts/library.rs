@@ -9,7 +9,7 @@
 
 use super::{FaceRef, FontSelector, Resolver};
 use crate::conv::{to_u32, to_usize};
-use fontique::{Blob, QueryStatus, Script, Synthesis};
+use fontique::{Blob, QueryStatus, Script, Synthesis, UnicodeRange};
 use std::collections::hash_map::{Entry, HashMap};
 use std::sync::{LazyLock, Mutex, MutexGuard, RwLock};
 use thiserror::Error;
@@ -333,6 +333,7 @@ impl FontLibrary {
         &self,
         selector: &FontSelector,
         script: Script,
+        range: Option<UnicodeRange>,
     ) -> Result<FontId, NoFontMatch> {
         let sel_hash = {
             use std::collections::hash_map::DefaultHasher;
@@ -341,6 +342,7 @@ impl FontLibrary {
             let mut s = DefaultHasher::new();
             selector.hash(&mut s);
             script.hash(&mut s);
+            range.hash(&mut s);
             s.finish()
         };
 
@@ -357,7 +359,7 @@ impl FontLibrary {
         let mut resolver = self.resolver.lock().unwrap();
         let mut face_list = self.faces.write().unwrap();
 
-        selector.select(&mut resolver, script, |qf| {
+        selector.select(&mut resolver, script, range, |qf| {
             if log::log_enabled!(log::Level::Debug) {
                 families.push(qf.family);
             }

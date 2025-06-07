@@ -12,6 +12,7 @@ use crate::conv::{to_u32, to_usize};
 use crate::fonts::{self, FontSelector, NoFontMatch};
 use crate::format::FormattableText;
 use crate::{script_to_fontique, shaper, Direction};
+use fontique::UnicodeRange;
 use swash::text::cluster::Boundary;
 use swash::text::LineBreak as LB;
 use unicode_bidi::{BidiClass, BidiInfo, LTR_LEVEL, RTL_LEVEL};
@@ -172,6 +173,8 @@ impl TextDisplay {
                 input.script = script_to_fontique(props.script());
             }
 
+            let unicode_range = UnicodeRange::find(c as u32);
+
             let opt_last_face = if matches!(
                 classes[pos],
                 BidiClass::L | BidiClass::R | BidiClass::AL | BidiClass::EN | BidiClass::AN
@@ -180,7 +183,7 @@ impl TextDisplay {
             } else {
                 face_id
             };
-            let font_id = fonts.select_font(&font, input.script)?;
+            let font_id = fonts.select_font(&font, input.script, unicode_range)?;
             let new_face_id = fonts
                 .face_for_char(font_id, opt_last_face, c)
                 .expect("invalid FontId");
