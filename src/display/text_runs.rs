@@ -12,6 +12,7 @@ use crate::conv::{to_u32, to_usize};
 use crate::fonts::{self, FontSelector, NoFontMatch};
 use crate::format::FormattableText;
 use crate::{script_to_fontique, shaper, Direction};
+use fontique::UnicodeRange;
 use swash::text::cluster::Boundary;
 use swash::text::LineBreak as LB;
 use unicode_bidi::{BidiClass, BidiInfo, LTR_LEVEL, RTL_LEVEL};
@@ -168,9 +169,12 @@ impl TextDisplay {
                 }
             }
 
+            let script = script_to_fontique(props.script());
             if input.script == UNKNOWN_SCRIPT && props.script().is_real() {
-                input.script = script_to_fontique(props.script());
+                input.script = script;
             }
+
+            let unicode_range = UnicodeRange::find(c as u32);
 
             let opt_last_face = if matches!(
                 classes[pos],
@@ -180,12 +184,11 @@ impl TextDisplay {
             } else {
                 face_id
             };
-            let font_id = fonts.select_font(&font, input.script)?;
+            let font_id = fonts.select_font(&font, script, unicode_range)?;
             let new_face_id = fonts
                 .face_for_char(font_id, opt_last_face, c)
-                .expect("invalid FontId")
-                .or(face_id);
-            let font_break = face_id.is_some() && new_face_id != face_id;
+                .expect("invalid FontId");
+            let font_break = face_id.is_some() && Some(new_face_id) != face_id;
 
             if hard_break || control_break || bidi_break || font_break {
                 // TODO: sometimes this results in empty runs immediately
@@ -201,7 +204,7 @@ impl TextDisplay {
                     _ => RunSpecial::NoBreak,
                 };
 
-                let face = face_id.expect("have a set face_id");
+                let face = face_id.unwrap_or(new_face_id);
                 self.runs
                     .push(shaper::shape(input, range, face, breaks, special));
 
@@ -218,9 +221,14 @@ impl TextDisplay {
 
             last_is_control = is_control;
             last_is_htab = is_htab;
-            face_id = new_face_id;
+            face_id = Some(new_face_id);
             input.dpem = dpem;
         }
+
+        let Some(face) = face_id else {
+            // Text is empty
+            return Ok(());
+        };
 
         debug_assert!(analyzer.next().is_none());
         let hard_break = last_props
@@ -241,29 +249,16 @@ impl TextDisplay {
             _ => RunSpecial::None,
         };
 
-        let font_id = fonts.select_font(&font, input.script)?;
-        if let Some(id) = face_id {
-            if !fonts.contains_face(font_id, id).expect("invalid FontId") {
-                face_id = None;
-            }
-        }
-        let face_id =
-            face_id.unwrap_or_else(|| fonts.first_face_for(font_id).expect("invalid FontId"));
         self.runs
-            .push(shaper::shape(input, range, face_id, breaks, special));
+            .push(shaper::shape(input, range, face, breaks, special));
 
         // Following a hard break we have an implied empty line.
         if hard_break {
             let range = (text.len()..text.len()).into();
             input.level = default_para_level.unwrap_or(LTR_LEVEL);
             breaks = Default::default();
-            self.runs.push(shaper::shape(
-                input,
-                range,
-                face_id,
-                breaks,
-                RunSpecial::None,
-            ));
+            self.runs
+                .push(shaper::shape(input, range, face, breaks, RunSpecial::None));
         }
 
         /*
@@ -271,8 +266,8 @@ impl TextDisplay {
         for run in &self.runs {
             let slice = &text[run.range];
             print!(
-                "\t{:?}, text[{}..{}]: '{}', ",
-                run.level, run.range.start, run.range.end, slice
+                "\t{:?}, text[{}..{}]: '{}', {:?}, ",
+                run.level, run.range.start, run.range.end, slice, run.script
             );
             match run.special {
                 RunSpecial::None => (),

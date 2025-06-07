@@ -9,7 +9,7 @@
 
 use super::{FaceRef, FontSelector, Resolver};
 use crate::conv::{to_u32, to_usize};
-use fontique::{Blob, QueryStatus, Script, Synthesis};
+use fontique::{Blob, QueryStatus, Script, Synthesis, UnicodeRange};
 use std::collections::hash_map::{Entry, HashMap};
 use std::sync::{LazyLock, Mutex, MutexGuard, RwLock};
 use thiserror::Error;
@@ -222,7 +222,7 @@ pub struct FontLibrary {
 /// Font management
 impl FontLibrary {
     /// Get a reference to the font resolver
-    pub fn resolver(&self) -> MutexGuard<Resolver> {
+    pub fn resolver(&self) -> MutexGuard<'_, Resolver> {
         self.resolver.lock().unwrap()
     }
 
@@ -244,7 +244,7 @@ impl FontLibrary {
     ///
     /// This is a wrapper around [`FontLibrary::first_face_for`] and [`FontLibrary::get_face`].
     #[inline]
-    pub fn get_first_face(&self, font_id: FontId) -> Result<FaceRef, InvalidFontId> {
+    pub fn get_first_face(&self, font_id: FontId) -> Result<FaceRef<'_>, InvalidFontId> {
         let face_id = self.first_face_for(font_id)?;
         Ok(self.get_face(face_id))
     }
@@ -268,13 +268,15 @@ impl FontLibrary {
     ///
     /// Otherwise, return the first face of `font_id` which covers `c`.
     ///
-    /// Otherwise (if no face covers `c`) return `None`.
+    /// Otherwise (if no face covers `c`), return `last_face_id` (if some) or
+    /// else the first face listed for `font_id`. The idea here is to ensure
+    /// that shaping can continue without causing unnecessary font breaks.
     pub fn face_for_char(
         &self,
         font_id: FontId,
         last_face_id: Option<FaceId>,
         c: char,
-    ) -> Result<Option<FaceId>, InvalidFontId> {
+    ) -> Result<FaceId, InvalidFontId> {
         // TODO: `face.glyph_index` is a bit slow to use like this where several
         // faces may return no result before we find a match. Caching results
         // in a HashMap helps. Perhaps better would be to (somehow) determine
@@ -294,14 +296,16 @@ impl FontLibrary {
                 let face = &faces.faces[face_id.get()];
                 // TODO(opt): should we cache this lookup?
                 if face.face.glyph_index(c).is_some() {
-                    return Ok(Some(face_id));
+                    return Ok(face_id);
                 }
             }
         }
 
-        Ok(match font.2.entry(c) {
+        // Check the cache for c
+        let result = match font.2.entry(c) {
             Entry::Occupied(entry) => *entry.get(),
             Entry::Vacant(entry) => {
+                // Not cached: look for the first suitable face
                 let mut id: Option<FaceId> = None;
                 for face_id in font.1.iter() {
                     let face = &faces.faces[face_id.get()];
@@ -310,10 +314,15 @@ impl FontLibrary {
                         break;
                     }
                 }
+
                 entry.insert(id);
                 id
             }
-        })
+        };
+
+        Ok(result
+            .or(last_face_id)
+            .unwrap_or_else(|| *font.1.first().unwrap()))
     }
 
     /// Select a font
@@ -324,6 +333,7 @@ impl FontLibrary {
         &self,
         selector: &FontSelector,
         script: Script,
+        range: Option<UnicodeRange>,
     ) -> Result<FontId, NoFontMatch> {
         let sel_hash = {
             use std::collections::hash_map::DefaultHasher;
@@ -332,6 +342,7 @@ impl FontLibrary {
             let mut s = DefaultHasher::new();
             selector.hash(&mut s);
             script.hash(&mut s);
+            range.hash(&mut s);
             s.finish()
         };
 
@@ -348,7 +359,7 @@ impl FontLibrary {
         let mut resolver = self.resolver.lock().unwrap();
         let mut face_list = self.faces.write().unwrap();
 
-        selector.select(&mut resolver, script, |qf| {
+        selector.select(&mut resolver, script, range, |qf| {
             if log::log_enabled!(log::Level::Debug) {
                 families.push(qf.family);
             }
