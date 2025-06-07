@@ -268,13 +268,15 @@ impl FontLibrary {
     ///
     /// Otherwise, return the first face of `font_id` which covers `c`.
     ///
-    /// Otherwise (if no face covers `c`) return `None`.
+    /// Otherwise (if no face covers `c`), return `last_face_id` (if some) or
+    /// else the first face listed for `font_id`. The idea here is to ensure
+    /// that shaping can continue without causing unnecessary font breaks.
     pub fn face_for_char(
         &self,
         font_id: FontId,
         last_face_id: Option<FaceId>,
         c: char,
-    ) -> Result<Option<FaceId>, InvalidFontId> {
+    ) -> Result<FaceId, InvalidFontId> {
         // TODO: `face.glyph_index` is a bit slow to use like this where several
         // faces may return no result before we find a match. Caching results
         // in a HashMap helps. Perhaps better would be to (somehow) determine
@@ -294,14 +296,16 @@ impl FontLibrary {
                 let face = &faces.faces[face_id.get()];
                 // TODO(opt): should we cache this lookup?
                 if face.face.glyph_index(c).is_some() {
-                    return Ok(Some(face_id));
+                    return Ok(face_id);
                 }
             }
         }
 
-        Ok(match font.2.entry(c) {
+        // Check the cache for c
+        let result = match font.2.entry(c) {
             Entry::Occupied(entry) => *entry.get(),
             Entry::Vacant(entry) => {
+                // Not cached: look for the first suitable face
                 let mut id: Option<FaceId> = None;
                 for face_id in font.1.iter() {
                     let face = &faces.faces[face_id.get()];
@@ -310,10 +314,15 @@ impl FontLibrary {
                         break;
                     }
                 }
+
                 entry.insert(id);
                 id
             }
-        })
+        };
+
+        Ok(result
+            .or(last_face_id)
+            .unwrap_or_else(|| *font.1.first().unwrap()))
     }
 
     /// Select a font

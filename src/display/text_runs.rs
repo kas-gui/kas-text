@@ -183,9 +183,8 @@ impl TextDisplay {
             let font_id = fonts.select_font(&font, input.script)?;
             let new_face_id = fonts
                 .face_for_char(font_id, opt_last_face, c)
-                .expect("invalid FontId")
-                .or(face_id);
-            let font_break = face_id.is_some() && new_face_id != face_id;
+                .expect("invalid FontId");
+            let font_break = face_id.is_some() && Some(new_face_id) != face_id;
 
             if hard_break || control_break || bidi_break || font_break {
                 // TODO: sometimes this results in empty runs immediately
@@ -201,7 +200,7 @@ impl TextDisplay {
                     _ => RunSpecial::NoBreak,
                 };
 
-                let face = face_id.expect("have a set face_id");
+                let face = face_id.unwrap_or(new_face_id);
                 self.runs
                     .push(shaper::shape(input, range, face, breaks, special));
 
@@ -218,7 +217,7 @@ impl TextDisplay {
 
             last_is_control = is_control;
             last_is_htab = is_htab;
-            face_id = new_face_id;
+            face_id = Some(new_face_id);
             input.dpem = dpem;
         }
 
