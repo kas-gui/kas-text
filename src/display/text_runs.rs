@@ -221,6 +221,11 @@ impl TextDisplay {
             input.dpem = dpem;
         }
 
+        let Some(face) = face_id else {
+            // Text is empty
+            return Ok(());
+        };
+
         debug_assert!(analyzer.next().is_none());
         let hard_break = last_props
             .map(|props| match props.line_break() {
@@ -240,29 +245,16 @@ impl TextDisplay {
             _ => RunSpecial::None,
         };
 
-        let font_id = fonts.select_font(&font, input.script)?;
-        if let Some(id) = face_id {
-            if !fonts.contains_face(font_id, id).expect("invalid FontId") {
-                face_id = None;
-            }
-        }
-        let face_id =
-            face_id.unwrap_or_else(|| fonts.first_face_for(font_id).expect("invalid FontId"));
         self.runs
-            .push(shaper::shape(input, range, face_id, breaks, special));
+            .push(shaper::shape(input, range, face, breaks, special));
 
         // Following a hard break we have an implied empty line.
         if hard_break {
             let range = (text.len()..text.len()).into();
             input.level = default_para_level.unwrap_or(LTR_LEVEL);
             breaks = Default::default();
-            self.runs.push(shaper::shape(
-                input,
-                range,
-                face_id,
-                breaks,
-                RunSpecial::None,
-            ));
+            self.runs
+                .push(shaper::shape(input, range, face, breaks, RunSpecial::None));
         }
 
         /*
