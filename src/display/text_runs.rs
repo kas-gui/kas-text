@@ -169,8 +169,9 @@ impl TextDisplay {
                 }
             }
 
+            let script = script_to_fontique(props.script());
             if input.script == UNKNOWN_SCRIPT && props.script().is_real() {
-                input.script = script_to_fontique(props.script());
+                input.script = script;
             }
 
             let unicode_range = UnicodeRange::find(c as u32);
@@ -183,7 +184,7 @@ impl TextDisplay {
             } else {
                 face_id
             };
-            let font_id = fonts.select_font(&font, input.script, unicode_range)?;
+            let font_id = fonts.select_font(&font, script, unicode_range)?;
             let new_face_id = fonts
                 .face_for_char(font_id, opt_last_face, c)
                 .expect("invalid FontId");
@@ -265,8 +266,8 @@ impl TextDisplay {
         for run in &self.runs {
             let slice = &text[run.range];
             print!(
-                "\t{:?}, text[{}..{}]: '{}', ",
-                run.level, run.range.start, run.range.end, slice
+                "\t{:?}, text[{}..{}]: '{}', {:?}, ",
+                run.level, run.range.start, run.range.end, slice, run.script
             );
             match run.special {
                 RunSpecial::None => (),
