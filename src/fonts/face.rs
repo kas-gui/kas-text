@@ -67,7 +67,7 @@ pub struct ScaledFaceRef<'a>(&'a Face<'a>, DPU);
 impl<'a> ScaledFaceRef<'a> {
     /// Unscaled face
     #[inline]
-    pub fn face(&self) -> FaceRef {
+    pub fn face(&self) -> FaceRef<'_> {
         FaceRef(self.0)
     }
 
