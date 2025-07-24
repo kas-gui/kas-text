@@ -161,6 +161,18 @@ impl TextDisplay {
     /// This does text layout, including wrapping and horizontal alignment but
     /// excluding vertical alignment.
     ///
+    /// `wrap_width` causes line wrapping at the given width. Use
+    /// `f32::INFINITY` to disable wrapping.
+    ///
+    /// Assuming that `width_bound` is finite and greater than the line length,
+    /// lines will be aligned within `0..width_bound` according to `h_align`.
+    /// If lines are longer than `width_bound` then lines will escape
+    /// `0..width_bound` according to alignment (for example, left-aligned text
+    /// will align the left edge to `0` and thus escape on the right, while
+    /// centered text with `width_bound = 0.0` will result in text lines being
+    /// centered about the origin). Justified text will not display correctly
+    /// when `width_bound` is smaller than line lengths.
+    ///
     /// Returns the required height.
     pub fn prepare_lines(&mut self, wrap_width: f32, width_bound: f32, h_align: Align) -> f32 {
         let mut adder = LineAdder::new(width_bound, h_align);
