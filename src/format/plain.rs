@@ -5,7 +5,7 @@
 
 //! Implementations for plain text
 
-use super::{EditableText, FontToken, FormattableText};
+use super::{FontToken, FormattableText};
 use crate::Effect;
 
 impl<'t> FormattableText for &'t str {
@@ -40,23 +40,5 @@ impl FormattableText for String {
 
     fn effect_tokens(&self) -> &[Effect<()>] {
         &[]
-    }
-}
-
-impl EditableText for String {
-    fn set_string(&mut self, string: String) {
-        *self = string;
-    }
-
-    fn swap_string(&mut self, string: &mut String) {
-        std::mem::swap(self, string);
-    }
-
-    fn insert_char(&mut self, index: usize, c: char) {
-        self.insert(index, c);
-    }
-
-    fn replace_range(&mut self, range: std::ops::Range<usize>, replace_with: &str) {
-        self.replace_range(range, replace_with);
     }
 }

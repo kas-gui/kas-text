@@ -5,7 +5,7 @@
 
 //! Markdown parsing
 
-use super::{EditableText, FontToken, FormattableText};
+use super::{FontToken, FormattableText};
 use crate::conv::to_u32;
 use crate::fonts::{FamilySelector, FontSelector, FontStyle, FontWeight};
 use crate::{Effect, EffectFlags};
@@ -120,57 +120,6 @@ impl FormattableText for Markdown {
 
     fn effect_tokens(&self) -> &[Effect<()>] {
         &self.effects
-    }
-}
-
-impl EditableText for Markdown {
-    fn set_string(&mut self, string: String) {
-        self.text = string;
-        self.fmt.clear();
-    }
-
-    fn swap_string(&mut self, string: &mut String) {
-        std::mem::swap(&mut self.text, string);
-        self.fmt.clear();
-    }
-
-    fn insert_char(&mut self, index: usize, c: char) {
-        self.text.insert(index, c);
-        let start = to_u32(index);
-        let len = to_u32(c.len_utf8());
-        for fmt in &mut self.fmt {
-            if fmt.start >= start {
-                fmt.start += len;
-            }
-        }
-    }
-
-    fn replace_range(&mut self, range: std::ops::Range<usize>, replace_with: &str) {
-        self.text.replace_range(range.clone(), replace_with);
-
-        let start = to_u32(range.start);
-        let end = to_u32(range.end);
-        let len = end - start;
-        let mut last = None;
-        let mut i = 0;
-        while i < self.str_len() {
-            let fmt = &mut self.fmt[i];
-            if fmt.start >= start {
-                if fmt.start < end {
-                    fmt.start = start;
-                } else {
-                    fmt.start -= len;
-                }
-                if let Some((index, start)) = last {
-                    if start == fmt.start {
-                        self.fmt.remove(index);
-                        continue;
-                    }
-                }
-                last = Some((i, fmt.start));
-            }
-            i += 1;
-        }
     }
 }
 

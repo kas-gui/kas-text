@@ -7,7 +7,7 @@
 
 use crate::display::{Effect, MarkerPosIter, NotReady, TextDisplay};
 use crate::fonts::{FontSelector, NoFontMatch};
-use crate::format::{EditableText, FormattableText};
+use crate::format::{FormattableText};
 use crate::{Align, Direction, GlyphRun, Status, Vec2};
 
 /// Text type-setting object (high-level API)
@@ -583,69 +583,5 @@ impl<T: FormattableText + ?Sized> Text<T> {
         F: FnMut(Vec2, Vec2),
     {
         Ok(self.display()?.highlight_range(range, &mut f))
-    }
-}
-
-/// Text editing operations
-impl<T: EditableText + ?Sized> Text<T> {
-    /// Insert a char at the given position
-    ///
-    /// This may be used to edit the raw text instead of replacing it.
-    /// One must call [`Text::prepare`] afterwards.
-    ///
-    /// Formatting is adjusted: any specifiers starting at or after `index` are
-    /// delayed by the length of `c`.
-    ///
-    /// Currently this is not significantly more efficient than
-    /// [`Text::set_text`]. This may change in the future (TODO).
-    #[inline]
-    pub fn insert_char(&mut self, index: usize, c: char) {
-        self.text.insert_char(index, c);
-        self.set_max_status(Status::New);
-    }
-
-    /// Replace a section of text
-    ///
-    /// This may be used to edit the raw text instead of replacing it.
-    /// One must call [`Text::prepare`] afterwards.
-    ///
-    /// One may simulate an unbounded range by via `start..usize::MAX`.
-    ///
-    /// Formatting is adjusted: any specifiers within the replaced text are
-    /// pushed back to the end of the replacement, and the position of any
-    /// specifiers after the replaced section is adjusted as appropriate.
-    ///
-    /// Currently this is not significantly more efficient than
-    /// [`Text::set_text`]. This may change in the future (TODO).
-    #[inline]
-    pub fn replace_range(&mut self, range: std::ops::Range<usize>, replace_with: &str) {
-        self.text.replace_range(range, replace_with);
-        self.set_max_status(Status::New);
-    }
-
-    /// Set text to a raw `String`
-    ///
-    /// One must call [`Text::prepare`] afterwards.
-    ///
-    /// All existing text formatting is removed.
-    #[inline]
-    pub fn set_string(&mut self, string: String) {
-        self.text.set_string(string);
-        self.set_max_status(Status::New);
-    }
-
-    /// Swap the raw text with a `String`
-    ///
-    /// This may be used to edit the raw text instead of replacing it.
-    /// One must call [`Text::prepare`] afterwards.
-    ///
-    /// All existing text formatting is removed.
-    ///
-    /// Currently this is not significantly more efficient than
-    /// [`Text::set_text`]. This may change in the future (TODO).
-    #[inline]
-    pub fn swap_string(&mut self, string: &mut String) {
-        self.text.swap_string(string);
-        self.set_max_status(Status::New);
     }
 }

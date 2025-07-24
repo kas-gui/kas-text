@@ -154,34 +154,6 @@ impl<'t> FormattableText for &'t dyn FormattableTextDyn {
     }
 }
 
-/// Extension of [`FormattableText`] allowing editing
-pub trait EditableText: FormattableText {
-    /// Set unformatted text
-    ///
-    /// Existing contents and formatting are replaced entirely.
-    fn set_string(&mut self, string: String);
-
-    /// Swap the contiguous unformatted text with another `string`
-    ///
-    /// Any formatting present is removed.
-    fn swap_string(&mut self, string: &mut String) {
-        let mut temp = self.as_str().to_string();
-        std::mem::swap(&mut temp, string);
-        self.set_string(temp);
-    }
-
-    /// Insert a `char` at the given position
-    ///
-    /// Formatting is adjusted such that it still affects the same chars (i.e.
-    /// all formatting after `index` is postponed by the length of the char).
-    fn insert_char(&mut self, index: usize, c: char);
-
-    /// Replace text at `range` with `replace_with`
-    ///
-    /// Formatting is adjusted such that it still affects the same chars.
-    fn replace_range(&mut self, range: std::ops::Range<usize>, replace_with: &str);
-}
-
 impl Clone for Box<dyn FormattableTextDyn> {
     fn clone(&self) -> Self {
         (**self).clone_boxed()
