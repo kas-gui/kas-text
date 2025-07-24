@@ -59,7 +59,7 @@ pub struct Text<T: FormattableText + ?Sized> {
     text: T,
 }
 
-impl<T: Default + FormattableText + ?Sized> Default for Text<T> {
+impl<T: Default + FormattableText> Default for Text<T> {
     #[inline]
     fn default() -> Self {
         Text::new(T::default())

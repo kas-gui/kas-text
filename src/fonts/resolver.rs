@@ -17,7 +17,7 @@ use log::debug;
 use serde::{Deserialize, Serialize};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
-use std::hash::{BuildHasher, Hash, Hasher};
+use std::hash::{BuildHasher, Hash};
 
 /// A tool to resolve a single font face given a family and style
 pub struct Resolver {
@@ -54,9 +54,8 @@ impl Resolver {
         F: Into<FamilyName>,
     {
         let set = FamilySet(families.into_iter().map(|f| f.into()).collect());
-        let mut hasher = self.families.hasher().build_hasher();
-        set.hash(&mut hasher);
-        let sel = FamilySelector(hasher.finish() | (1 << 63));
+        let hash = self.families.hasher().hash_one(&set);
+        let sel = FamilySelector(hash | (1 << 63));
 
         match self.families.entry(sel) {
             Entry::Vacant(entry) => {
@@ -106,7 +105,7 @@ impl From<GenericFamily> for FamilyName {
 impl<'a> From<&'a FamilyName> for QueryFamily<'a> {
     fn from(family: &'a FamilyName) -> Self {
         match family {
-            FamilyName::Named(name) => QueryFamily::Named(&name),
+            FamilyName::Named(name) => QueryFamily::Named(name),
             FamilyName::Generic(gf) => QueryFamily::Generic(*gf),
         }
     }
