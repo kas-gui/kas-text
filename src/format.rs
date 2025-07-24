@@ -59,6 +59,25 @@ pub trait FormattableText: std::cmp::PartialEq + std::fmt::Debug {
     fn effect_tokens(&self) -> &[Effect<()>];
 }
 
+impl<F: FormattableText + ?Sized> FormattableText for &F {
+    type FontTokenIter<'a>
+        = F::FontTokenIter<'a>
+    where
+        Self: 'a;
+
+    fn as_str(&self) -> &str {
+        F::as_str(self)
+    }
+
+    fn font_tokens<'a>(&'a self, dpem: f32) -> Self::FontTokenIter<'a> {
+        F::font_tokens(self, dpem)
+    }
+
+    fn effect_tokens(&self) -> &[Effect<()>] {
+        F::effect_tokens(self)
+    }
+}
+
 /// Text, optionally with formatting data
 ///
 /// This is an object-safe version of the [`FormattableText`] trait (i.e.
@@ -152,34 +171,6 @@ impl<'t> FormattableText for &'t dyn FormattableTextDyn {
     fn effect_tokens(&self) -> &[Effect<()>] {
         FormattableTextDyn::effect_tokens(*self)
     }
-}
-
-/// Extension of [`FormattableText`] allowing editing
-pub trait EditableText: FormattableText {
-    /// Set unformatted text
-    ///
-    /// Existing contents and formatting are replaced entirely.
-    fn set_string(&mut self, string: String);
-
-    /// Swap the contiguous unformatted text with another `string`
-    ///
-    /// Any formatting present is removed.
-    fn swap_string(&mut self, string: &mut String) {
-        let mut temp = self.as_str().to_string();
-        std::mem::swap(&mut temp, string);
-        self.set_string(temp);
-    }
-
-    /// Insert a `char` at the given position
-    ///
-    /// Formatting is adjusted such that it still affects the same chars (i.e.
-    /// all formatting after `index` is postponed by the length of the char).
-    fn insert_char(&mut self, index: usize, c: char);
-
-    /// Replace text at `range` with `replace_with`
-    ///
-    /// Formatting is adjusted such that it still affects the same chars.
-    fn replace_range(&mut self, range: std::ops::Range<usize>, replace_with: &str);
 }
 
 impl Clone for Box<dyn FormattableTextDyn> {

@@ -222,7 +222,7 @@ pub struct FontLibrary {
 /// Font management
 impl FontLibrary {
     /// Get a reference to the font resolver
-    pub fn resolver(&self) -> MutexGuard<Resolver> {
+    pub fn resolver(&self) -> MutexGuard<'_, Resolver> {
         self.resolver.lock().unwrap()
     }
 
@@ -244,7 +244,7 @@ impl FontLibrary {
     ///
     /// This is a wrapper around [`FontLibrary::first_face_for`] and [`FontLibrary::get_face`].
     #[inline]
-    pub fn get_first_face(&self, font_id: FontId) -> Result<FaceRef, InvalidFontId> {
+    pub fn get_first_face(&self, font_id: FontId) -> Result<FaceRef<'_>, InvalidFontId> {
         let face_id = self.first_face_for(font_id)?;
         Ok(self.get_face(face_id))
     }

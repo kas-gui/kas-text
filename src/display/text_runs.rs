@@ -224,10 +224,7 @@ impl TextDisplay {
 
         debug_assert!(analyzer.next().is_none());
         let hard_break = last_props
-            .map(|props| match props.line_break() {
-                LB::BK | LB::CR | LB::LF | LB::NL => true,
-                _ => false,
-            })
+            .map(|props| matches!(props.line_break(), LB::BK | LB::CR | LB::LF | LB::NL))
             .unwrap_or(false);
 
         // Conclude: add last run. This may be empty, but we want it anyway.
@@ -296,6 +293,7 @@ impl TextDisplay {
 }
 
 trait ScriptExt {
+    #[allow(clippy::wrong_self_convention)]
     fn is_real(self) -> bool;
 }
 impl ScriptExt for swash::text::Script {
