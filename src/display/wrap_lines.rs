@@ -276,6 +276,20 @@ impl TextDisplay {
         }
     }
 
+    /// Add `offset` to all positioned content
+    ///
+    /// This is a low-level method which can be used for alignment in some
+    /// cases. Cost is `O(w)` where `w` is the number of wrapped runs.
+    pub fn apply_offset(&mut self, offset: Vec2) {
+        for run in &mut self.wrapped_runs {
+            run.offset += offset;
+        }
+        for line in &mut self.lines {
+            line.top += offset.1;
+            line.bottom += offset.1;
+        }
+    }
+
     /// Vertically align lines
     ///
     /// [Requires status][Self#status-of-preparation]: lines have been wrapped.
@@ -298,13 +312,7 @@ impl TextDisplay {
         let offset = new_offset - top;
 
         if offset != 0.0 {
-            for run in &mut self.wrapped_runs {
-                run.offset.1 += offset;
-            }
-            for line in &mut self.lines {
-                line.top += offset;
-                line.bottom += offset;
-            }
+            self.apply_offset(Vec2(0.0, offset));
         }
     }
 }
