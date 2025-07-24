@@ -59,6 +59,25 @@ pub trait FormattableText: std::cmp::PartialEq + std::fmt::Debug {
     fn effect_tokens(&self) -> &[Effect<()>];
 }
 
+impl<F: FormattableText + ?Sized> FormattableText for &F {
+    type FontTokenIter<'a>
+        = F::FontTokenIter<'a>
+    where
+        Self: 'a;
+
+    fn as_str(&self) -> &str {
+        F::as_str(self)
+    }
+
+    fn font_tokens<'a>(&'a self, dpem: f32) -> Self::FontTokenIter<'a> {
+        F::font_tokens(self, dpem)
+    }
+
+    fn effect_tokens(&self) -> &[Effect<()>] {
+        F::effect_tokens(self)
+    }
+}
+
 /// Text, optionally with formatting data
 ///
 /// This is an object-safe version of the [`FormattableText`] trait (i.e.

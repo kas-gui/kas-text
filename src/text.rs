@@ -7,7 +7,7 @@
 
 use crate::display::{Effect, MarkerPosIter, NotReady, TextDisplay};
 use crate::fonts::{FontSelector, NoFontMatch};
-use crate::format::{FormattableText};
+use crate::format::FormattableText;
 use crate::{Align, Direction, GlyphRun, Status, Vec2};
 
 /// Text type-setting object (high-level API)

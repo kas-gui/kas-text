@@ -8,7 +8,7 @@
 use super::{FontToken, FormattableText};
 use crate::Effect;
 
-impl<'t> FormattableText for &'t str {
+impl FormattableText for str {
     type FontTokenIter<'a>
         = std::iter::Empty<FontToken>
     where
