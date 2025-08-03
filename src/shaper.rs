@@ -46,7 +46,7 @@ pub(crate) struct GlyphBreak {
     /// Index of char in source text
     pub index: u32,
     /// Position in sequence of glyphs
-    pub pos: u32,
+    pub gi: u32,
     /// End position of previous "word" excluding space
     pub no_space_end: f32,
 }
@@ -57,7 +57,7 @@ impl GlyphBreak {
     pub(crate) fn new(index: u32) -> Self {
         GlyphBreak {
             index,
-            pos: u32::MAX,
+            gi: u32::MAX,
             no_space_end: f32::NAN,
         }
     }
@@ -141,14 +141,14 @@ impl GlyphRun {
                 if range.end <= self.breaks.len() {
                     let b = self.breaks[range.end - 1];
                     part.len_no_space = b.no_space_end;
-                    if to_usize(b.pos) < self.glyphs.len() {
-                        part.len = self.glyphs[to_usize(b.pos)].position.0
+                    if to_usize(b.gi) < self.glyphs.len() {
+                        part.len = self.glyphs[to_usize(b.gi)].position.0
                     }
                 }
             }
 
             if range.start > 0 {
-                let glyph = to_usize(self.breaks[range.start - 1].pos);
+                let glyph = to_usize(self.breaks[range.start - 1].gi);
                 part.offset = self.glyphs[glyph].position.0;
                 part.len_no_space -= part.offset;
                 part.len -= part.offset;
@@ -158,9 +158,9 @@ impl GlyphRun {
                 part.len = self.caret;
                 if range.start > 0 {
                     let b = self.breaks.len() - range.start;
-                    let pos = to_usize(self.breaks[b].pos);
-                    if pos < self.glyphs.len() {
-                        part.len = self.glyphs[pos].position.0;
+                    let gi = to_usize(self.breaks[b].gi);
+                    if gi < self.glyphs.len() {
+                        part.len = self.glyphs[gi].position.0;
                     }
                 }
                 part.len_no_space = part.len;
@@ -173,8 +173,8 @@ impl GlyphRun {
                     let b = self.breaks.len() - range.end;
                     let b = self.breaks[b];
                     part.len_no_space -= b.no_space_end;
-                    if to_usize(b.pos) < self.glyphs.len() {
-                        part.offset = self.glyphs[to_usize(b.pos)].position.0;
+                    if to_usize(b.gi) < self.glyphs.len() {
+                        part.offset = self.glyphs[to_usize(b.gi)].position.0;
                     }
                 }
                 part.len -= part.offset;
@@ -200,7 +200,7 @@ impl GlyphRun {
             if part == 0 {
                 0
             } else if part <= self.breaks.len() {
-                to_usize(self.breaks[part - 1].pos)
+                to_usize(self.breaks[part - 1].gi)
             } else {
                 debug_assert_eq!(part, self.breaks.len() + 1);
                 self.glyphs.len()
@@ -280,10 +280,10 @@ pub(crate) fn shape(
         let mut start_no_space = caret;
         let mut last_id = None;
         let side_bearing = |id: Option<GlyphId>| id.map(|id| sf.h_side_bearing(id)).unwrap_or(0.0);
-        for (pos, glyph) in glyphs.iter().enumerate().rev() {
-            if break_i < breaks.len() && to_usize(breaks[break_i].pos) == pos {
-                assert!(pos < glyphs.len());
-                breaks[break_i].pos = to_u32(pos) + 1;
+        for (gi, glyph) in glyphs.iter().enumerate().rev() {
+            if break_i < breaks.len() && to_usize(breaks[break_i].gi) == gi {
+                assert!(gi < glyphs.len());
+                breaks[break_i].gi = to_u32(gi) + 1;
                 breaks[break_i].no_space_end = start_no_space - side_bearing(last_id);
                 break_i = break_i.wrapping_sub(1);
             }
@@ -378,7 +378,7 @@ fn shape_rustybuzz(
             .map(|b| b.index == index)
             .unwrap_or(false)
         {
-            breaks[break_i].pos = to_u32(glyphs.len());
+            breaks[break_i].gi = to_u32(glyphs.len());
             breaks[break_i].no_space_end = no_space_end;
             break_i += 1;
         }
@@ -452,7 +452,7 @@ fn shape_simple(
             .map(|b| b.index == index)
             .unwrap_or(false)
         {
-            breaks[break_i].pos = to_u32(glyphs.len());
+            breaks[break_i].gi = to_u32(glyphs.len());
             breaks[break_i].no_space_end = no_space_end;
             break_i += 1;
             no_space_end = caret;

@@ -140,10 +140,10 @@ impl TextDisplay {
         let mut last_is_htab = false;
         let mut non_control_end = 0;
 
-        for (pos, c) in text.char_indices() {
+        for (index, c) in text.char_indices() {
             // Handling for control chars
             if !last_is_control {
-                non_control_end = pos;
+                non_control_end = index;
             }
             let is_control = c.is_control();
             let is_htab = c == '\t';
@@ -158,10 +158,10 @@ impl TextDisplay {
             let is_break = hard_break || boundary == Boundary::Line;
 
             // Force end of current run?
-            let bidi_break = levels[pos] != input.level;
+            let bidi_break = levels[index] != input.level;
 
             if let Some(fmt) = next_fmt.as_ref() {
-                if to_usize(fmt.start) == pos {
+                if to_usize(fmt.start) == index {
                     font = fmt.font;
                     dpem = fmt.dpem;
                     next_fmt = font_tokens.next();
@@ -173,7 +173,7 @@ impl TextDisplay {
             }
 
             let opt_last_face = if matches!(
-                classes[pos],
+                classes[index],
                 BidiClass::L | BidiClass::R | BidiClass::AL | BidiClass::EN | BidiClass::AN
             ) {
                 None
@@ -205,15 +205,15 @@ impl TextDisplay {
                 self.runs
                     .push(shaper::shape(input, range, face, breaks, special));
 
-                start = pos;
-                non_control_end = pos;
-                input.level = levels[pos];
+                start = index;
+                non_control_end = index;
+                input.level = levels[index];
                 breaks = Default::default();
                 input.script = UNKNOWN_SCRIPT;
             } else if is_break && !is_control {
                 // We do break runs when hitting control chars, but only when
                 // encountering the next non-control character.
-                breaks.push(shaper::GlyphBreak::new(to_u32(pos)));
+                breaks.push(shaper::GlyphBreak::new(to_u32(index)));
             }
 
             last_is_control = is_control;
