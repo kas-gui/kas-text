@@ -442,29 +442,21 @@ impl TextDisplay {
 
     /// Iterate over runs of positioned glyphs
     ///
-    /// This method is just sugar for `self.runs_with_effects(&[], ())`.
+    /// All glyphs are translated by the given `offset` (this is practically
+    /// free).
     ///
-    /// [Requires status][Self#status-of-preparation]:
-    /// text is fully prepared for display.
-    ///
-    /// Runs are yielded in undefined order. The total number of
-    /// glyphs yielded will equal [`TextDisplay::num_glyphs`].
-    pub fn runs(&self) -> impl Iterator<Item = GlyphRun<'_>> {
-        self.runs_with_effects(&[])
-    }
-
-    /// Iterate over runs of positioned glyphs with effects
-    ///
-    /// If the list `effects` is empty or has first entry with `start > 0`, the
-    /// result of `Effect::default()` is used.
-    ///
-    /// [Requires status][Self#status-of-preparation]:
-    /// text is fully prepared for display.
+    /// An [`Effect`] sequence supports underline, strikethrough and custom
+    /// indexing (e.g. for a color palette). Pass `&[]` if effects are not
+    /// required. (The default effect is always [`Effect::default()`].)
     ///
     /// Runs are yielded in undefined order. The total number of
     /// glyphs yielded will equal [`TextDisplay::num_glyphs`].
-    pub fn runs_with_effects<'a>(
+    ///
+    /// [Requires status][Self#status-of-preparation]:
+    /// text is fully prepared for display.
+    pub fn runs<'a>(
         &'a self,
+        offset: Vec2,
         effects: &'a [Effect],
     ) -> impl Iterator<Item = GlyphRun<'a>> + 'a {
         self.wrapped_runs
@@ -473,7 +465,7 @@ impl TextDisplay {
             .map(move |part| GlyphRun {
                 run: &self.runs[to_usize(part.glyph_run)],
                 range: part.glyph_range,
-                offset: part.offset,
+                offset: offset + part.offset,
                 effects,
             })
     }
