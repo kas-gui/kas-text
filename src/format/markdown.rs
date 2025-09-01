@@ -49,7 +49,7 @@ pub enum Error {
 pub struct Markdown {
     text: String,
     fmt: Vec<Fmt>,
-    effects: Vec<Effect<()>>,
+    effects: Vec<Effect>,
 }
 
 impl Markdown {
@@ -118,7 +118,7 @@ impl FormattableText for Markdown {
         FontTokenIter::new(&self.fmt, dpem)
     }
 
-    fn effect_tokens(&self) -> &[Effect<()>] {
+    fn effect_tokens(&self) -> &[Effect] {
         &self.effects
     }
 }
@@ -197,8 +197,8 @@ fn parse(input: &str) -> Result<Markdown, Error> {
         if token.flags != flags {
             effects.push(Effect {
                 start: token.start,
+                e: 0,
                 flags: token.flags,
-                aux: (),
             });
             flags = token.flags;
         }

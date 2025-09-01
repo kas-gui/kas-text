@@ -32,7 +32,7 @@ use crate::{Align, Direction, GlyphRun, Status, Vec2};
 /// text.set_bounds(Vec2(200.0, 50.0));
 /// text.prepare().unwrap();
 ///
-/// for run in text.runs().unwrap() {
+/// for run in text.runs(Vec2::ZERO, &[]).unwrap() {
 ///     let (face, dpem) = (run.face_id(), run.dpem());
 ///     for glyph in run.glyphs() {
 ///         println!("{face:?} - {dpem}px - {glyph:?}");
@@ -336,7 +336,7 @@ impl<T: FormattableText + ?Sized> Text<T> {
     /// preferable not to use this method (use a dummy implementation returning
     /// `&[]` and use inherent methods on the text object via [`Text::text`]).
     #[inline]
-    pub fn effect_tokens(&self) -> &[Effect<()>] {
+    pub fn effect_tokens(&self) -> &[Effect] {
         self.text.effect_tokens()
     }
 }
@@ -540,35 +540,21 @@ impl<T: FormattableText + ?Sized> Text<T> {
 
     /// Iterate over runs of positioned glyphs
     ///
-    /// This method is just sugar for `self.runs_with_effects(&[], ())`.
+    /// All glyphs are translated by the given `offset` (this is practically
+    /// free).
+    ///
+    /// An [`Effect`] sequence supports underline, strikethrough and custom
+    /// indexing (e.g. for a color palette). Pass `&[]` if effects are not
+    /// required. (The default effect is always [`Effect::default()`].)
     ///
     /// Runs are yielded in undefined order. The total number of
     /// glyphs yielded will equal [`TextDisplay::num_glyphs`].
-    pub fn runs(&self) -> Result<impl Iterator<Item = GlyphRun<'_, ()>>, NotReady> {
-        Ok(self.display()?.runs())
-    }
-
-    /// Iterate over runs of positioned glyphs with effects
-    ///
-    /// The passed `effects` do not have to equal those associated with the text
-    /// `T`; it is fine to use an empty list instead (i.e. [`Self::runs`]) or
-    /// even synthesize a new list of effects.
-    ///
-    /// If the list `effects` is empty or has first entry with `start > 0`, the
-    /// result of `Effect::default(default_aux)` is used. The user payload of
-    /// type `X` is simply passed through to `f` and `g` calls and may be useful
-    /// for color information.
-    ///
-    /// This method is significantly more computationally expensive than [`Self::runs`].
-    ///
-    /// Runs are yielded in undefined order. The total number of
-    /// glyphs yielded will equal [`TextDisplay::num_glyphs`].
-    pub fn runs_with_effects<'a, X: Copy>(
+    pub fn runs<'a>(
         &'a self,
-        effects: &'a [Effect<X>],
-        default_aux: X,
-    ) -> Result<impl Iterator<Item = GlyphRun<'a, X>> + 'a, NotReady> {
-        Ok(self.display()?.runs_with_effects(effects, default_aux))
+        offset: Vec2,
+        effects: &'a [Effect],
+    ) -> Result<impl Iterator<Item = GlyphRun<'a>> + 'a, NotReady> {
+        Ok(self.display()?.runs(offset, effects))
     }
 
     /// Yield a sequence of rectangles to highlight a given text range

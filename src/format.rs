@@ -56,7 +56,7 @@ pub trait FormattableText: std::cmp::PartialEq + std::fmt::Debug {
     /// most uses it should still be sufficient, but for other cases it may be
     /// preferable not to use this method (use a dummy implementation returning
     /// `&[]` and use inherent methods on the text object via [`Text::text`]).
-    fn effect_tokens(&self) -> &[Effect<()>];
+    fn effect_tokens(&self) -> &[Effect];
 }
 
 impl<F: FormattableText + ?Sized> FormattableText for &F {
@@ -73,7 +73,7 @@ impl<F: FormattableText + ?Sized> FormattableText for &F {
         F::font_tokens(self, dpem)
     }
 
-    fn effect_tokens(&self) -> &[Effect<()>] {
+    fn effect_tokens(&self) -> &[Effect] {
         F::effect_tokens(self)
     }
 }
@@ -115,7 +115,7 @@ pub trait FormattableTextDyn: std::fmt::Debug {
     /// most uses it should still be sufficient, but for other cases it may be
     /// preferable not to use this method (use a dummy implementation returning
     /// `&[]` and use inherent methods on the text object via [`Text::text`]).
-    fn effect_tokens(&self) -> &[Effect<()>];
+    fn effect_tokens(&self) -> &[Effect];
 }
 
 impl<F: FormattableText + Clone + 'static> FormattableTextDyn for F {
@@ -135,7 +135,7 @@ impl<F: FormattableText + Clone + 'static> FormattableTextDyn for F {
         OwningVecIter::new(iter.collect())
     }
 
-    fn effect_tokens(&self) -> &[Effect<()>] {
+    fn effect_tokens(&self) -> &[Effect] {
         FormattableText::effect_tokens(self)
     }
 }
@@ -168,7 +168,7 @@ impl<'t> FormattableText for &'t dyn FormattableTextDyn {
         FormattableTextDyn::font_tokens(*self, dpem)
     }
 
-    fn effect_tokens(&self) -> &[Effect<()>] {
+    fn effect_tokens(&self) -> &[Effect] {
         FormattableTextDyn::effect_tokens(*self)
     }
 }

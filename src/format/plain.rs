@@ -22,7 +22,7 @@ impl FormattableText for str {
         std::iter::empty()
     }
 
-    fn effect_tokens(&self) -> &[Effect<()>] {
+    fn effect_tokens(&self) -> &[Effect] {
         &[]
     }
 }
@@ -38,7 +38,7 @@ impl FormattableText for String {
         std::iter::empty()
     }
 
-    fn effect_tokens(&self) -> &[Effect<()>] {
+    fn effect_tokens(&self) -> &[Effect] {
         &[]
     }
 }
