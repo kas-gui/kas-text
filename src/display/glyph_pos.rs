@@ -32,7 +32,7 @@ bitflags::bitflags! {
     /// Text effects
     #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
     #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-    pub struct EffectFlags: u32 {
+    pub struct EffectFlags: u16 {
         /// Glyph is underlined
         const UNDERLINE = 1 << 0;
         /// Glyph is crossed through by a center-line
