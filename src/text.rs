@@ -336,7 +336,7 @@ impl<T: FormattableText + ?Sized> Text<T> {
     /// preferable not to use this method (use a dummy implementation returning
     /// `&[]` and use inherent methods on the text object via [`Text::text`]).
     #[inline]
-    pub fn effect_tokens(&self) -> &[Effect<()>] {
+    pub fn effect_tokens(&self) -> &[Effect] {
         self.text.effect_tokens()
     }
 }
@@ -544,7 +544,7 @@ impl<T: FormattableText + ?Sized> Text<T> {
     ///
     /// Runs are yielded in undefined order. The total number of
     /// glyphs yielded will equal [`TextDisplay::num_glyphs`].
-    pub fn runs(&self) -> Result<impl Iterator<Item = GlyphRun<'_, ()>>, NotReady> {
+    pub fn runs(&self) -> Result<impl Iterator<Item = GlyphRun<'_>>, NotReady> {
         Ok(self.display()?.runs())
     }
 
@@ -555,20 +555,17 @@ impl<T: FormattableText + ?Sized> Text<T> {
     /// even synthesize a new list of effects.
     ///
     /// If the list `effects` is empty or has first entry with `start > 0`, the
-    /// result of `Effect::default(default_aux)` is used. The user payload of
-    /// type `X` is simply passed through to `f` and `g` calls and may be useful
-    /// for color information.
+    /// result of `Effect::default()` is used.
     ///
     /// This method is significantly more computationally expensive than [`Self::runs`].
     ///
     /// Runs are yielded in undefined order. The total number of
     /// glyphs yielded will equal [`TextDisplay::num_glyphs`].
-    pub fn runs_with_effects<'a, X: Copy>(
+    pub fn runs_with_effects<'a>(
         &'a self,
-        effects: &'a [Effect<X>],
-        default_aux: X,
-    ) -> Result<impl Iterator<Item = GlyphRun<'a, X>> + 'a, NotReady> {
-        Ok(self.display()?.runs_with_effects(effects, default_aux))
+        effects: &'a [Effect],
+    ) -> Result<impl Iterator<Item = GlyphRun<'a>> + 'a, NotReady> {
+        Ok(self.display()?.runs_with_effects(effects))
     }
 
     /// Yield a sequence of rectangles to highlight a given text range
