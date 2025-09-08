@@ -131,7 +131,7 @@ impl ExactSizeIterator for MarkerPosIter {}
 
 /// A sequence of positioned glyphs with effects
 ///
-/// Yielded by [`TextDisplay::runs`] and [`TextDisplay::runs_with_effects`].
+/// Yielded by [`TextDisplay::runs`].
 pub struct GlyphRun<'a> {
     run: &'a shaper::GlyphRun,
     range: Range,
