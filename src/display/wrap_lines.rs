@@ -178,10 +178,10 @@ impl TextDisplay {
     /// -   [`Align::BR`]: text is right-aligned (right at `width_bound`)
     /// -   [`Align::Center`]: text is center-aligned (center at `width_bound / 2`)
     /// -   [`Align::Stretch`]: this is the most complex mode. For lines which
-    ///     wrap, the text is aligned to `0` *and* `width_bound` (if possible)
-    ///     by stretching spaces within the text (this will not work correctly
-    ///     if `width_bound` is too small). For lines which don't wrap the
-    ///     alignment is the same as [`Align::Default`].
+    ///     wrap and where the line length does not exceed `width_bound`, the
+    ///     text is aligned to `0` *and* `width_bound` (if possible) by
+    ///     stretching spaces within the text. Other lines are aligned in the
+    ///     same way as [`Align::Default`].
     ///
     /// Returns the required height.
     pub fn prepare_lines(&mut self, wrap_width: f32, width_bound: f32, h_align: Align) -> f32 {
@@ -574,18 +574,12 @@ impl PartAccumulator for LineAdder {
         let mut is_gap = SmallVec::<[bool; 16]>::new();
         let mut per_gap = 0.0;
         let mut caret = match self.h_align {
-            Align::Default => match line_is_rtl {
-                false => 0.0,
-                true => spare,
-            },
+            Align::Default if line_is_rtl => spare,
+            Align::Default => 0.0,
             Align::TL => 0.0,
             Align::Center => 0.5 * spare,
             Align::BR => spare,
-            Align::Stretch if !is_wrap => match line_is_rtl {
-                false => 0.0,
-                true => spare,
-            },
-            Align::Stretch => {
+            Align::Stretch if is_wrap && spare > 0.0 => {
                 let len = parts.len();
                 is_gap.resize(len, false);
                 let mut num_gaps = 0;
@@ -624,9 +618,18 @@ impl PartAccumulator for LineAdder {
                     is_gap.copy_within(1..len, 0);
                 }
 
-                per_gap = spare / (num_gaps as f32);
-                0.0
+                if num_gaps == 0 {
+                    match line_is_rtl {
+                        false => 0.0,
+                        true => spare,
+                    }
+                } else {
+                    per_gap = spare / (num_gaps as f32);
+                    0.0
+                }
             }
+            Align::Stretch if line_is_rtl => spare,
+            Align::Stretch => 0.0,
         };
 
         self.l_bound = self.l_bound.min(caret);
