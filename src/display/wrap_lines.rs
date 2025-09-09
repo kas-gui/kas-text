@@ -185,6 +185,7 @@ impl TextDisplay {
     ///
     /// Returns the required height.
     pub fn prepare_lines(&mut self, wrap_width: f32, width_bound: f32, h_align: Align) -> f32 {
+        debug_assert!(width_bound.is_finite());
         let mut adder = LineAdder::new(width_bound, h_align);
 
         self.wrap_lines(&mut adder, wrap_width);
