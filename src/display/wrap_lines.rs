@@ -299,6 +299,8 @@ impl TextDisplay {
             line.top += offset.1;
             line.bottom += offset.1;
         }
+        self.l_bound += offset.0;
+        self.r_bound += offset.0;
     }
 
     /// Vertically align lines
