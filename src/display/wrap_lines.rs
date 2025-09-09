@@ -164,14 +164,24 @@ impl TextDisplay {
     /// `wrap_width` causes line wrapping at the given width. Use
     /// `f32::INFINITY` to disable wrapping.
     ///
-    /// Assuming that `width_bound` is finite and greater than the line length,
-    /// lines will be aligned within `0..width_bound` according to `h_align`.
-    /// If lines are longer than `width_bound` then lines will escape
-    /// `0..width_bound` according to alignment (for example, left-aligned text
-    /// will align the left edge to `0` and thus escape on the right, while
-    /// centered text with `width_bound = 0.0` will result in text lines being
-    /// centered about the origin). Justified text will not display correctly
-    /// when `width_bound` is smaller than line lengths.
+    /// Text will be aligned within `0..width_bound` (see below); as such
+    /// `width_bound` must be finite. When `wrap_width` is finite it will often
+    /// make sense to use the same value; when not it might make sense to use
+    /// `width_bound = 0` then offset the result using [`Self::apply_offset`].
+    /// If `width_bound` is too small, text will escape `0..width_bound`
+    /// according to alignment.
+    ///
+    /// Alignment is applied according to `h_align`:
+    ///
+    /// -   [`Align::Default`]: LTR text is left-aligned, RTL text is right-aligned
+    /// -   [`Align::TL`]: text is left-aligned (left at `0`)
+    /// -   [`Align::BR`]: text is right-aligned (right at `width_bound`)
+    /// -   [`Align::Center`]: text is center-aligned (center at `width_bound / 2`)
+    /// -   [`Align::Stretch`]: this is the most complex mode. For lines which
+    ///     wrap, the text is aligned to `0` *and* `width_bound` (if possible)
+    ///     by stretching spaces within the text (this will not work correctly
+    ///     if `width_bound` is too small). For lines which don't wrap the
+    ///     alignment is the same as [`Align::Default`].
     ///
     /// Returns the required height.
     pub fn prepare_lines(&mut self, wrap_width: f32, width_bound: f32, h_align: Align) -> f32 {
