@@ -2,6 +2,21 @@
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] — 2025-09-12
+
+-   Remove `raster` module (#91)
+-   Removed `FontLibrary::init` and `Text::configure` (#94)
+-   Remove support for `harfbuzz_rs` and `fontdue` (#95)
+-   Remove trait `EditableText` (#98)
+-   Replace `fontdb` with `fontique`, replacing usage of hard-coded font families and removing configuration of font aliases (#93, #94)
+-   Revise `FontSelector` type: make into a small `Copy` type and embed in `Text` objects. Replaces usage of pre-resolved `FontId`, allowing font selection to be delayed until run-breaking and to use inferred script. (#94)
+-   Replace field `Effect::aux` with `Effect::e` (#99)
+-   Support Swash in font library (#91) and use for text analysis (#94)
+-   Support font synthesis (#95)
+-   Add `GlyphRun` type, replacing fns `Text{,Display}::glyphs{,_with_effects}` with `runs` (#96, #99)
+-   Add fn `TextDisplay::apply_offset` (#98, #100)
+-   Fix behaviour of `Align::Stretch` in some cases (#100)
+
 ## [0.7.0] — 2024-12-02
 
 -   Add `Direction::AutoRtl`, `text_is_rtl` (#80)
