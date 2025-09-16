@@ -187,7 +187,9 @@ impl TextDisplay {
                 .or(face_id);
             let font_break = face_id.is_some() && new_face_id != face_id;
 
-            if hard_break || control_break || bidi_break || font_break {
+            if let Some(face) = face_id
+                && (hard_break || control_break || bidi_break || font_break)
+            {
                 // TODO: sometimes this results in empty runs immediately
                 // following another run. Ideally we would either merge these
                 // into the previous run or not simply break in this case.
@@ -201,7 +203,6 @@ impl TextDisplay {
                     _ => RunSpecial::NoBreak,
                 };
 
-                let face = face_id.expect("have a set face_id");
                 self.runs
                     .push(shaper::shape(input, range, face, breaks, special));
 
