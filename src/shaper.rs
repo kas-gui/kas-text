@@ -17,7 +17,7 @@
 //!
 //! This module *does not* perform line-breaking, wrapping or text reversal.
 
-use crate::conv::{to_u32, to_usize, DPU};
+use crate::conv::{DPU, to_u32, to_usize};
 use crate::display::RunSpecial;
 use crate::fonts::{self, FaceId};
 use crate::{Range, Vec2};

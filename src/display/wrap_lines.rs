@@ -12,7 +12,7 @@ use crate::shaper::{GlyphRun, PartMetrics};
 use crate::{Align, Range, Vec2};
 use smallvec::SmallVec;
 use tinyvec::TinyVec;
-use unicode_bidi::{Level, LTR_LEVEL};
+use unicode_bidi::{LTR_LEVEL, Level};
 
 #[derive(Clone, Debug, Default)]
 pub struct RunPart {

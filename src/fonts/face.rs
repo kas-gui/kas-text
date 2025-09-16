@@ -5,8 +5,8 @@
 
 //! Font face types
 
-use crate::conv::{LineMetrics, DPU};
 use crate::GlyphId;
+use crate::conv::{DPU, LineMetrics};
 use ttf_parser::Face;
 
 /// Handle to a loaded font face

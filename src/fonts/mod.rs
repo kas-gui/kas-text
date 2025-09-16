@@ -53,7 +53,7 @@ mod resolver;
 pub use attributes::{FontStyle, FontWeight, FontWidth};
 pub use face::{FaceRef, ScaledFaceRef};
 pub use fontique::GenericFamily;
-pub use library::{library, FaceId, FaceStore, FontId, FontLibrary, InvalidFontId, NoFontMatch};
+pub use library::{FaceId, FaceStore, FontId, FontLibrary, InvalidFontId, NoFontMatch, library};
 pub use resolver::*;
 
 impl From<GlyphId> for ttf_parser::GlyphId {

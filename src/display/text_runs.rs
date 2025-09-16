@@ -11,9 +11,9 @@ use super::TextDisplay;
 use crate::conv::{to_u32, to_usize};
 use crate::fonts::{self, FontSelector, NoFontMatch};
 use crate::format::FormattableText;
-use crate::{script_to_fontique, shaper, Direction};
-use swash::text::cluster::Boundary;
+use crate::{Direction, script_to_fontique, shaper};
 use swash::text::LineBreak as LB;
+use swash::text::cluster::Boundary;
 use unicode_bidi::{BidiClass, BidiInfo, LTR_LEVEL, RTL_LEVEL};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
