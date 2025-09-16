@@ -429,7 +429,7 @@ impl FontLibrary {
 }
 
 pub(crate) unsafe fn extend_lifetime<'b, T: ?Sized>(r: &'b T) -> &'static T {
-    std::mem::transmute::<&'b T, &'static T>(r)
+    unsafe { std::mem::transmute::<&'b T, &'static T>(r) }
 }
 
 static LIBRARY: LazyLock<FontLibrary> = LazyLock::new(|| FontLibrary {
