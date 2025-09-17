@@ -2,6 +2,10 @@
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.1] — 2025-09-17
+
+-   Fix sizing of empty lines by prefering to match some font than nothing (#102)
+
 ## [0.8.0] — 2025-09-12
 
 -   Remove `raster` module (#91)

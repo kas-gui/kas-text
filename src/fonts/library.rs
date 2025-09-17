@@ -268,7 +268,7 @@ impl FontLibrary {
     ///
     /// Otherwise, return the first face of `font_id` which covers `c`.
     ///
-    /// Otherwise (if no face covers `c`) return `None`.
+    /// Otherwise (if no face covers `c`) return the first face (if any).
     pub fn face_for_char(
         &self,
         font_id: FontId,
@@ -310,6 +310,14 @@ impl FontLibrary {
                         break;
                     }
                 }
+
+                // Prefer to match some font face, even without a match
+                // TODO: we need some mechanism to widen the search when this
+                // fails (certain chars might only be found in a special font).
+                if id.is_none() {
+                    id = font.1.first().map(|id| *id);
+                }
+
                 entry.insert(id);
                 id
             }
