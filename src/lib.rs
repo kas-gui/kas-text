@@ -22,7 +22,8 @@ mod conv;
 pub use conv::DPU;
 
 mod data;
-pub use data::{Range, Vec2};
+use data::Range;
+pub use data::Vec2;
 
 mod display;
 pub use display::*;
