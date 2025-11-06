@@ -490,14 +490,6 @@ impl<T: FormattableText + ?Sized> Text<T> {
         Ok(self.wrapped_display()?.find_line(index))
     }
 
-    /// Get the range of a line, by line number
-    ///
-    /// See [`TextDisplay::line_range`].
-    #[inline]
-    pub fn line_range(&self, line: usize) -> Result<Option<std::ops::Range<usize>>, NotReady> {
-        Ok(self.wrapped_display()?.line_range(line))
-    }
-
     /// Get the directionality of the current line
     ///
     /// See [`TextDisplay::line_is_rtl`].

@@ -17,7 +17,8 @@ mod text_runs;
 mod wrap_lines;
 pub use glyph_pos::{Effect, EffectFlags, GlyphRun, MarkerPos, MarkerPosIter};
 pub(crate) use text_runs::RunSpecial;
-use wrap_lines::{Line, RunPart};
+pub use wrap_lines::Line;
+use wrap_lines::RunPart;
 
 /// Error returned on operations if not ready
 ///
@@ -77,7 +78,7 @@ pub struct NotReady;
 /// direction in bi-directional text).
 ///
 /// Navigating to the start or end of a line can be done with
-/// [`TextDisplay::find_line`] and [`TextDisplay::line_range`].
+/// [`TextDisplay::find_line`], [`TextDisplay::get_line`] and [`Line::text_range`].
 ///
 /// Navigating forwards or backwards should be done via a library such as
 /// [`unicode-segmentation`](https://github.com/unicode-rs/unicode-segmentation)
@@ -151,8 +152,25 @@ impl TextDisplay {
     /// Get the number of lines (after wrapping)
     ///
     /// [Requires status][Self#status-of-preparation]: lines have been wrapped.
+    #[inline]
     pub fn num_lines(&self) -> usize {
         self.lines.len()
+    }
+
+    /// Get line properties
+    ///
+    /// [Requires status][Self#status-of-preparation]: lines have been wrapped.
+    #[inline]
+    pub fn get_line(&self, index: usize) -> Option<&Line> {
+        self.lines.get(index)
+    }
+
+    /// Iterate over line properties
+    ///
+    /// [Requires status][Self#status-of-preparation]: lines have been wrapped.
+    #[inline]
+    pub fn lines(&self) -> impl Iterator<Item = &Line> {
+        self.lines.iter()
     }
 
     /// Get the size of the required bounding box
@@ -195,13 +213,6 @@ impl TextDisplay {
             }
         }
         first
-    }
-
-    /// Get the range of a line, by line number
-    ///
-    /// [Requires status][Self#status-of-preparation]: lines have been wrapped.
-    pub fn line_range(&self, line: usize) -> Option<std::ops::Range<usize>> {
-        self.lines.get(line).map(|line| line.text_range())
     }
 
     /// Get the base directionality of the text

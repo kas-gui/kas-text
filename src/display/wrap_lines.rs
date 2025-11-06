@@ -22,6 +22,7 @@ pub struct RunPart {
     pub offset: Vec2,
 }
 
+/// Per-line data (post wrapping)
 #[derive(Clone, Debug, Default)]
 pub struct Line {
     text_range: Range,           // range in text
