@@ -184,13 +184,14 @@ impl TextDisplay {
     pub fn find_line(&self, index: usize) -> Option<(usize, std::ops::Range<usize>)> {
         let mut first = None;
         for (n, line) in self.lines.iter().enumerate() {
-            if line.text_range.end() == index {
+            let text_range = line.text_range();
+            if text_range.end == index {
                 // When line wrapping, this also matches the start of the next
                 // line which is the preferred location. At the end of other
                 // lines it does not match any other location.
-                first = Some((n, line.text_range.to_std()));
-            } else if line.text_range.includes(index) {
-                return Some((n, line.text_range.to_std()));
+                first = Some((n, text_range));
+            } else if text_range.contains(&index) {
+                return Some((n, text_range));
             }
         }
         first
@@ -200,7 +201,7 @@ impl TextDisplay {
     ///
     /// [Requires status][Self#status-of-preparation]: lines have been wrapped.
     pub fn line_range(&self, line: usize) -> Option<std::ops::Range<usize>> {
-        self.lines.get(line).map(|line| line.text_range.to_std())
+        self.lines.get(line).map(|line| line.text_range())
     }
 
     /// Get the base directionality of the text
@@ -281,11 +282,11 @@ impl TextDisplay {
         let line = &self.lines[line];
         let run_range = line.run_range.to_std();
 
-        let mut best = line.text_range.start;
+        let mut best = line.text_range().start;
         let mut best_dist = f32::INFINITY;
-        let mut try_best = |dist, index| {
+        let mut try_best = |dist, index: u32| {
             if dist < best_dist {
-                best = index;
+                best = to_usize(index);
                 best_dist = dist;
             }
         };
@@ -319,6 +320,6 @@ impl TextDisplay {
             try_best((end_pos - rel_pos).abs(), end_index);
         }
 
-        Some(to_usize(best))
+        Some(best)
     }
 }

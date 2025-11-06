@@ -24,10 +24,30 @@ pub struct RunPart {
 
 #[derive(Clone, Debug, Default)]
 pub struct Line {
-    pub text_range: Range, // range in text
-    pub run_range: Range,  // range in wrapped_runs
-    pub top: f32,
-    pub bottom: f32,
+    text_range: Range,           // range in text
+    pub(crate) run_range: Range, // range in wrapped_runs
+    pub(crate) top: f32,
+    pub(crate) bottom: f32,
+}
+
+impl Line {
+    /// Get the text range of line contents
+    #[inline]
+    pub fn text_range(&self) -> std::ops::Range<usize> {
+        self.text_range.to_std()
+    }
+
+    /// Get the upper bound of the line
+    #[inline]
+    pub fn top(&self) -> f32 {
+        self.top
+    }
+
+    /// Get the lower bound of the line
+    #[inline]
+    pub fn bottom(&self) -> f32 {
+        self.bottom
+    }
 }
 
 impl TextDisplay {
