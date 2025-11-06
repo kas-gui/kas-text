@@ -13,8 +13,6 @@
 //!
 //! [`format`]: mod@format
 
-#![cfg_attr(docsrs, feature(doc_auto_cfg))]
-
 mod env;
 pub use env::*;
 

@@ -15,7 +15,7 @@ rust-version = "1.88.0"
 
 [package.metadata.docs.rs]
 # To build locally:
-# RUSTDOCFLAGS="--cfg docsrs" cargo +nightly doc --all-features --no-deps --open
+# cargo +nightly doc --all-features --no-deps --open
 all-features = true
 
 [features]
