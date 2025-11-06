@@ -9,6 +9,7 @@ use crate::display::{Effect, MarkerPosIter, NotReady, TextDisplay};
 use crate::fonts::{FontSelector, NoFontMatch};
 use crate::format::FormattableText;
 use crate::{Align, Direction, GlyphRun, Line, Status, Vec2};
+use std::num::NonZeroUsize;
 
 /// Text type-setting object (high-level API)
 ///
@@ -420,14 +421,16 @@ impl<T: FormattableText + ?Sized> Text<T> {
     }
 
     /// Measure required vertical height, wrapping as configured
-    pub fn measure_height(&mut self) -> Result<f32, NoFontMatch> {
+    ///
+    /// Stops after `max_lines`, if provided.
+    pub fn measure_height(&mut self, max_lines: Option<NonZeroUsize>) -> Result<f32, NoFontMatch> {
         if self.status >= Status::Wrapped {
             let (tl, br) = self.display.bounding_box();
             return Ok(br.1 - tl.1);
         }
 
         self.prepare_runs()?;
-        Ok(self.display.measure_height(self.wrap_width))
+        Ok(self.display.measure_height(self.wrap_width, max_lines))
     }
 
     /// Prepare text for display, as necessary

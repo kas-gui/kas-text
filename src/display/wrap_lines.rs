@@ -11,6 +11,7 @@ use crate::fonts::{self, FontLibrary};
 use crate::shaper::{GlyphRun, PartMetrics};
 use crate::{Align, Range, Vec2};
 use smallvec::SmallVec;
+use std::num::NonZeroUsize;
 use tinyvec::TinyVec;
 use unicode_bidi::{LTR_LEVEL, Level};
 
@@ -91,13 +92,15 @@ impl TextDisplay {
 
     /// Measure required vertical height, wrapping as configured
     ///
+    /// Stops after `max_lines`, if provided.
+    ///
     /// [Requires status][Self#status-of-preparation]: level runs have been
     /// prepared.
-    pub fn measure_height(&self, wrap_width: f32) -> f32 {
+    pub fn measure_height(&self, wrap_width: f32, max_lines: Option<NonZeroUsize>) -> f32 {
         #[derive(Default)]
         struct MeasureAdder {
             parts: Vec<usize>, // run index for each part
-            has_any_lines: bool,
+            lines: usize,
             line_gap: f32,
             vcaret: f32,
         }
@@ -105,6 +108,10 @@ impl TextDisplay {
         impl PartAccumulator for MeasureAdder {
             fn num_parts(&self) -> usize {
                 self.parts.len()
+            }
+
+            fn num_lines(&self) -> usize {
+                self.lines
             }
 
             fn add_part(
@@ -152,7 +159,7 @@ impl TextDisplay {
                     line_gap = line_gap.max(scale_font.line_gap());
                 }
 
-                if self.has_any_lines {
+                if self.lines > 0 {
                     self.vcaret += line_gap.max(self.line_gap);
                 }
                 self.vcaret += ascent - descent;
@@ -161,13 +168,14 @@ impl TextDisplay {
                 // Vertically align lines to the nearest pixel (improves rendering):
                 self.vcaret = self.vcaret.round();
 
-                self.has_any_lines = true;
+                self.lines += 1;
                 self.parts.clear();
             }
         }
 
         let mut adder = MeasureAdder::default();
-        self.wrap_lines(&mut adder, wrap_width);
+        let max_lines = max_lines.map(|n| n.get()).unwrap_or(0);
+        self.wrap_lines(&mut adder, wrap_width, max_lines);
         adder.vcaret
     }
 
@@ -206,7 +214,7 @@ impl TextDisplay {
         debug_assert!(width_bound.is_finite());
         let mut adder = LineAdder::new(width_bound, h_align);
 
-        self.wrap_lines(&mut adder, wrap_width);
+        self.wrap_lines(&mut adder, wrap_width, 0);
 
         self.wrapped_runs = adder.wrapped_runs;
         self.lines = adder.lines;
@@ -219,7 +227,12 @@ impl TextDisplay {
         adder.vcaret
     }
 
-    fn wrap_lines(&self, accumulator: &mut impl PartAccumulator, wrap_width: f32) {
+    fn wrap_lines(
+        &self,
+        accumulator: &mut impl PartAccumulator,
+        wrap_width: f32,
+        max_lines: usize,
+    ) {
         let fonts = fonts::library();
 
         // Tuples: (index, part_index, num_parts)
@@ -262,6 +275,10 @@ impl TextDisplay {
                     // Add up to last valid break point then wrap and reset
                     accumulator.add_line(fonts, &self.runs, end.2, true);
 
+                    if accumulator.num_lines() == max_lines {
+                        return;
+                    }
+
                     end.2 = 0;
                     start = end;
                     caret = 0.0;
@@ -294,6 +311,10 @@ impl TextDisplay {
                     debug_assert_eq!(num_parts, end.2);
 
                     accumulator.add_line(fonts, &self.runs, num_parts, false);
+
+                    if accumulator.num_lines() == max_lines {
+                        return;
+                    }
                 }
 
                 start = (run_index, 0, 0);
@@ -350,6 +371,7 @@ impl TextDisplay {
 
 trait PartAccumulator {
     fn num_parts(&self) -> usize;
+    fn num_lines(&self) -> usize;
 
     fn add_part(
         &mut self,
@@ -402,6 +424,10 @@ impl LineAdder {
 impl PartAccumulator for LineAdder {
     fn num_parts(&self) -> usize {
         self.parts.len()
+    }
+
+    fn num_lines(&self) -> usize {
+        self.lines.len()
     }
 
     fn add_part(
