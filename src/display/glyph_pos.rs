@@ -13,7 +13,7 @@
 use super::{Line, TextDisplay};
 use crate::conv::to_usize;
 use crate::fonts::{self, FaceId};
-use crate::{shaper, Glyph, Range, Vec2};
+use crate::{Glyph, Range, Vec2, shaper};
 
 /// Effect formatting marker
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

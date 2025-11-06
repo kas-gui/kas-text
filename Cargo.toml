@@ -2,7 +2,7 @@
 name = "kas-text"
 version = "0.8.1"
 authors = ["Diggory Hardy <git@dhardy.name>"]
-edition = "2021"
+edition = "2024"
 license = "Apache-2.0"
 description = "Text layout and font management"
 readme = "README.md"
@@ -11,7 +11,7 @@ keywords = ["text", "bidi", "shaping"]
 categories = ["text-processing"]
 repository = "https://github.com/kas-gui/kas-text"
 exclude = ["design"]
-rust-version = "1.82.0"
+rust-version = "1.88.0"
 
 [package.metadata.docs.rs]
 # To build locally:

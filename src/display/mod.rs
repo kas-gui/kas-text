@@ -5,10 +5,10 @@
 
 //! Text prepared for display
 
-use crate::conv::to_usize;
 #[allow(unused)]
 use crate::Text;
-use crate::{shaper, Direction, Vec2};
+use crate::conv::to_usize;
+use crate::{Direction, Vec2, shaper};
 use smallvec::SmallVec;
 use tinyvec::TinyVec;
 

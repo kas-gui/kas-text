@@ -15,8 +15,8 @@ use fontique::{
 use log::debug;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::hash::{BuildHasher, Hash};
 
 /// A tool to resolve a single font face given a family and style
@@ -63,7 +63,10 @@ impl Resolver {
             }
             Entry::Occupied(entry) => {
                 // Unlikely but possible case:
-                log::warn!("Resolver::select_families: hash collision for family selector {set:?} and {:?}", entry.get());
+                log::warn!(
+                    "Resolver::select_families: hash collision for family selector {set:?} and {:?}",
+                    entry.get()
+                );
                 // TODO: inject a random value into the FamilySet and rehash?
             }
         }

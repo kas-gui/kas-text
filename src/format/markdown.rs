@@ -177,10 +177,10 @@ fn parse(input: &str) -> Result<Markdown, Error> {
                 set_last(&item);
             }
             Event::InlineMath(_) | Event::DisplayMath(_) => {
-                return Err(Error::NotSupported("math expressions"))
+                return Err(Error::NotSupported("math expressions"));
             }
             Event::Html(_) | Event::InlineHtml(_) => {
-                return Err(Error::NotSupported("embedded HTML"))
+                return Err(Error::NotSupported("embedded HTML"));
             }
             Event::FootnoteReference(_) => return Err(Error::NotSupported("footnote")),
             Event::SoftBreak => state.soft_break(&mut text),
@@ -360,10 +360,10 @@ impl StackItem {
             Tag::BlockQuote(_) => return Err(Error::NotSupported("block quote")),
             Tag::FootnoteDefinition(_) => return Err(Error::NotSupported("footnote")),
             Tag::DefinitionList | Tag::DefinitionListTitle | Tag::DefinitionListDefinition => {
-                return Err(Error::NotSupported("definition"))
+                return Err(Error::NotSupported("definition"));
             }
             Tag::Table(_) | Tag::TableHead | Tag::TableRow | Tag::TableCell => {
-                return Err(Error::NotSupported("table"))
+                return Err(Error::NotSupported("table"));
             }
             Tag::Superscript | Tag::Subscript => {
                 // kas-text doesn't support adjusting the baseline
