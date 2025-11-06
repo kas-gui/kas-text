@@ -8,7 +8,7 @@
 use crate::display::{Effect, MarkerPosIter, NotReady, TextDisplay};
 use crate::fonts::{FontSelector, NoFontMatch};
 use crate::format::FormattableText;
-use crate::{Align, Direction, GlyphRun, Status, Vec2};
+use crate::{Align, Direction, GlyphRun, Line, Status, Vec2};
 
 /// Text type-setting object (high-level API)
 ///
@@ -471,12 +471,27 @@ impl<T: FormattableText + ?Sized> Text<T> {
     pub fn bounding_box(&self) -> Result<(Vec2, Vec2), NotReady> {
         Ok(self.wrapped_display()?.bounding_box())
     }
+
     /// Get the number of lines (after wrapping)
     ///
     /// See [`TextDisplay::num_lines`].
     #[inline]
     pub fn num_lines(&self) -> Result<usize, NotReady> {
         Ok(self.wrapped_display()?.num_lines())
+    }
+
+    /// Get line properties
+    #[inline]
+    pub fn get_line(&self, index: usize) -> Result<Option<&Line>, NotReady> {
+        Ok(self.wrapped_display()?.get_line(index))
+    }
+
+    /// Iterate over line properties
+    ///
+    /// [Requires status][Self#status-of-preparation]: lines have been wrapped.
+    #[inline]
+    pub fn lines(&self) -> Result<impl Iterator<Item = &Line>, NotReady> {
+        Ok(self.wrapped_display()?.lines())
     }
 
     /// Find the line containing text `index`
