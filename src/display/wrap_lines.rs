@@ -93,9 +93,6 @@ impl TextDisplay {
     ///
     /// [Requires status][Self#status-of-preparation]: level runs have been
     /// prepared.
-    ///
-    /// This method performs most required preparation steps of the
-    /// [`TextDisplay`]. Remaining prepartion should be fast.
     pub fn measure_height(&self, wrap_width: f32) -> f32 {
         #[derive(Default)]
         struct MeasureAdder {
