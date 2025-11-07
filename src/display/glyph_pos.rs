@@ -478,7 +478,7 @@ impl TextDisplay {
     /// Calls `f(top_left, bottom_right)` for each highlighting rectangle.
     pub fn highlight_range(&self, range: std::ops::Range<usize>, f: &mut dyn FnMut(Vec2, Vec2)) {
         for line in &self.lines {
-            let line_range: std::ops::Range<usize> = line.text_range.into();
+            let line_range = line.text_range();
             if line_range.end <= range.start {
                 continue;
             } else if range.end <= line_range.start {

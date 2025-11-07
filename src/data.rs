@@ -118,11 +118,6 @@ impl Range {
         to_usize(self.end) - to_usize(self.start)
     }
 
-    /// True if the given value is contained, inclusive of end points
-    pub fn includes(self, value: usize) -> bool {
-        to_usize(self.start) <= value && value <= to_usize(self.end)
-    }
-
     /// Convert to a standard range
     pub fn to_std(self) -> std::ops::Range<usize> {
         to_usize(self.start)..to_usize(self.end)

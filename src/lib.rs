@@ -13,8 +13,6 @@
 //!
 //! [`format`]: mod@format
 
-#![cfg_attr(docsrs, feature(doc_auto_cfg))]
-
 mod env;
 pub use env::*;
 
@@ -22,7 +20,8 @@ mod conv;
 pub use conv::DPU;
 
 mod data;
-pub use data::{Range, Vec2};
+use data::Range;
+pub use data::Vec2;
 
 mod display;
 pub use display::*;

@@ -8,7 +8,8 @@
 use crate::display::{Effect, MarkerPosIter, NotReady, TextDisplay};
 use crate::fonts::{FontSelector, NoFontMatch};
 use crate::format::FormattableText;
-use crate::{Align, Direction, GlyphRun, Status, Vec2};
+use crate::{Align, Direction, GlyphRun, Line, Status, Vec2};
+use std::num::NonZeroUsize;
 
 /// Text type-setting object (high-level API)
 ///
@@ -420,14 +421,16 @@ impl<T: FormattableText + ?Sized> Text<T> {
     }
 
     /// Measure required vertical height, wrapping as configured
-    pub fn measure_height(&mut self) -> Result<f32, NoFontMatch> {
+    ///
+    /// Stops after `max_lines`, if provided.
+    pub fn measure_height(&mut self, max_lines: Option<NonZeroUsize>) -> Result<f32, NoFontMatch> {
         if self.status >= Status::Wrapped {
             let (tl, br) = self.display.bounding_box();
             return Ok(br.1 - tl.1);
         }
 
         self.prepare_runs()?;
-        Ok(self.display.measure_height(self.wrap_width))
+        Ok(self.display.measure_height(self.wrap_width, max_lines))
     }
 
     /// Prepare text for display, as necessary
@@ -471,12 +474,27 @@ impl<T: FormattableText + ?Sized> Text<T> {
     pub fn bounding_box(&self) -> Result<(Vec2, Vec2), NotReady> {
         Ok(self.wrapped_display()?.bounding_box())
     }
+
     /// Get the number of lines (after wrapping)
     ///
     /// See [`TextDisplay::num_lines`].
     #[inline]
     pub fn num_lines(&self) -> Result<usize, NotReady> {
         Ok(self.wrapped_display()?.num_lines())
+    }
+
+    /// Get line properties
+    #[inline]
+    pub fn get_line(&self, index: usize) -> Result<Option<&Line>, NotReady> {
+        Ok(self.wrapped_display()?.get_line(index))
+    }
+
+    /// Iterate over line properties
+    ///
+    /// [Requires status][Self#status-of-preparation]: lines have been wrapped.
+    #[inline]
+    pub fn lines(&self) -> Result<impl Iterator<Item = &Line>, NotReady> {
+        Ok(self.wrapped_display()?.lines())
     }
 
     /// Find the line containing text `index`
@@ -488,14 +506,6 @@ impl<T: FormattableText + ?Sized> Text<T> {
         index: usize,
     ) -> Result<Option<(usize, std::ops::Range<usize>)>, NotReady> {
         Ok(self.wrapped_display()?.find_line(index))
-    }
-
-    /// Get the range of a line, by line number
-    ///
-    /// See [`TextDisplay::line_range`].
-    #[inline]
-    pub fn line_range(&self, line: usize) -> Result<Option<std::ops::Range<usize>>, NotReady> {
-        Ok(self.wrapped_display()?.line_range(line))
     }
 
     /// Get the directionality of the current line
