@@ -134,6 +134,7 @@ impl TextDisplay {
         let mut last_props = None;
 
         let mut face_id = None;
+        let mut last_real_face = None;
 
         let mut last_is_control = false;
         let mut last_is_htab = false;
@@ -171,9 +172,14 @@ impl TextDisplay {
                 input.script = script_to_fontique(props.script());
             }
 
+            let opt_last_face = if !props.script().is_real() {
+                last_real_face
+            } else {
+                None
+            };
             let font_id = fonts.select_font(&font, input.script)?;
             let new_face_id = fonts
-                .face_for_char(font_id, None, c)
+                .face_for_char(font_id, opt_last_face, c)
                 .expect("invalid FontId");
             let font_break = face_id.is_some() && new_face_id != face_id;
 
@@ -210,6 +216,11 @@ impl TextDisplay {
             last_is_control = is_control;
             last_is_htab = is_htab;
             face_id = new_face_id;
+            if props.script().is_real() {
+                last_real_face = face_id;
+            } else if font_break || face_id.is_none() {
+                last_real_face = None;
+            }
             input.dpem = dpem;
         }
 
