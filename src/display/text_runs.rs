@@ -14,7 +14,7 @@ use crate::format::FormattableText;
 use crate::{Direction, script_to_fontique, shaper};
 use swash::text::LineBreak as LB;
 use swash::text::cluster::Boundary;
-use unicode_bidi::{BidiClass, BidiInfo, LTR_LEVEL, RTL_LEVEL};
+use unicode_bidi::{BidiInfo, LTR_LEVEL, RTL_LEVEL};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum RunSpecial {
@@ -119,7 +119,6 @@ impl TextDisplay {
         let info = BidiInfo::new(text, default_para_level);
         let levels = info.levels;
         assert_eq!(text.len(), levels.len());
-        let classes = info.original_classes;
 
         let mut input = shaper::Input {
             text,
@@ -135,6 +134,7 @@ impl TextDisplay {
         let mut last_props = None;
 
         let mut face_id = None;
+        let mut last_real_face = None;
 
         let mut last_is_control = false;
         let mut last_is_htab = false;
@@ -172,19 +172,15 @@ impl TextDisplay {
                 input.script = script_to_fontique(props.script());
             }
 
-            let opt_last_face = if matches!(
-                classes[index],
-                BidiClass::L | BidiClass::R | BidiClass::AL | BidiClass::EN | BidiClass::AN
-            ) {
-                None
+            let opt_last_face = if !props.script().is_real() {
+                last_real_face
             } else {
-                face_id
+                None
             };
             let font_id = fonts.select_font(&font, input.script)?;
             let new_face_id = fonts
                 .face_for_char(font_id, opt_last_face, c)
-                .expect("invalid FontId")
-                .or(face_id);
+                .expect("invalid FontId");
             let font_break = face_id.is_some() && new_face_id != face_id;
 
             if let Some(face) = face_id
@@ -220,6 +216,11 @@ impl TextDisplay {
             last_is_control = is_control;
             last_is_htab = is_htab;
             face_id = new_face_id;
+            if props.script().is_real() {
+                last_real_face = face_id;
+            } else if font_break || face_id.is_none() {
+                last_real_face = None;
+            }
             input.dpem = dpem;
         }
 
