@@ -51,7 +51,7 @@ log = "0.4"
 serde = { version = "1.0.123", features = ["derive"], optional = true }
 ab_glyph = { version = "0.2.10", optional = true }
 swash = "0.2.4"
-fontique = "0.6.0"
+fontique = "0.7.0"
 
 [dependencies.rustybuzz]
 version = "0.20.1"
