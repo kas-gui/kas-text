@@ -86,9 +86,7 @@ pub struct FaceStore {
 }
 
 impl FaceStore {
-    /// Construct, given a file path, a reference to the loaded data and the face index
-    ///
-    /// The `path` is to be stored; its contents are already loaded in `data`.
+    /// Construct, given a data blob, face index and synthesis settings
     fn new(blob: Blob<u8>, index: u32, synthesis: Synthesis) -> Result<Self, FontError> {
         // Safety: this is a private fn used to construct a FaceStore instance
         // to be stored in FontLibrary which is never deallocated. This
@@ -367,13 +365,22 @@ impl FontLibrary {
                 let mut hasher = DefaultHasher::new();
                 qf.blob.id().hash(&mut hasher);
                 hasher.write_u32(qf.index);
+                // Hashing of qf.synthesis is incomplete, but we use an equality test later anyway
+                for var in qf.synthesis.variation_settings() {
+                    var.0.hash(&mut hasher);
+                }
+                qf.synthesis.embolden().hash(&mut hasher);
+                qf.synthesis.skew().is_some().hash(&mut hasher);
                 hasher.finish()
             };
 
             for (h, id) in face_list.source_hash.iter().cloned() {
                 if h == source_hash {
                     let face = &face_list.faces[id.get()];
-                    if face.blob.id() == qf.blob.id() && face.index == qf.index {
+                    if face.blob.id() == qf.blob.id()
+                        && face.index == qf.index
+                        && face.synthesis == qf.synthesis
+                    {
                         faces.push(id);
                         return QueryStatus::Continue;
                     }
