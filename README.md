@@ -49,6 +49,22 @@ Pure-Rust alternatives for typesetting and rendering text:
 -   [glyph_brush](https://github.com/alexheretic/glyph-brush) is a fast caching text render library using [ab_glyph].
 
 
+Crates and features
+-------------------
+
+Significant external dependencies:
+
+-   [rustybuzz](https://crates.io/crates/rustybuzz): a complete harfbuzz's shaping algorithm port to Rust
+-   [fontique](https://crates.io/crates/fontique): Font enumeration and fallback
+
+### Feature flags
+
+This crate has a few optional features (all are disabled by default). See [Cargo.toml](https://github.com/kas-gui/kas-text/blob/master/Cargo.toml#L21) for a full list. Highlighted features:
+
+-   `shaping`: enable text shaping (recommended)
+-   `markdown`: rich text support with Markdown parsing (only supports a small subset of Markdown features)
+
+
 Contributing
 --------
 
