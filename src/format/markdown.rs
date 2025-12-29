@@ -128,11 +128,11 @@ fn parse(input: &str) -> Result<Markdown, Error> {
     let mut fmt: Vec<Fmt> = Vec::new();
     let mut set_last = |item: &StackItem| {
         let f = Fmt::new(item);
-        if let Some(last) = fmt.last_mut() {
-            if last.start >= item.start {
-                *last = f;
-                return;
-            }
+        if let Some(last) = fmt.last_mut()
+            && last.start >= item.start
+        {
+            *last = f;
+            return;
         }
         fmt.push(f);
     };

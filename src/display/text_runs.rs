@@ -93,12 +93,12 @@ impl TextDisplay {
 
         let mut font_tokens = text.font_tokens(dpem);
         let mut next_fmt = font_tokens.next();
-        if let Some(fmt) = next_fmt.as_ref() {
-            if fmt.start == 0 {
-                font = fmt.font;
-                dpem = fmt.dpem;
-                next_fmt = font_tokens.next();
-            }
+        if let Some(fmt) = next_fmt.as_ref()
+            && fmt.start == 0
+        {
+            font = fmt.font;
+            dpem = fmt.dpem;
+            next_fmt = font_tokens.next();
         }
 
         let fonts = fonts::library();
@@ -160,12 +160,12 @@ impl TextDisplay {
             // Force end of current run?
             let bidi_break = levels[index] != input.level;
 
-            if let Some(fmt) = next_fmt.as_ref() {
-                if to_usize(fmt.start) == index {
-                    font = fmt.font;
-                    dpem = fmt.dpem;
-                    next_fmt = font_tokens.next();
-                }
+            if let Some(fmt) = next_fmt.as_ref()
+                && to_usize(fmt.start) == index
+            {
+                font = fmt.font;
+                dpem = fmt.dpem;
+                next_fmt = font_tokens.next();
             }
 
             if input.script == UNKNOWN_SCRIPT && props.script().is_real() {
@@ -241,10 +241,10 @@ impl TextDisplay {
         };
 
         let font_id = fonts.select_font(&font, input.script)?;
-        if let Some(id) = face_id {
-            if !fonts.contains_face(font_id, id).expect("invalid FontId") {
-                face_id = None;
-            }
+        if let Some(id) = face_id
+            && !fonts.contains_face(font_id, id).expect("invalid FontId")
+        {
+            face_id = None;
         }
         let face_id =
             face_id.unwrap_or_else(|| fonts.first_face_for(font_id).expect("invalid FontId"));
