@@ -229,21 +229,21 @@ impl<'a> GlyphRun<'a> {
         if !fmt.flags.is_empty() {
             let glyph = &self.run.glyphs[self.range.start()];
             let position = glyph.position + self.offset;
-            if fmt.flags.contains(EffectFlags::UNDERLINE) {
-                if let Some(metrics) = sf.underline_metrics() {
-                    let y_top = position.1 - metrics.position;
-                    let h = metrics.thickness;
-                    let x1 = position.0;
-                    underline = Some((x1, y_top, h, fmt.e));
-                }
+            if fmt.flags.contains(EffectFlags::UNDERLINE)
+                && let Some(metrics) = sf.underline_metrics()
+            {
+                let y_top = position.1 - metrics.position;
+                let h = metrics.thickness;
+                let x1 = position.0;
+                underline = Some((x1, y_top, h, fmt.e));
             }
-            if fmt.flags.contains(EffectFlags::STRIKETHROUGH) {
-                if let Some(metrics) = sf.strikethrough_metrics() {
-                    let y_top = position.1 - metrics.position;
-                    let h = metrics.thickness;
-                    let x1 = position.0;
-                    strikethrough = Some((x1, y_top, h, fmt.e));
-                }
+            if fmt.flags.contains(EffectFlags::STRIKETHROUGH)
+                && let Some(metrics) = sf.strikethrough_metrics()
+            {
+                let y_top = position.1 - metrics.position;
+                let h = metrics.thickness;
+                let x1 = position.0;
+                strikethrough = Some((x1, y_top, h, fmt.e));
             }
         }
 

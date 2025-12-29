@@ -287,13 +287,13 @@ impl FontLibrary {
 
         let faces = self.faces.read().unwrap();
 
-        if let Some(face_id) = last_face_id {
-            if font.1.contains(&face_id) {
-                let face = &faces.faces[face_id.get()];
-                // TODO(opt): should we cache this lookup?
-                if face.face.glyph_index(c).is_some() {
-                    return Ok(Some(face_id));
-                }
+        if let Some(face_id) = last_face_id
+            && font.1.contains(&face_id)
+        {
+            let face = &faces.faces[face_id.get()];
+            // TODO(opt): should we cache this lookup?
+            if face.face.glyph_index(c).is_some() {
+                return Ok(Some(face_id));
             }
         }
 

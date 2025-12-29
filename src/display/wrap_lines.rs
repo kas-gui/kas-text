@@ -122,12 +122,11 @@ impl TextDisplay {
                 _: PartMetrics,
                 checkpoint: bool,
             ) {
-                if checkpoint {
-                    if let Some(index) = self.parts.last().cloned() {
-                        if index == run_index {
-                            return;
-                        }
-                    }
+                if checkpoint
+                    && let Some(index) = self.parts.last().cloned()
+                    && index == run_index
+                {
+                    return;
                 }
 
                 self.parts.push(run_index);
@@ -443,27 +442,27 @@ impl PartAccumulator for LineAdder {
         let glyph_range = glyph_run.to_glyph_range(part_range);
 
         let justify = self.h_align == Align::Stretch && part.len_no_space > 0.0;
-        if checkpoint && !justify {
-            if let Some(info) = self.parts.last_mut() {
-                if info.run == run {
-                    // Merge into last part info (not strictly necessary)
+        if checkpoint
+            && !justify
+            && let Some(info) = self.parts.last_mut()
+            && info.run == run
+        {
+            // Merge into last part info (not strictly necessary)
 
-                    if glyph_run.level.is_ltr() {
-                        info.glyph_range.end = glyph_range.end;
-                    } else {
-                        info.offset = part.offset;
-                        info.glyph_range.start = glyph_range.start;
-                    }
-                    debug_assert!(info.glyph_range.start <= info.glyph_range.end);
-
-                    if part.len_no_space > 0.0 {
-                        info.len_no_space = info.len + part.len_no_space;
-                    }
-                    info.len += part.len;
-
-                    return;
-                }
+            if glyph_run.level.is_ltr() {
+                info.glyph_range.end = glyph_range.end;
+            } else {
+                info.offset = part.offset;
+                info.glyph_range.start = glyph_range.start;
             }
+            debug_assert!(info.glyph_range.start <= info.glyph_range.end);
+
+            if part.len_no_space > 0.0 {
+                info.len_no_space = info.len + part.len_no_space;
+            }
+            info.len += part.len;
+
+            return;
         }
 
         self.parts.push(PartInfo {
