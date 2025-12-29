@@ -313,7 +313,7 @@ impl FontLibrary {
                 // TODO: we need some mechanism to widen the search when this
                 // fails (certain chars might only be found in a special font).
                 if id.is_none() {
-                    id = font.1.first().map(|id| *id);
+                    id = font.1.first().copied();
                 }
 
                 entry.insert(id);
