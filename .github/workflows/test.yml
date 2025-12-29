@@ -15,6 +15,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libfontconfig1-dev
       - name: Install toolchain
         uses: dtolnay/rust-toolchain@nightly
         with:
@@ -45,6 +49,11 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
+      - name: Install dependencies
+        if: ${{ matrix.os == 'ubuntu-latest' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libfontconfig1-dev
       - name: Install toolchain
         uses: actions-rs/toolchain@v1
         with:
