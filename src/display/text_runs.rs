@@ -287,7 +287,11 @@ impl TextDisplay {
             for b in iter {
                 print!(", {}", b.index);
             }
-            println!("]");
+            print!("]");
+            if let Some(name) = fonts.get_face_store(run.face_id).name_full() {
+                print!(", {name}");
+            }
+            println!();
         }
         */
         Ok(())
