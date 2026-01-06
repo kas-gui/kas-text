@@ -9,9 +9,9 @@
 
 use super::TextDisplay;
 use crate::conv::{to_u32, to_usize};
-use crate::fonts::{self, FontSelector, NoFontMatch};
+use crate::fonts::{self, FaceId, FontSelector, NoFontMatch};
 use crate::format::FormattableText;
-use crate::{Direction, script_to_fontique, shaper};
+use crate::{Direction, Range, script_to_fontique, shaper};
 use swash::text::LineBreak as LB;
 use swash::text::cluster::Boundary;
 use unicode_bidi::{BidiInfo, LTR_LEVEL, RTL_LEVEL};
@@ -63,6 +63,18 @@ impl TextDisplay {
             }
             *run = shaper::shape(input, run.range, run.face_id, breaks, run.special);
         }
+    }
+
+    fn push_run(
+        &mut self,
+        input: shaper::Input,
+        range: Range,
+        face: FaceId,
+        breaks: tinyvec::TinyVec<[shaper::GlyphBreak; 4]>,
+        special: RunSpecial,
+    ) {
+        self.runs
+            .push(shaper::shape(input, range, face, breaks, special));
     }
 
     /// Break text into level runs
@@ -199,8 +211,7 @@ impl TextDisplay {
                     _ => RunSpecial::NoBreak,
                 };
 
-                self.runs
-                    .push(shaper::shape(input, range, face, breaks, special));
+                self.push_run(input, range, face, breaks, special);
 
                 start = index;
                 non_control_end = index;
@@ -248,21 +259,14 @@ impl TextDisplay {
         }
         let face_id =
             face_id.unwrap_or_else(|| fonts.first_face_for(font_id).expect("invalid FontId"));
-        self.runs
-            .push(shaper::shape(input, range, face_id, breaks, special));
+        self.push_run(input, range, face_id, breaks, special);
 
         // Following a hard break we have an implied empty line.
         if hard_break {
             let range = (text.len()..text.len()).into();
             input.level = default_para_level.unwrap_or(LTR_LEVEL);
             breaks = Default::default();
-            self.runs.push(shaper::shape(
-                input,
-                range,
-                face_id,
-                breaks,
-                RunSpecial::None,
-            ));
+            self.push_run(input, range, face_id, breaks, RunSpecial::None);
         }
 
         /*
