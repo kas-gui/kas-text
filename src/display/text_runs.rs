@@ -73,7 +73,7 @@ impl TextDisplay {
         font: FontSelector,
         input: shaper::Input,
         range: Range,
-        breaks: tinyvec::TinyVec<[shaper::GlyphBreak; 4]>,
+        mut breaks: tinyvec::TinyVec<[shaper::GlyphBreak; 4]>,
         special: RunSpecial,
     ) -> Result<(), NoFontMatch> {
         let fonts = fonts::library();
@@ -99,7 +99,7 @@ impl TextDisplay {
             }
         }
 
-        let face = match face_id {
+        let mut face = match face_id {
             Some(id) => id,
             None => {
                 // We failed to find a font face for the run
@@ -107,8 +107,43 @@ impl TextDisplay {
             }
         };
 
+        let mut start = 0;
+        for (index, c) in text.char_indices() {
+            let index = to_u32(index);
+            if let Some(new_face) = fonts
+                .face_for_char(font_id, Some(face), c)
+                .expect("invalid FontId")
+                && new_face != face
+            {
+                if index > start {
+                    let sub_range = Range {
+                        start: range.start + start,
+                        end: range.start + index,
+                    };
+                    let mut j = 0;
+                    for i in 0..breaks.len() {
+                        if breaks[i].index < sub_range.end {
+                            j = i + 1;
+                        }
+                    }
+                    let rest = breaks.split_off(j);
+
+                    self.runs
+                        .push(shaper::shape(input, sub_range, face, breaks, special));
+                    breaks = rest;
+                    start = index;
+                }
+
+                face = new_face;
+            }
+        }
+
+        let sub_range = Range {
+            start: range.start + start,
+            end: range.end,
+        };
         self.runs
-            .push(shaper::shape(input, range, face, breaks, special));
+            .push(shaper::shape(input, sub_range, face, breaks, special));
         Ok(())
     }
 
