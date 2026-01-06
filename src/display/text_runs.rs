@@ -9,7 +9,7 @@
 
 use super::TextDisplay;
 use crate::conv::{to_u32, to_usize};
-use crate::fonts::{self, FaceId, FontSelector, NoFontMatch};
+use crate::fonts::{self, FontSelector, NoFontMatch};
 use crate::format::FormattableText;
 use crate::{Direction, Range, script_to_fontique, shaper};
 use swash::text::LineBreak as LB;
@@ -65,16 +65,51 @@ impl TextDisplay {
         }
     }
 
+    /// Resolve font face and shape run
+    ///
+    /// This may sub-divide text as required to find matching fonts.
     fn push_run(
         &mut self,
+        font: FontSelector,
         input: shaper::Input,
         range: Range,
-        face: FaceId,
         breaks: tinyvec::TinyVec<[shaper::GlyphBreak; 4]>,
         special: RunSpecial,
-    ) {
+    ) -> Result<(), NoFontMatch> {
+        let fonts = fonts::library();
+        let font_id = fonts.select_font(&font, input.script)?;
+        let text = &input.text[range.to_std()];
+
+        // Find a font face
+        let mut face_id = None;
+        let mut analyzer = swash::text::analyze(text.chars());
+        for c in text.chars() {
+            if c.is_control() {
+                continue;
+            }
+
+            let (props, _) = analyzer.next().unwrap();
+            if props.script().is_real() {
+                face_id = fonts
+                    .face_for_char(font_id, None, c)
+                    .expect("invalid FontId");
+                if face_id.is_some() {
+                    break;
+                }
+            }
+        }
+
+        let face = match face_id {
+            Some(id) => id,
+            None => {
+                // We failed to find a font face for the run
+                fonts.first_face_for(font_id).expect("invalid FontId")
+            }
+        };
+
         self.runs
             .push(shaper::shape(input, range, face, breaks, special));
+        Ok(())
     }
 
     /// Break text into level runs
@@ -113,7 +148,6 @@ impl TextDisplay {
             next_fmt = font_tokens.next();
         }
 
-        let fonts = fonts::library();
         let text = text.as_str();
 
         let default_para_level = match direction {
@@ -144,9 +178,6 @@ impl TextDisplay {
 
         let mut analyzer = swash::text::analyze(text.chars());
         let mut last_props = None;
-
-        let mut face_id = None;
-        let mut last_real_face = None;
 
         let mut last_is_control = false;
         let mut last_is_htab = false;
@@ -180,24 +211,17 @@ impl TextDisplay {
                 next_fmt = font_tokens.next();
             }
 
-            if input.script == UNKNOWN_SCRIPT && props.script().is_real() {
-                input.script = script_to_fontique(props.script());
+            let mut new_script = None;
+            if props.script().is_real() {
+                let script = script_to_fontique(props.script());
+                if input.script == UNKNOWN_SCRIPT {
+                    input.script = script;
+                } else if script != UNKNOWN_SCRIPT && script != input.script {
+                    new_script = Some(script);
+                }
             }
 
-            let opt_last_face = if !props.script().is_real() {
-                last_real_face
-            } else {
-                None
-            };
-            let font_id = fonts.select_font(&font, input.script)?;
-            let new_face_id = fonts
-                .face_for_char(font_id, opt_last_face, c)
-                .expect("invalid FontId");
-            let font_break = face_id.is_some() && new_face_id != face_id;
-
-            if let Some(face) = face_id
-                && (hard_break || control_break || bidi_break || font_break)
-            {
+            if hard_break || control_break || bidi_break || new_script.is_some() {
                 // TODO: sometimes this results in empty runs immediately
                 // following another run. Ideally we would either merge these
                 // into the previous run or not simply break in this case.
@@ -211,13 +235,13 @@ impl TextDisplay {
                     _ => RunSpecial::NoBreak,
                 };
 
-                self.push_run(input, range, face, breaks, special);
+                self.push_run(font, input, range, breaks, special)?;
 
                 start = index;
                 non_control_end = index;
                 input.level = levels[index];
-                breaks = Default::default();
                 input.script = UNKNOWN_SCRIPT;
+                breaks = Default::default();
             } else if is_break && !is_control {
                 // We do break runs when hitting control chars, but only when
                 // encountering the next non-control character.
@@ -226,13 +250,10 @@ impl TextDisplay {
 
             last_is_control = is_control;
             last_is_htab = is_htab;
-            face_id = new_face_id;
-            if props.script().is_real() {
-                last_real_face = face_id;
-            } else if font_break || face_id.is_none() {
-                last_real_face = None;
-            }
             input.dpem = dpem;
+            if let Some(script) = new_script {
+                input.script = script;
+            }
         }
 
         debug_assert!(analyzer.next().is_none());
@@ -251,26 +272,19 @@ impl TextDisplay {
             _ => RunSpecial::None,
         };
 
-        let font_id = fonts.select_font(&font, input.script)?;
-        if let Some(id) = face_id
-            && !fonts.contains_face(font_id, id).expect("invalid FontId")
-        {
-            face_id = None;
-        }
-        let face_id =
-            face_id.unwrap_or_else(|| fonts.first_face_for(font_id).expect("invalid FontId"));
-        self.push_run(input, range, face_id, breaks, special);
+        self.push_run(font, input, range, breaks, special)?;
 
         // Following a hard break we have an implied empty line.
         if hard_break {
             let range = (text.len()..text.len()).into();
             input.level = default_para_level.unwrap_or(LTR_LEVEL);
             breaks = Default::default();
-            self.push_run(input, range, face_id, breaks, RunSpecial::None);
+            self.push_run(font, input, range, breaks, RunSpecial::None)?;
         }
 
         /*
         println!("text: {}", text);
+        let fonts = fonts::library();
         for run in &self.runs {
             let slice = &text[run.range];
             print!(
