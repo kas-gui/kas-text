@@ -251,11 +251,6 @@ impl TextDisplay {
             }
 
             if hard_break || control_break || bidi_break || new_script.is_some() {
-                // TODO: sometimes this results in empty runs immediately
-                // following another run. Ideally we would either merge these
-                // into the previous run or not simply break in this case.
-                // Note: the prior run may end with NoBreak while the latter
-                // (and the merge result) do not.
                 let range = (start..non_control_end).into();
                 let special = match () {
                     _ if hard_break => RunSpecial::HardBreak,
