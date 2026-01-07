@@ -281,10 +281,12 @@ pub(crate) fn shape(
         let mut last_id = None;
         let side_bearing = |id: Option<GlyphId>| id.map(|id| sf.h_side_bearing(id)).unwrap_or(0.0);
         for (gi, glyph) in glyphs.iter().enumerate().rev() {
-            if break_i < breaks.len() && to_usize(breaks[break_i].gi) == gi {
+            if let Some(b) = breaks.get_mut(break_i)
+                && to_usize(b.gi) == gi
+            {
                 assert!(gi < glyphs.len());
-                breaks[break_i].gi = to_u32(gi) + 1;
-                breaks[break_i].no_space_end = start_no_space - side_bearing(last_id);
+                b.gi = to_u32(gi) + 1;
+                b.no_space_end = start_no_space - side_bearing(last_id);
                 break_i = break_i.wrapping_sub(1);
             }
             if !input.text[to_usize(glyph.index)..]

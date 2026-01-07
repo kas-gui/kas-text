@@ -135,6 +135,55 @@ impl FaceStore {
         })
     }
 
+    /// Attempt to read a specific name
+    ///
+    /// Decoding is best effort and may fail. Lossy decoding is used (may
+    /// replace data with [`std::char::REPLACEMENT_CHARACTER`]).
+    ///
+    /// See [Microsoft's documentation].
+    ///
+    /// [Microsoft's documentation]: https://learn.microsoft.com/en-us/typography/opentype/spec/name
+    pub fn read_name(&self, id: u16) -> Option<String> {
+        use ttf_parser::PlatformId;
+        let name = self.face.names().get(id)?;
+
+        // NOTE: we ignore name.encoding_id which should be used to select a
+        // Unicode / ASCII code page encoding.
+        match name.platform_id {
+            PlatformId::Macintosh => Some(String::from_utf8_lossy(name.name).to_string()),
+            // TODO(std lib) use String::from_utf16be_lossy:
+            PlatformId::Unicode | PlatformId::Windows => {
+                let name: Vec<u16> = name
+                    .name
+                    .as_chunks()
+                    .0
+                    .into_iter()
+                    .map(|chunk| u16::from_be_bytes(*chunk))
+                    .collect();
+                Some(String::from_utf16_lossy(&name))
+            }
+            _ => None,
+        }
+    }
+
+    /// Get the font family name
+    #[inline]
+    pub fn name_family(&self) -> Option<String> {
+        self.read_name(1)
+    }
+
+    /// Get the font sub-family (i.e. style) name
+    #[inline]
+    pub fn name_subfamily(&self) -> Option<String> {
+        self.read_name(2)
+    }
+
+    /// Get the full font name
+    #[inline]
+    pub fn name_full(&self) -> Option<String> {
+        self.read_name(4)
+    }
+
     /// Access the [`Face`] object
     pub fn face(&self) -> &Face<'static> {
         &self.face
@@ -265,8 +314,6 @@ impl FontLibrary {
     /// unnecessarily, such as when encountering a space amid Arabic text.)
     ///
     /// Otherwise, return the first face of `font_id` which covers `c`.
-    ///
-    /// Otherwise (if no face covers `c`) return the first face (if any).
     pub fn face_for_char(
         &self,
         font_id: FontId,
@@ -309,12 +356,8 @@ impl FontLibrary {
                     }
                 }
 
-                // Prefer to match some font face, even without a match
                 // TODO: we need some mechanism to widen the search when this
                 // fails (certain chars might only be found in a special font).
-                if id.is_none() {
-                    id = font.1.first().copied();
-                }
 
                 entry.insert(id);
                 id
