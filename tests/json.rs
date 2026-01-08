@@ -33,9 +33,13 @@ fn font() {
         "{\"Generic\":\"Cursive\"}",
     );
 
-    test(FontWidth::CONDENSED, "192");
-    test(FontWeight::BOLD, "700");
-    test(FontStyle::Normal, "\"Normal\"");
-    test(FontStyle::Oblique(None), "{\"Oblique\":null}");
-    test(FontStyle::Oblique(Some(50)), "{\"Oblique\":50}");
+    test(FontWidth::CONDENSED, "\"condensed\"");
+    test(FontWidth::from_percentage(25.0), "\"25%\"");
+
+    test(FontWeight::BOLD, "\"bold\"");
+    test(FontWeight::new(1), "\"1\"");
+
+    test(FontStyle::Normal, "\"normal\"");
+    test(FontStyle::Oblique(None), "\"oblique\"");
+    test(FontStyle::Oblique(Some(5120)), "\"oblique 20deg\"");
 }
