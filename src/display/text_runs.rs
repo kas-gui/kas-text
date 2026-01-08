@@ -75,6 +75,7 @@ impl TextDisplay {
         range: Range,
         mut breaks: tinyvec::TinyVec<[shaper::GlyphBreak; 4]>,
         special: RunSpecial,
+        first_real: Option<char>,
     ) -> Result<(), NoFontMatch> {
         let fonts = fonts::library();
         let font_id = fonts.select_font(&font, input.script)?;
@@ -82,21 +83,10 @@ impl TextDisplay {
 
         // Find a font face
         let mut face_id = None;
-        let mut analyzer = swash::text::analyze(text.chars());
-        for c in text.chars() {
-            if c.is_control() {
-                continue;
-            }
-
-            let (props, _) = analyzer.next().unwrap();
-            if props.script().is_real() {
-                face_id = fonts
-                    .face_for_char(font_id, None, c)
-                    .expect("invalid FontId");
-                if face_id.is_some() {
-                    break;
-                }
-            }
+        if let Some(c) = first_real {
+            face_id = fonts
+                .face_for_char(font_id, None, c)
+                .expect("invalid FontId");
         }
 
         let mut face = match face_id {
@@ -213,6 +203,7 @@ impl TextDisplay {
 
         let mut analyzer = swash::text::analyze(text.chars());
         let mut last_props = None;
+        let mut first_real = None;
 
         let mut last_is_control = false;
         let mut last_is_htab = false;
@@ -248,6 +239,9 @@ impl TextDisplay {
 
             let mut new_script = None;
             if props.script().is_real() {
+                if first_real.is_none() && !c.is_control() {
+                    first_real = Some(c);
+                }
                 let script = script_to_fontique(props.script());
                 if input.script == UNKNOWN_SCRIPT {
                     input.script = script;
@@ -257,11 +251,6 @@ impl TextDisplay {
             }
 
             if hard_break || control_break || bidi_break || new_script.is_some() {
-                // TODO: sometimes this results in empty runs immediately
-                // following another run. Ideally we would either merge these
-                // into the previous run or not simply break in this case.
-                // Note: the prior run may end with NoBreak while the latter
-                // (and the merge result) do not.
                 let range = (start..non_control_end).into();
                 let special = match () {
                     _ if hard_break => RunSpecial::HardBreak,
@@ -270,7 +259,8 @@ impl TextDisplay {
                     _ => RunSpecial::NoBreak,
                 };
 
-                self.push_run(font, input, range, breaks, special)?;
+                self.push_run(font, input, range, breaks, special, first_real)?;
+                first_real = None;
 
                 start = index;
                 non_control_end = index;
@@ -307,14 +297,14 @@ impl TextDisplay {
             _ => RunSpecial::None,
         };
 
-        self.push_run(font, input, range, breaks, special)?;
+        self.push_run(font, input, range, breaks, special, first_real)?;
 
         // Following a hard break we have an implied empty line.
         if hard_break {
             let range = (text.len()..text.len()).into();
             input.level = default_para_level.unwrap_or(LTR_LEVEL);
             breaks = Default::default();
-            self.push_run(font, input, range, breaks, RunSpecial::None)?;
+            self.push_run(font, input, range, breaks, RunSpecial::None, None)?;
         }
 
         /*

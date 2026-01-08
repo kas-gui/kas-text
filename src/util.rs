@@ -5,6 +5,10 @@
 
 //! Utility types and traits
 
+use std::ops::Range;
+use std::str::{CharIndices, Chars};
+use swash::text::cluster::Boundary;
+
 /// Describes the state-of-preparation of a [`TextDisplay`][crate::TextDisplay]
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Ord, PartialOrd, Hash)]
 pub enum Status {
@@ -63,3 +67,54 @@ impl<T: Clone> Iterator for OwningVecIter<T> {
 
 impl<T: Clone> ExactSizeIterator for OwningVecIter<T> {}
 impl<T: Clone> std::iter::FusedIterator for OwningVecIter<T> {}
+
+/// Iterator over lines / paragraphs within the text
+///
+/// This iterator splits the input text into a sequence of "lines" at mandatory
+/// breaks (see [TR14#BK](https://www.unicode.org/reports/tr14/#BK)).
+/// The resulting slices cover the whole input text in order without overlap.
+pub struct LineIterator<'a> {
+    analyzer: swash::text::Analyze<Chars<'a>>,
+    char_indices: CharIndices<'a>,
+    start: usize,
+    len: usize,
+}
+
+impl<'a> LineIterator<'a> {
+    /// Construct
+    #[inline]
+    pub fn new(text: &'a str) -> Self {
+        LineIterator {
+            analyzer: swash::text::analyze(text.chars()),
+            char_indices: text.char_indices(),
+            start: 0,
+            len: text.len(),
+        }
+    }
+}
+
+impl<'a> Iterator for LineIterator<'a> {
+    type Item = Range<usize>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.start >= self.len {
+            return None;
+        }
+
+        while let Some((index, _)) = self.char_indices.next() {
+            let (_, boundary) = self.analyzer.next().unwrap();
+
+            if index > 0 && boundary == Boundary::Mandatory {
+                let range = (self.start..index).into();
+                self.start = index;
+                return Some(range);
+            }
+        }
+
+        debug_assert!(self.analyzer.next().is_none());
+
+        let range = (self.start..self.len).into();
+        self.start = self.len;
+        Some(range)
+    }
+}
