@@ -35,6 +35,7 @@ use serde::{Deserialize, Serialize};
 /// [`font-width`]: https://www.w3.org/TR/css-fonts-4/#font-width-prop
 /// [`font-stretch`]: https://www.w3.org/TR/css-fonts-4/#font-stretch-prop
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+// TODO(serde): support named variants in addition to numeric value
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct FontWidth(u16);
 
@@ -223,6 +224,7 @@ impl From<FontWidth> for fontique::FontWidth {
 ///
 /// [`font-weight`]: https://www.w3.org/TR/css-fonts-4/#font-weight-prop
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
+// TODO(serde): support named variants in addition to numeric value
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct FontWeight(u16);
 
