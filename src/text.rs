@@ -395,7 +395,7 @@ impl<T: FormattableText + ?Sized> Text<T> {
         match self.status {
             Status::New => {
                 self.display
-                    .prepare_runs(&self.text, self.direction, self.font, self.dpem, true)?
+                    .prepare_runs(&self.text, self.direction, self.font, self.dpem)?
             }
             Status::ResizeLevelRuns => self.display.resize_runs(&self.text, self.dpem),
             _ => (),
