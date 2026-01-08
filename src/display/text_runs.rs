@@ -13,7 +13,8 @@ use crate::fonts::{self, FontSelector, NoFontMatch};
 use crate::format::FormattableText;
 use crate::util::ends_with_hard_break;
 use crate::{Direction, Range, shaper};
-use icu_properties::{CodePointMapData, props::Script};
+use icu_properties::props::{EmojiPresentation, Script};
+use icu_properties::{CodePointMapData, CodePointSetData};
 use icu_segmenter::LineSegmenter;
 use unicode_bidi::{BidiInfo, LTR_LEVEL, RTL_LEVEL};
 
@@ -208,9 +209,11 @@ impl TextDisplay {
         let mut next_break = break_iter.next();
 
         let mut first_real = None;
+        let emoji_presentation = CodePointSetData::new::<EmojiPresentation>();
 
         let mut last_is_control = false;
         let mut last_is_htab = false;
+        let mut last_is_emoji = false;
         let mut non_control_end = 0;
 
         for (index, c) in text.char_indices() {
@@ -220,9 +223,11 @@ impl TextDisplay {
             }
             let is_control = c.is_control();
             let is_htab = c == '\t';
-            let control_break = is_htab || (last_is_control && !is_control);
+            let mut require_break = is_htab || (last_is_control && !is_control);
 
             let script = CodePointMapData::<Script>::new().get(c);
+            let is_emoji = emoji_presentation.contains(c);
+            require_break |= is_emoji != last_is_emoji;
 
             // Is wrapping allowed at this position?
             let is_break = next_break == Some(index);
@@ -233,7 +238,7 @@ impl TextDisplay {
             }
 
             // Force end of current run?
-            let bidi_break = levels[index] != input.level;
+            require_break |= levels[index] != input.level;
 
             if let Some(fmt) = next_fmt.as_ref()
                 && to_usize(fmt.start) == index
@@ -254,7 +259,7 @@ impl TextDisplay {
                 }
             }
 
-            if hard_break || control_break || bidi_break || new_script.is_some() {
+            if hard_break || require_break || new_script.is_some() {
                 let range = (start..non_control_end).into();
                 let special = match () {
                     _ if hard_break => RunSpecial::HardBreak,
@@ -263,7 +268,12 @@ impl TextDisplay {
                     _ => RunSpecial::NoBreak,
                 };
 
-                self.push_run(font, input, range, breaks, special, first_real)?;
+                let f = if last_is_emoji {
+                    FontSelector::EMOJI
+                } else {
+                    font
+                };
+                self.push_run(f, input, range, breaks, special, first_real)?;
                 first_real = None;
 
                 start = index;
@@ -279,6 +289,7 @@ impl TextDisplay {
 
             last_is_control = is_control;
             last_is_htab = is_htab;
+            last_is_emoji = is_emoji;
             input.dpem = dpem;
             if let Some(script) = new_script {
                 input.script = script;
@@ -299,7 +310,12 @@ impl TextDisplay {
             _ => RunSpecial::None,
         };
 
-        self.push_run(font, input, range, breaks, special, first_real)?;
+        let f = if last_is_emoji {
+            FontSelector::EMOJI
+        } else {
+            font
+        };
+        self.push_run(f, input, range, breaks, special, first_real)?;
 
         // Following a hard break we have an implied empty line.
         if hard_break {
