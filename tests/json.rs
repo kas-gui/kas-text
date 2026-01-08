@@ -3,7 +3,7 @@
 
 use fontique::GenericFamily;
 use kas_text::Vec2;
-use kas_text::fonts::{FamilyName, FontStyle, FontWeight, FontWidth};
+use kas_text::fonts::{FamilyName, FamilySelector, FontStyle, FontWeight, FontWidth};
 use serde::{de::Deserialize, ser::Serialize};
 use std::cmp::PartialEq;
 use std::fmt::Debug;
@@ -32,6 +32,9 @@ fn font() {
         FamilyName::Generic(GenericFamily::Cursive),
         "{\"Generic\":\"Cursive\"}",
     );
+
+    test(FamilySelector::MATH, "\"math\"");
+    test(FamilySelector::SYSTEM_UI, "\"system-ui\"");
 
     test(FontWidth::CONDENSED, "\"condensed\"");
     test(FontWidth::from_percentage(25.0), "\"25%\"");

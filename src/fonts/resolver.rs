@@ -151,7 +151,8 @@ impl FamilySelector {
     /// A particular style of Chinese characters that are between serif-style Song and cursive-style Kai forms. This style is often used for government documents.
     pub const FANG_SONG: FamilySelector = FamilySelector(12);
 
-    fn as_generic(self) -> Option<GenericFamily> {
+    /// Convert to a [`GenericFamily`] where possible
+    pub fn as_generic(self) -> Option<GenericFamily> {
         match self.0 {
             0 => Some(GenericFamily::Serif),
             1 => Some(GenericFamily::SansSerif),
@@ -163,6 +164,36 @@ impl FamilySelector {
             12 => Some(GenericFamily::FangSong),
             _ => None,
         }
+    }
+
+    /// Get a CSS-style generic family name where possible
+    pub fn generic_name(self) -> Option<&'static str> {
+        Some(match self.as_generic()? {
+            GenericFamily::Serif => "serif",
+            GenericFamily::SansSerif => "sans-serif",
+            GenericFamily::Monospace => "monospace",
+            GenericFamily::Cursive => "cursive",
+            GenericFamily::SystemUi => "system-ui",
+            GenericFamily::Emoji => "emoji",
+            GenericFamily::Math => "math",
+            GenericFamily::FangSong => "fangsong",
+            _ => return None,
+        })
+    }
+
+    /// Parse a CSS-style family descriptor
+    pub fn parse_generic(name: &str) -> Option<Self> {
+        Some(match name.trim() {
+            "serif" => Self::SERIF,
+            "sans-serif" => Self::SANS_SERIF,
+            "monospace" => Self::MONOSPACE,
+            "cursive" => Self::CURSIVE,
+            "system-ui" => Self::SYSTEM_UI,
+            "emoji" => Self::EMOJI,
+            "math" => Self::MATH,
+            "fangsong" => Self::FANG_SONG,
+            _ => return None,
+        })
     }
 }
 
@@ -270,5 +301,45 @@ mod remote {
         Emoji = 10,
         Math = 11,
         FangSong = 12,
+    }
+}
+
+#[cfg(feature = "serde")]
+mod serde_impls {
+    use super::*;
+    use serde::{de, ser};
+    use std::fmt;
+
+    impl ser::Serialize for FamilySelector {
+        fn serialize<S: ser::Serializer>(&self, ser: S) -> Result<S::Ok, S::Error> {
+            if let Some(name) = self.generic_name() {
+                ser.serialize_str(name)
+            } else {
+                Err(ser::Error::custom(
+                    "unable to serialize non-generic family selectors",
+                ))
+            }
+        }
+    }
+
+    impl<'de> de::Deserialize<'de> for FamilySelector {
+        fn deserialize<D: de::Deserializer<'de>>(de: D) -> Result<FamilySelector, D::Error> {
+            struct Visitor;
+            impl<'de> de::Visitor<'de> for Visitor {
+                type Value = FamilySelector;
+
+                fn expecting(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+                    write!(fmt, "a generic family name")
+                }
+
+                fn visit_str<E: de::Error>(self, s: &str) -> Result<FamilySelector, E> {
+                    // TODO: support non-generic font families
+                    FamilySelector::parse_generic(s)
+                        .ok_or_else(|| de::Error::invalid_value(de::Unexpected::Str(s), &self))
+                }
+            }
+
+            de.deserialize_str(Visitor)
+        }
     }
 }
