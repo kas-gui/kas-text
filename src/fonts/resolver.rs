@@ -127,22 +127,28 @@ struct FamilySet(Vec<FamilyName>);
 pub struct FamilySelector(u64);
 
 impl FamilySelector {
-    /// Use a serif font
+    /// Glyphs have finishing strokes, flared or tapering ends, or have actual serifed endings.
     pub const SERIF: FamilySelector = FamilySelector(0);
 
-    /// Use a sans-serif font
+    /// Glyphs have stroke endings that are plain.
     pub const SANS_SERIF: FamilySelector = FamilySelector(1);
 
-    /// Use a monospace font
+    /// All glyphs have the same fixed width.
     pub const MONOSPACE: FamilySelector = FamilySelector(2);
 
-    /// Use a cursive font
+    /// Glyphs in cursive fonts generally have either joining strokes or other cursive characteristics beyond those of italic typefaces. The glyphs are partially or completely connected, and the result looks more like handwritten pen or brush writing than printed letter work.
     pub const CURSIVE: FamilySelector = FamilySelector(3);
 
-    /// Use the system UI font
+    /// Glyphs are taken from the default user interface font on a given platform.
     pub const SYSTEM_UI: FamilySelector = FamilySelector(5);
 
-    /// Use an emoji font
+    /// Fonts that are specifically designed to render emoji.
+    pub const EMOJI: FamilySelector = FamilySelector(10);
+
+    /// This is for the particular stylistic concerns of representing mathematics: superscript and subscript, brackets that cross several lines, nesting expressions, and double struck glyphs with distinct meanings.
+    pub const MATH: FamilySelector = FamilySelector(11);
+
+    /// A particular style of Chinese characters that are between serif-style Song and cursive-style Kai forms. This style is often used for government documents.
     pub const FANG_SONG: FamilySelector = FamilySelector(12);
 
     fn as_generic(self) -> Option<GenericFamily> {
@@ -152,6 +158,8 @@ impl FamilySelector {
             2 => Some(GenericFamily::Monospace),
             3 => Some(GenericFamily::Cursive),
             5 => Some(GenericFamily::SystemUi),
+            10 => Some(GenericFamily::Emoji),
+            11 => Some(GenericFamily::Math),
             12 => Some(GenericFamily::FangSong),
             _ => None,
         }
