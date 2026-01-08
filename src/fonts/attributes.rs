@@ -24,9 +24,7 @@ use easy_cast::Cast;
 ///
 /// See <https://fonts.google.com/knowledge/glossary/width>
 ///
-/// In CSS, this corresponds to the [`font-width`] property.
-///
-/// This has also been known as "stretch" and has a legacy CSS name alias,
+/// In CSS, this corresponds to the [`font-width`] property, formerly known as
 /// [`font-stretch`].
 ///
 /// [`usWidthClass`]: https://learn.microsoft.com/en-us/typography/opentype/spec/os2#uswidthclass
@@ -160,6 +158,7 @@ impl FontWidth {
             "semi-condensed" => Self::SEMI_CONDENSED,
             "normal" => Self::NORMAL,
             "semi-expanded" => Self::SEMI_EXPANDED,
+            "expanded" => Self::EXPANDED,
             "extra-expanded" => Self::EXTRA_EXPANDED,
             "ultra-expanded" => Self::ULTRA_EXPANDED,
             _ => {
@@ -270,6 +269,8 @@ impl FontWeight {
 
     /// Parses a CSS style font weight attribute.
     ///
+    /// This function accepts only `normal`, `bold` and numeric values.
+    ///
     /// # Examples
     ///
     /// ```
@@ -298,15 +299,8 @@ impl Default for FontWeight {
 impl fmt::Display for FontWeight {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let keyword = match self.0 {
-            100 => "thin",
-            200 => "extra-light",
-            300 => "light",
             400 => "normal",
-            500 => "medium",
-            600 => "semi-bold",
             700 => "bold",
-            800 => "extra-bold",
-            900 => "black",
             _ => return write!(f, "{}", self.0),
         };
         write!(f, "{keyword}")

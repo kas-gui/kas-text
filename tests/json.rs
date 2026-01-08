@@ -37,7 +37,7 @@ fn font() {
     test(FontWidth::from_percentage(25.0), "\"25%\"");
 
     test(FontWeight::BOLD, "\"bold\"");
-    test(FontWeight::new(1), "\"1\"");
+    test(FontWeight::new(300), "\"300\"");
 
     test(FontStyle::Normal, "\"normal\"");
     test(FontStyle::Oblique(None), "\"oblique\"");
