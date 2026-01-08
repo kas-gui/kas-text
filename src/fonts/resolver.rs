@@ -267,6 +267,78 @@ impl FontSelector {
 
         query.matches_with(add_face);
     }
+
+    /// Format CSS-style
+    ///
+    /// This is similar to the CSS `font` property, though it does not support
+    /// size or variant or using relative or global values. Examples:
+    ///
+    /// - `system-ui`
+    /// - `italic bold expanded sans-serif`
+    /// - `oblique 10deg 500 175% monospace`
+    /// - `300 cursive`
+    ///
+    /// Weight, width and style will be omitted if normal. Family is required
+    /// and must be a single generic name.
+    ///
+    /// Will return `None` if [`Self::family`] is not one of the generic
+    /// families supported by [`FamilySelector`].
+    pub fn format_css(&self) -> Option<String> {
+        let family = self.family.generic_name()?;
+        let mut s = String::new();
+        if self.style != FontStyle::Normal {
+            s.push_str(&format!("{} ", self.style));
+        }
+        if self.weight != FontWeight::NORMAL {
+            s.push_str(&format!("{} ", self.weight));
+        }
+        if self.width != FontWidth::NORMAL {
+            s.push_str(&format!("{} ", self.width));
+        }
+        s.push_str(family);
+        Some(s)
+    }
+
+    /// Parse a CSS-style selector
+    ///
+    /// Format support is similar to [`Self::format_css`].
+    ///
+    /// Does not (yet) support non-generic font families.
+    /// TODO: write a nicer parser with real error detection!
+    pub fn parse_css(s: &str) -> Option<Self> {
+        let mut weight = FontWeight::NORMAL;
+        let mut width = FontWidth::NORMAL;
+        let mut style = FontStyle::Normal;
+        let mut last_is_oblique = false;
+        for part in s.split_ascii_whitespace() {
+            if last_is_oblique {
+                // Special case: oblique may be followed by a numeric specifier in degrees
+                if part.ends_with("deg") {
+                    style = FontStyle::parse(&format!("oblique {part}"))
+                        .expect("failed to parse oblique angle");
+                }
+                last_is_oblique = false;
+            } else if let Some(v) = FontStyle::parse(part) {
+                style = v;
+                if style == FontStyle::Oblique(None) {
+                    last_is_oblique = true;
+                }
+            } else if let Some(v) = FontWeight::parse(part) {
+                weight = v;
+            } else if let Some(v) = FontWidth::parse(part) {
+                width = v;
+            } else {
+                let family = FamilySelector::parse_generic(part)?;
+                return Some(FontSelector {
+                    family,
+                    weight,
+                    width,
+                    style,
+                });
+            }
+        }
+        None
+    }
 }
 
 impl From<FamilySelector> for FontSelector {
@@ -335,6 +407,38 @@ mod serde_impls {
                 fn visit_str<E: de::Error>(self, s: &str) -> Result<FamilySelector, E> {
                     // TODO: support non-generic font families
                     FamilySelector::parse_generic(s)
+                        .ok_or_else(|| de::Error::invalid_value(de::Unexpected::Str(s), &self))
+                }
+            }
+
+            de.deserialize_str(Visitor)
+        }
+    }
+
+    impl ser::Serialize for FontSelector {
+        fn serialize<S: ser::Serializer>(&self, ser: S) -> Result<S::Ok, S::Error> {
+            if let Some(s) = self.format_css() {
+                ser.serialize_str(&s)
+            } else {
+                Err(ser::Error::custom(
+                    "unable to serialize non-generic family selectors",
+                ))
+            }
+        }
+    }
+
+    impl<'de> de::Deserialize<'de> for FontSelector {
+        fn deserialize<D: de::Deserializer<'de>>(de: D) -> Result<FontSelector, D::Error> {
+            struct Visitor;
+            impl<'de> de::Visitor<'de> for Visitor {
+                type Value = FontSelector;
+
+                fn expecting(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+                    write!(fmt, "a CSS-style font selector")
+                }
+
+                fn visit_str<E: de::Error>(self, s: &str) -> Result<FontSelector, E> {
+                    FontSelector::parse_css(s)
                         .ok_or_else(|| de::Error::invalid_value(de::Unexpected::Str(s), &self))
                 }
             }
