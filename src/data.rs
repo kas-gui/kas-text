@@ -91,7 +91,6 @@ impl From<Vec2> for (f32, f32) {
 /// and the library is too complex to be useful on 16-bit CPUs, so using `u32`
 /// makes more sense than `usize`.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Range {
     pub start: u32,
     pub end: u32,

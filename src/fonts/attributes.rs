@@ -10,8 +10,6 @@
 
 use core::fmt;
 use easy_cast::Cast;
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
 
 /// Visual width of a font-- a relative change from the normal aspect
 /// ratio, typically in the 50% - 200% range.
@@ -26,16 +24,13 @@ use serde::{Deserialize, Serialize};
 ///
 /// See <https://fonts.google.com/knowledge/glossary/width>
 ///
-/// In CSS, this corresponds to the [`font-width`] property.
-///
-/// This has also been known as "stretch" and has a legacy CSS name alias,
+/// In CSS, this corresponds to the [`font-width`] property, formerly known as
 /// [`font-stretch`].
 ///
 /// [`usWidthClass`]: https://learn.microsoft.com/en-us/typography/opentype/spec/os2#uswidthclass
 /// [`font-width`]: https://www.w3.org/TR/css-fonts-4/#font-width-prop
 /// [`font-stretch`]: https://www.w3.org/TR/css-fonts-4/#font-stretch-prop
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct FontWidth(u16);
 
 impl FontWidth {
@@ -163,6 +158,7 @@ impl FontWidth {
             "semi-condensed" => Self::SEMI_CONDENSED,
             "normal" => Self::NORMAL,
             "semi-expanded" => Self::SEMI_EXPANDED,
+            "expanded" => Self::EXPANDED,
             "extra-expanded" => Self::EXTRA_EXPANDED,
             "ultra-expanded" => Self::ULTRA_EXPANDED,
             _ => {
@@ -223,7 +219,6 @@ impl From<FontWidth> for fontique::FontWidth {
 ///
 /// [`font-weight`]: https://www.w3.org/TR/css-fonts-4/#font-weight-prop
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct FontWeight(u16);
 
 impl FontWeight {
@@ -274,6 +269,8 @@ impl FontWeight {
 
     /// Parses a CSS style font weight attribute.
     ///
+    /// This function accepts only `normal`, `bold` and numeric values.
+    ///
     /// # Examples
     ///
     /// ```
@@ -302,15 +299,8 @@ impl Default for FontWeight {
 impl fmt::Display for FontWeight {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let keyword = match self.0 {
-            100 => "thin",
-            200 => "extra-light",
-            300 => "light",
             400 => "normal",
-            500 => "medium",
-            600 => "semi-bold",
             700 => "bold",
-            800 => "extra-bold",
-            900 => "black",
             _ => return write!(f, "{}", self.0),
         };
         write!(f, "{keyword}")
@@ -339,7 +329,6 @@ impl From<FontWeight> for fontique::FontWeight {
 ///
 /// [`font-style`]: https://www.w3.org/TR/css-fonts-4/#font-style-prop
 #[derive(Copy, Clone, PartialEq, Eq, Default, Debug, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum FontStyle {
     /// An upright or "roman" style.
     #[default]
@@ -362,7 +351,7 @@ impl FontStyle {
         Some(match s {
             "normal" => Self::Normal,
             "italic" => Self::Italic,
-            "oblique" => Self::Oblique(Some(14 * 256)),
+            "oblique" => Self::Oblique(None),
             _ => {
                 if s.starts_with("oblique ") {
                     s = s.get(8..)?;
@@ -409,8 +398,8 @@ impl FontStyle {
     ///
     /// Panics if `degrees` is not between `-90` and `90`.
     pub fn from_degrees(degrees: f32) -> Self {
+        assert!(-90.0 <= degrees && degrees <= 90.0);
         let a = (degrees * 256.0).round();
-        assert!(-90.0 <= a && a <= 90.0);
         Self::Oblique(Some(a as i16))
     }
 }
@@ -421,10 +410,9 @@ impl fmt::Display for FontStyle {
             Self::Normal => "normal",
             Self::Italic => "italic",
             Self::Oblique(None) => "oblique",
-            Self::Oblique(Some(angle)) if angle == 14 * 256 => "oblique",
             Self::Oblique(Some(angle)) => {
                 let degrees = (angle as f32) / 256.0;
-                return write!(f, "oblique({degrees}deg)");
+                return write!(f, "oblique {degrees}deg");
             }
         };
         write!(f, "{value}")
@@ -441,6 +429,90 @@ impl From<FontStyle> for fontique::FontStyle {
             FontStyle::Oblique(slant) => {
                 fontique::FontStyle::Oblique(Some(FontStyle::oblique_degrees(slant)))
             }
+        }
+    }
+}
+
+#[cfg(feature = "serde")]
+mod serde_impls {
+    use super::*;
+    use serde::{de, ser};
+
+    impl ser::Serialize for FontWidth {
+        fn serialize<S: ser::Serializer>(&self, ser: S) -> Result<S::Ok, S::Error> {
+            ser.serialize_str(&format!("{}", self))
+        }
+    }
+
+    impl<'de> de::Deserialize<'de> for FontWidth {
+        fn deserialize<D: de::Deserializer<'de>>(de: D) -> Result<FontWidth, D::Error> {
+            struct Visitor;
+            impl<'de> de::Visitor<'de> for Visitor {
+                type Value = FontWidth;
+
+                fn expecting(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+                    write!(fmt, "a keyword or integer percentage")
+                }
+
+                fn visit_str<E: de::Error>(self, s: &str) -> Result<FontWidth, E> {
+                    FontWidth::parse(s)
+                        .ok_or_else(|| de::Error::invalid_value(de::Unexpected::Str(s), &self))
+                }
+            }
+
+            de.deserialize_str(Visitor)
+        }
+    }
+
+    impl ser::Serialize for FontWeight {
+        fn serialize<S: ser::Serializer>(&self, ser: S) -> Result<S::Ok, S::Error> {
+            ser.serialize_str(&format!("{}", self))
+        }
+    }
+
+    impl<'de> de::Deserialize<'de> for FontWeight {
+        fn deserialize<D: de::Deserializer<'de>>(de: D) -> Result<FontWeight, D::Error> {
+            struct Visitor;
+            impl<'de> de::Visitor<'de> for Visitor {
+                type Value = FontWeight;
+
+                fn expecting(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+                    write!(fmt, "a keyword or integer")
+                }
+
+                fn visit_str<E: de::Error>(self, s: &str) -> Result<FontWeight, E> {
+                    FontWeight::parse(s)
+                        .ok_or_else(|| de::Error::invalid_value(de::Unexpected::Str(s), &self))
+                }
+            }
+
+            de.deserialize_str(Visitor)
+        }
+    }
+
+    impl ser::Serialize for FontStyle {
+        fn serialize<S: ser::Serializer>(&self, ser: S) -> Result<S::Ok, S::Error> {
+            ser.serialize_str(&format!("{}", self))
+        }
+    }
+
+    impl<'de> de::Deserialize<'de> for FontStyle {
+        fn deserialize<D: de::Deserializer<'de>>(de: D) -> Result<FontStyle, D::Error> {
+            struct Visitor;
+            impl<'de> de::Visitor<'de> for Visitor {
+                type Value = FontStyle;
+
+                fn expecting(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+                    write!(fmt, "a keyword or 'oblique' value")
+                }
+
+                fn visit_str<E: de::Error>(self, s: &str) -> Result<FontStyle, E> {
+                    FontStyle::parse(s)
+                        .ok_or_else(|| de::Error::invalid_value(de::Unexpected::Str(s), &self))
+                }
+            }
+
+            de.deserialize_str(Visitor)
         }
     }
 }
