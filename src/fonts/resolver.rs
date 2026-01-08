@@ -224,6 +224,14 @@ pub struct FontSelector {
 }
 
 impl FontSelector {
+    /// Hard-coded emoji font selector
+    pub const EMOJI: Self = FontSelector {
+        family: FamilySelector::EMOJI,
+        weight: FontWeight::NORMAL,
+        width: FontWidth::NORMAL,
+        style: FontStyle::Normal,
+    };
+
     /// Synonym for default
     ///
     /// Without further parametrization, this will select a generic sans-serif

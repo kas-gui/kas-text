@@ -144,6 +144,9 @@ impl TextDisplay {
     /// Must be called again if any of `text`, `direction` or `font` change.
     /// If only `dpem` changes, [`Self::resize_runs`] may be called instead.
     ///
+    /// If `use_emoji_font` then emojis will use a special emoji font, otherwise
+    /// the usual font fallbacks may resolve a line-art emoji.
+    ///
     /// The text is broken into a set of contiguous "level runs". These runs are
     /// maximal slices of the `text` which do not contain explicit line breaks
     /// and have a single text direction according to the
@@ -154,6 +157,7 @@ impl TextDisplay {
         direction: Direction,
         mut font: FontSelector,
         mut dpem: f32,
+        use_emoji_font: bool,
     ) -> Result<(), NoFontMatch> {
         // This method constructs a list of "hard lines" (the initial line and any
         // caused by a hard break), each composed of a list of "level runs" (the
@@ -207,6 +211,7 @@ impl TextDisplay {
 
         let mut last_is_control = false;
         let mut last_is_htab = false;
+        let mut last_is_emoji = false;
         let mut non_control_end = 0;
 
         for (index, c) in text.char_indices() {
@@ -216,10 +221,12 @@ impl TextDisplay {
             }
             let is_control = c.is_control();
             let is_htab = c == '\t';
-            let control_break = is_htab || (last_is_control && !is_control);
+            let mut require_break = is_htab || (last_is_control && !is_control);
 
             let (props, boundary) = analyzer.next().unwrap();
             last_props = Some(props);
+            let is_emoji = use_emoji_font && props.is_emoji();
+            require_break |= is_emoji != last_is_emoji;
 
             // Forcibly end the line?
             let hard_break = boundary == Boundary::Mandatory;
@@ -227,7 +234,7 @@ impl TextDisplay {
             let is_break = hard_break || boundary == Boundary::Line;
 
             // Force end of current run?
-            let bidi_break = levels[index] != input.level;
+            require_break |= levels[index] != input.level;
 
             if let Some(fmt) = next_fmt.as_ref()
                 && to_usize(fmt.start) == index
@@ -250,7 +257,7 @@ impl TextDisplay {
                 }
             }
 
-            if hard_break || control_break || bidi_break || new_script.is_some() {
+            if hard_break || require_break || new_script.is_some() {
                 let range = (start..non_control_end).into();
                 let special = match () {
                     _ if hard_break => RunSpecial::HardBreak,
@@ -259,7 +266,12 @@ impl TextDisplay {
                     _ => RunSpecial::NoBreak,
                 };
 
-                self.push_run(font, input, range, breaks, special, first_real)?;
+                let f = if last_is_emoji {
+                    FontSelector::EMOJI
+                } else {
+                    font
+                };
+                self.push_run(f, input, range, breaks, special, first_real)?;
                 first_real = None;
 
                 start = index;
@@ -275,6 +287,7 @@ impl TextDisplay {
 
             last_is_control = is_control;
             last_is_htab = is_htab;
+            last_is_emoji = is_emoji;
             input.dpem = dpem;
             if let Some(script) = new_script {
                 input.script = script;
@@ -297,7 +310,12 @@ impl TextDisplay {
             _ => RunSpecial::None,
         };
 
-        self.push_run(font, input, range, breaks, special, first_real)?;
+        let f = if last_is_emoji {
+            FontSelector::EMOJI
+        } else {
+            font
+        };
+        self.push_run(f, input, range, breaks, special, first_real)?;
 
         // Following a hard break we have an implied empty line.
         if hard_break {
