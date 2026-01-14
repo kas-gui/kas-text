@@ -101,11 +101,11 @@ impl<'a> Iterator for LineIterator<'a> {
             return None;
         }
 
-        while let Some((index, _)) = self.char_indices.next() {
+        for (index, _) in self.char_indices.by_ref() {
             let (_, boundary) = self.analyzer.next().unwrap();
 
             if index > 0 && boundary == Boundary::Mandatory {
-                let range = (self.start..index).into();
+                let range = self.start..index;
                 self.start = index;
                 return Some(range);
             }
@@ -113,7 +113,7 @@ impl<'a> Iterator for LineIterator<'a> {
 
         debug_assert!(self.analyzer.next().is_none());
 
-        let range = (self.start..self.len).into();
+        let range = self.start..self.len;
         self.start = self.len;
         Some(range)
     }
