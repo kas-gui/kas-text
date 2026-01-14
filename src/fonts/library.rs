@@ -157,7 +157,7 @@ impl FaceStore {
                     .name
                     .as_chunks()
                     .0
-                    .into_iter()
+                    .iter()
                     .map(|chunk| u16::from_be_bytes(*chunk))
                     .collect();
                 Some(String::from_utf16_lossy(&name))

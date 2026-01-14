@@ -442,10 +442,8 @@ fn shape_simple(
     };
     while let Some((index, mut c)) = next_char_index() {
         let index = idx_offset + to_u32(index);
-        if rtl {
-            if let Some(m) = get_mirrored(c) {
-                c = m;
-            }
+        if rtl && let Some(m) = get_mirrored(c) {
+            c = m;
         }
         let id = sf.face().glyph_index(c);
 
@@ -460,17 +458,15 @@ fn shape_simple(
             no_space_end = caret;
         }
 
-        if let Some(prev) = prev_glyph_id {
-            if let Some(kern) = sf.face().0.tables().kern {
-                if let Some(adv) = kern
-                    .subtables
-                    .into_iter()
-                    .filter(|st| st.horizontal && !st.variable)
-                    .find_map(|st| st.glyphs_kerning(prev.into(), id.into()))
-                {
-                    caret += sf.dpu().i16_to_px(adv);
-                }
-            }
+        if let Some(prev) = prev_glyph_id
+            && let Some(kern) = sf.face().0.tables().kern
+            && let Some(adv) = kern
+                .subtables
+                .into_iter()
+                .filter(|st| st.horizontal && !st.variable)
+                .find_map(|st| st.glyphs_kerning(prev.into(), id.into()))
+        {
+            caret += sf.dpu().i16_to_px(adv);
         }
         prev_glyph_id = Some(id);
 
