@@ -1,7 +1,7 @@
 name: Publish to crates.io
 on:
   push:
-    tags: ['[0-9].[0-9]+.*']
+    tags: ['[0-9].[0-9].*', '[0-9].[1-9][0-9].*']
 jobs:
   publish:
     runs-on: ubuntu-latest
@@ -10,6 +10,10 @@ jobs:
       id-token: write     # Required for OIDC token exchange
     steps:
     - uses: actions/checkout@v6
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libfontconfig1-dev
     - uses: rust-lang/crates-io-auth-action@v1
       id: auth
     - run: cargo publish
