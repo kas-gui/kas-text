@@ -1,7 +1,7 @@
 name: Publish to crates.io
 on:
   push:
-    tags: ['[0-9].[0-9]+.*']
+    tags: ['[0-9].[0-9].*', '[0-9].[1-9][0-9].*']
 jobs:
   publish:
     runs-on: ubuntu-latest
