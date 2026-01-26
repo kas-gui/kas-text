@@ -2,6 +2,20 @@
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] — 2026-01-26
+
+-   Bump MSRV to 1.88 (#104)
+-   Bump fontique to 0.7.0 (#106, #107)
+-   Remove `Range` from pub API (#105)
+-   Remove fn `TextDisplay::line_range` (#105)
+-   Add fns `{TextDisplay, Text}::{get_line, lines}` (#105)
+-   Add fns `Line::{text_range, top, bottom}` (#105)
+-   Add parameter `max_lines` to fn `measure_height` (#105)
+-   Add fns `FaceStore::{read_name, name_family, name_subfamily, name_full}` (#110)
+-   Add struct `LineIterator` (#112)
+-   Support `serde` for `FamilySelector` and `FontSelector` (#113)
+-   Fixes for run-breaking and font selection (#104, #106, #107, #110)
+
 ## [0.8.1] — 2025-09-17
 
 -   Fix sizing of empty lines by prefering to match some font than nothing (#102)
