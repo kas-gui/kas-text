@@ -51,7 +51,7 @@ log = "0.4"
 serde = { version = "1.0.123", features = ["derive"], optional = true }
 ab_glyph = { version = "0.2.10", optional = true }
 swash = "0.2.4"
-fontique = "0.7.0"
+fontique = { version = "0.7.0", features = ["icu_properties"] }
 icu_properties = "2.1.1"
 icu_segmenter = "2.1.2"
 
