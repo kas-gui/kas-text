@@ -11,9 +11,9 @@ use super::TextDisplay;
 use crate::conv::{to_u32, to_usize};
 use crate::fonts::{self, FontSelector, NoFontMatch};
 use crate::format::FormattableText;
+use crate::util::ends_with_hard_break;
 use crate::{Direction, Range, script_to_fontique, shaper};
-use swash::text::LineBreak as LB;
-use swash::text::cluster::Boundary;
+use icu_segmenter::LineSegmenter;
 use unicode_bidi::{BidiInfo, LTR_LEVEL, RTL_LEVEL};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -201,8 +201,12 @@ impl TextDisplay {
         let mut start = 0;
         let mut breaks = Default::default();
 
+        // TODO: allow segmenter configuration
+        let segmenter = LineSegmenter::new_auto(Default::default());
+        let mut break_iter = segmenter.segment_str(text);
+        let mut next_break = break_iter.next();
+
         let mut analyzer = swash::text::analyze(text.chars());
-        let mut last_props = None;
         let mut first_real = None;
 
         let mut last_is_control = false;
@@ -218,13 +222,15 @@ impl TextDisplay {
             let is_htab = c == '\t';
             let control_break = is_htab || (last_is_control && !is_control);
 
-            let (props, boundary) = analyzer.next().unwrap();
-            last_props = Some(props);
+            let (props, _) = analyzer.next().unwrap();
 
-            // Forcibly end the line?
-            let hard_break = boundary == Boundary::Mandatory;
             // Is wrapping allowed at this position?
-            let is_break = hard_break || boundary == Boundary::Line;
+            let is_break = next_break == Some(index);
+            // Forcibly end the line?
+            let hard_break = is_break && ends_with_hard_break(&text[..index]);
+            if is_break {
+                next_break = break_iter.next();
+            }
 
             // Force end of current run?
             let bidi_break = levels[index] != input.level;
@@ -282,9 +288,8 @@ impl TextDisplay {
         }
 
         debug_assert!(analyzer.next().is_none());
-        let hard_break = last_props
-            .map(|props| matches!(props.line_break(), LB::BK | LB::CR | LB::LF | LB::NL))
-            .unwrap_or(false);
+        let is_break = next_break == Some(text.len());
+        let hard_break = is_break && ends_with_hard_break(&text);
 
         // Conclude: add last run. This may be empty, but we want it anyway.
         if !last_is_control {
