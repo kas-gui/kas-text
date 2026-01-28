@@ -11,9 +11,10 @@ use super::TextDisplay;
 use crate::conv::{to_u32, to_usize};
 use crate::fonts::{self, FontSelector, NoFontMatch};
 use crate::format::FormattableText;
-use crate::{Direction, Range, script_to_fontique, shaper};
-use swash::text::LineBreak as LB;
-use swash::text::cluster::Boundary;
+use crate::util::ends_with_hard_break;
+use crate::{Direction, Range, shaper};
+use icu_properties::{CodePointMapData, props::Script};
+use icu_segmenter::LineSegmenter;
 use unicode_bidi::{BidiInfo, LTR_LEVEL, RTL_LEVEL};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -195,14 +196,17 @@ impl TextDisplay {
             text,
             dpem,
             level: levels.first().cloned().unwrap_or(LTR_LEVEL),
-            script: UNKNOWN_SCRIPT,
+            script: Script::Unknown.into(),
         };
 
         let mut start = 0;
         let mut breaks = Default::default();
 
-        let mut analyzer = swash::text::analyze(text.chars());
-        let mut last_props = None;
+        // TODO: allow segmenter configuration
+        let segmenter = LineSegmenter::new_auto(Default::default());
+        let mut break_iter = segmenter.segment_str(text);
+        let mut next_break = break_iter.next();
+
         let mut first_real = None;
 
         let mut last_is_control = false;
@@ -218,13 +222,15 @@ impl TextDisplay {
             let is_htab = c == '\t';
             let control_break = is_htab || (last_is_control && !is_control);
 
-            let (props, boundary) = analyzer.next().unwrap();
-            last_props = Some(props);
+            let script = CodePointMapData::<Script>::new().get(c);
 
-            // Forcibly end the line?
-            let hard_break = boundary == Boundary::Mandatory;
             // Is wrapping allowed at this position?
-            let is_break = hard_break || boundary == Boundary::Line;
+            let is_break = next_break == Some(index);
+            // Forcibly end the line?
+            let hard_break = is_break && ends_with_hard_break(&text[..index]);
+            if is_break {
+                next_break = break_iter.next();
+            }
 
             // Force end of current run?
             let bidi_break = levels[index] != input.level;
@@ -238,14 +244,12 @@ impl TextDisplay {
             }
 
             let mut new_script = None;
-            if props.script().is_real() {
+            if !matches!(script, Script::Common | Script::Unknown | Script::Inherited) {
                 if first_real.is_none() && !c.is_control() {
                     first_real = Some(c);
                 }
-                let script = script_to_fontique(props.script());
-                if input.script == UNKNOWN_SCRIPT {
-                    input.script = script;
-                } else if script != UNKNOWN_SCRIPT && script != input.script {
+                let script = script.into();
+                if script != input.script {
                     new_script = Some(script);
                 }
             }
@@ -265,7 +269,7 @@ impl TextDisplay {
                 start = index;
                 non_control_end = index;
                 input.level = levels[index];
-                input.script = UNKNOWN_SCRIPT;
+                input.script = Script::Unknown.into();
                 breaks = Default::default();
             } else if is_break && !is_control {
                 // We do break runs when hitting control chars, but only when
@@ -281,10 +285,8 @@ impl TextDisplay {
             }
         }
 
-        debug_assert!(analyzer.next().is_none());
-        let hard_break = last_props
-            .map(|props| matches!(props.line_break(), LB::BK | LB::CR | LB::LF | LB::NL))
-            .unwrap_or(false);
+        let is_break = next_break == Some(text.len());
+        let hard_break = is_break && ends_with_hard_break(&text);
 
         // Conclude: add last run. This may be empty, but we want it anyway.
         if !last_is_control {
@@ -340,16 +342,3 @@ impl TextDisplay {
         Ok(())
     }
 }
-
-trait ScriptExt {
-    #[allow(clippy::wrong_self_convention)]
-    fn is_real(self) -> bool;
-}
-impl ScriptExt for swash::text::Script {
-    fn is_real(self) -> bool {
-        use swash::text::Script::*;
-        !matches!(self, Common | Unknown | Inherited)
-    }
-}
-
-pub(crate) const UNKNOWN_SCRIPT: fontique::Script = fontique::Script(*b"Zzzz");

@@ -29,9 +29,6 @@ pub use display::*;
 pub mod fonts;
 pub mod format;
 
-mod swash_convert;
-pub(crate) use swash_convert::script_to_fontique;
-
 mod text;
 pub use text::*;
 
