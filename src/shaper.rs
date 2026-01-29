@@ -21,7 +21,7 @@ use crate::conv::{DPU, to_u32, to_usize};
 use crate::display::RunSpecial;
 use crate::fonts::{self, FaceId};
 use crate::{Range, Vec2};
-use fontique::Script;
+use icu_properties::props::Script;
 use tinyvec::TinyVec;
 use unicode_bidi::Level;
 
@@ -309,7 +309,7 @@ pub(crate) fn shape(
         face_id,
         special,
         level: input.level,
-        script: input.script,
+        script: input.script.into(),
 
         glyphs,
         breaks,
@@ -352,6 +352,7 @@ fn shape_rustybuzz(
         true => rustybuzz::Direction::RightToLeft,
     });
     buffer.push_str(slice);
+    let script: fontique::Script = script.into();
     let tag = ttf_parser::Tag(u32::from_be_bytes(script.0));
     if let Some(script) = rustybuzz::Script::from_iso15924_tag(tag) {
         buffer.set_script(script);

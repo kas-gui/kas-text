@@ -80,7 +80,7 @@ impl TextDisplay {
         first_real: Option<char>,
     ) -> Result<(), NoFontMatch> {
         let fonts = fonts::library();
-        let font_id = fonts.select_font(&font, input.script)?;
+        let font_id = fonts.select_font(&font, input.script.into())?;
         let text = &input.text[range.to_std()];
 
         // Find a font face
@@ -197,7 +197,7 @@ impl TextDisplay {
             text,
             dpem,
             level: levels.first().cloned().unwrap_or(LTR_LEVEL),
-            script: Script::Unknown.into(),
+            script: Script::Unknown,
         };
 
         let mut start = 0;
@@ -253,7 +253,6 @@ impl TextDisplay {
                 if first_real.is_none() && !c.is_control() {
                     first_real = Some(c);
                 }
-                let script = script.into();
                 if script != input.script {
                     new_script = Some(script);
                 }
@@ -279,7 +278,7 @@ impl TextDisplay {
                 start = index;
                 non_control_end = index;
                 input.level = levels[index];
-                input.script = Script::Unknown.into();
+                input.script = Script::Unknown;
                 breaks = Default::default();
             } else if is_break && !is_control {
                 // We do break runs when hitting control chars, but only when
