@@ -305,8 +305,7 @@ impl TextDisplay {
                 }
             }
 
-            if !prohibit_break && non_control_end > start && (hard_break || require_break) {
-                let range = (start..non_control_end).into();
+            if !prohibit_break && (hard_break || require_break) {
                 let special = match () {
                     _ if hard_break => RunSpecial::HardBreak,
                     _ if last_is_htab => RunSpecial::HTab,
@@ -320,6 +319,9 @@ impl TextDisplay {
                     self.runs
                         .push(shaper::shape(input, range, face, breaks, special));
                 } else {
+                    // NOTE: the range may be empty; we need it anyway (unless
+                    // we modify the last run's special property).
+                    let range = (start..non_control_end).into();
                     self.push_run(font, input, range, breaks, special, first_real)?;
                 };
                 first_real = None;
