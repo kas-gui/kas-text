@@ -249,16 +249,17 @@ impl TextDisplay {
             }
 
             let mut new_script = None;
-            if !matches!(script, Script::Common | Script::Unknown | Script::Inherited) {
-                if first_real.is_none() && !c.is_control() {
+            if is_real(script) {
+                if first_real.is_none() {
                     first_real = Some(c);
                 }
                 if script != input.script {
                     new_script = Some(script);
+                    require_break |= is_real(input.script);
                 }
             }
 
-            if hard_break || require_break || new_script.is_some() {
+            if hard_break || require_break {
                 let range = (start..non_control_end).into();
                 let special = match () {
                     _ if hard_break => RunSpecial::HardBreak,
@@ -278,7 +279,7 @@ impl TextDisplay {
                 start = index;
                 non_control_end = index;
                 input.level = levels[index];
-                input.script = Script::Unknown;
+                input.script = script;
                 breaks = Default::default();
             } else if is_break && !is_control {
                 // We do break runs when hitting control chars, but only when
@@ -356,4 +357,8 @@ impl TextDisplay {
         */
         Ok(())
     }
+}
+
+fn is_real(script: Script) -> bool {
+    !matches!(script, Script::Common | Script::Unknown | Script::Inherited)
 }
