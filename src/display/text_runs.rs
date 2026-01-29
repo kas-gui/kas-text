@@ -120,8 +120,13 @@ impl TextDisplay {
                     }
                     let rest = breaks.split_off(j);
 
-                    self.runs
-                        .push(shaper::shape(input, sub_range, face, breaks, special));
+                    self.runs.push(shaper::shape(
+                        input,
+                        sub_range,
+                        face,
+                        breaks,
+                        RunSpecial::NoBreak,
+                    ));
                     breaks = rest;
                     start = index;
                 }
