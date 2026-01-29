@@ -221,7 +221,10 @@ impl TextDisplay {
         let mut last_is_emoji = false;
         let mut non_control_end = 0;
 
-        for (index, c) in text.char_indices() {
+        for (index, c) in text
+            .char_indices()
+            .chain(std::iter::once((text.len(), '\0')))
+        {
             // Handling for control chars
             if !last_is_control {
                 non_control_end = index;
@@ -242,7 +245,10 @@ impl TextDisplay {
             require_break |= is_emoji != last_is_emoji;
 
             // Force end of current run?
-            require_break |= levels[index] != input.level;
+            require_break |= levels
+                .get(index)
+                .map(|level| *level != input.level)
+                .unwrap_or(true);
 
             if let Some(fmt) = next_fmt.as_ref()
                 && to_usize(fmt.start) == index
@@ -282,7 +288,9 @@ impl TextDisplay {
 
                 start = index;
                 non_control_end = index;
-                input.level = levels[index];
+                if let Some(level) = levels.get(index) {
+                    input.level = *level;
+                }
                 input.script = script;
                 breaks = Default::default();
             } else if is_break && !is_control {
@@ -300,26 +308,7 @@ impl TextDisplay {
             }
         }
 
-        let is_break = next_break == Some(text.len());
-        let hard_break = is_break && ends_with_hard_break(&text);
-
-        // Conclude: add last run. This may be empty, but we want it anyway.
-        if !last_is_control {
-            non_control_end = text.len();
-        }
-        let range = (start..non_control_end).into();
-        let special = match () {
-            _ if hard_break => RunSpecial::HardBreak,
-            _ if last_is_htab => RunSpecial::HTab,
-            _ => RunSpecial::None,
-        };
-
-        let f = if last_is_emoji {
-            FontSelector::EMOJI
-        } else {
-            font
-        };
-        self.push_run(f, input, range, breaks, special, first_real)?;
+        let hard_break = ends_with_hard_break(&text);
 
         // Following a hard break we have an implied empty line.
         if hard_break {
