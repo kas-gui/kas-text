@@ -131,7 +131,7 @@ fn size_of_elts() {
     #[cfg(not(feature = "num_glyphs"))]
     assert_eq!(size_of::<TextDisplay>(), 200);
     #[cfg(feature = "num_glyphs")]
-    assert_eq!(size_of::<TextDisplay>(), 216);
+    assert_eq!(size_of::<TextDisplay>(), 208);
 }
 
 impl Default for TextDisplay {

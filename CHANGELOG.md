@@ -2,6 +2,11 @@
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.1] — 2026-02-02
+
+-   Use ICU4X instead of Swash for text analysis (#119, #122)
+-   Support Emojis (#121, #122)
+
 ## [0.9.0] — 2026-01-26
 
 -   Bump MSRV to 1.88 (#104)
