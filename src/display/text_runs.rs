@@ -9,13 +9,14 @@
 
 use super::TextDisplay;
 use crate::conv::{to_u32, to_usize};
-use crate::fonts::{self, FontSelector, NoFontMatch};
+use crate::fonts::{self, FaceId, FontSelector, NoFontMatch};
 use crate::format::FormattableText;
 use crate::util::ends_with_hard_break;
 use crate::{Direction, Range, shaper};
-use icu_properties::props::{EmojiPresentation, Script};
+use icu_properties::props::{Emoji, EmojiModifier, RegionalIndicator, Script};
 use icu_properties::{CodePointMapData, CodePointSetData};
 use icu_segmenter::LineSegmenter;
+use std::sync::OnceLock;
 use unicode_bidi::{BidiInfo, LTR_LEVEL, RTL_LEVEL};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -80,7 +81,7 @@ impl TextDisplay {
         first_real: Option<char>,
     ) -> Result<(), NoFontMatch> {
         let fonts = fonts::library();
-        let font_id = fonts.select_font(&font, input.script)?;
+        let font_id = fonts.select_font(&font, input.script.into())?;
         let text = &input.text[range.to_std()];
 
         // Find a font face
@@ -120,8 +121,13 @@ impl TextDisplay {
                     }
                     let rest = breaks.split_off(j);
 
-                    self.runs
-                        .push(shaper::shape(input, sub_range, face, breaks, special));
+                    self.runs.push(shaper::shape(
+                        input,
+                        sub_range,
+                        face,
+                        breaks,
+                        RunSpecial::NoBreak,
+                    ));
                     breaks = rest;
                     start = index;
                 }
@@ -197,7 +203,7 @@ impl TextDisplay {
             text,
             dpem,
             level: levels.first().cloned().unwrap_or(LTR_LEVEL),
-            script: Script::Unknown.into(),
+            script: Script::Unknown,
         };
 
         let mut start = 0;
@@ -209,36 +215,76 @@ impl TextDisplay {
         let mut next_break = break_iter.next();
 
         let mut first_real = None;
-        let emoji_presentation = CodePointSetData::new::<EmojiPresentation>();
+        let mut emoji_state = EmojiState::None;
+        let mut emoji_start = 0;
+        let mut emoji_end = 0;
 
         let mut last_is_control = false;
         let mut last_is_htab = false;
-        let mut last_is_emoji = false;
         let mut non_control_end = 0;
 
-        for (index, c) in text.char_indices() {
+        for (index, c) in text
+            .char_indices()
+            .chain(std::iter::once((text.len(), '\0')))
+        {
             // Handling for control chars
             if !last_is_control {
                 non_control_end = index;
             }
             let is_control = c.is_control();
             let is_htab = c == '\t';
-            let mut require_break = is_htab || (last_is_control && !is_control);
-
-            let script = CodePointMapData::<Script>::new().get(c);
-            let is_emoji = emoji_presentation.contains(c);
-            require_break |= is_emoji != last_is_emoji;
+            let mut require_break = is_htab;
 
             // Is wrapping allowed at this position?
             let is_break = next_break == Some(index);
-            // Forcibly end the line?
             let hard_break = is_break && ends_with_hard_break(&text[..index]);
             if is_break {
                 next_break = break_iter.next();
             }
 
+            let script = CodePointMapData::<Script>::new().get(c);
+
+            let emoji_break = emoji_state.advance(c);
+            let mut new_emoji_start = emoji_start;
+            let mut is_emoji = false;
+            let prohibit_break = match emoji_break {
+                EmojiBreak::None => false,
+                EmojiBreak::Start => {
+                    require_break = true;
+                    new_emoji_start = index;
+                    false
+                }
+                EmojiBreak::Prohibit => {
+                    emoji_end = index;
+                    true
+                }
+                EmojiBreak::End => {
+                    require_break = true;
+                    emoji_end = index;
+                    debug_assert!(emoji_end > emoji_start);
+                    is_emoji = true;
+                    false
+                }
+                EmojiBreak::Restart => {
+                    require_break = true;
+                    emoji_end = index;
+                    new_emoji_start = index;
+                    debug_assert!(emoji_end > emoji_start);
+                    is_emoji = true;
+                    false
+                }
+                EmojiBreak::Error => {
+                    is_emoji = emoji_end > emoji_start;
+                    require_break = is_emoji;
+                    false
+                }
+            };
+
             // Force end of current run?
-            require_break |= levels[index] != input.level;
+            require_break |= levels
+                .get(index)
+                .map(|level| *level != input.level)
+                .unwrap_or(true);
 
             if let Some(fmt) = next_fmt.as_ref()
                 && to_usize(fmt.start) == index
@@ -249,18 +295,17 @@ impl TextDisplay {
             }
 
             let mut new_script = None;
-            if !matches!(script, Script::Common | Script::Unknown | Script::Inherited) {
-                if first_real.is_none() && !c.is_control() {
+            if is_real(script) {
+                if first_real.is_none() {
                     first_real = Some(c);
                 }
-                let script = script.into();
                 if script != input.script {
                     new_script = Some(script);
+                    require_break |= is_real(input.script);
                 }
             }
 
-            if hard_break || require_break || new_script.is_some() {
-                let range = (start..non_control_end).into();
+            if !prohibit_break && (hard_break || require_break) {
                 let special = match () {
                     _ if hard_break => RunSpecial::HardBreak,
                     _ if last_is_htab => RunSpecial::HTab,
@@ -268,18 +313,25 @@ impl TextDisplay {
                     _ => RunSpecial::NoBreak,
                 };
 
-                let f = if last_is_emoji {
-                    FontSelector::EMOJI
+                if is_emoji {
+                    let range = (emoji_start..emoji_end).into();
+                    let face = emoji_face_id()?;
+                    self.runs
+                        .push(shaper::shape(input, range, face, breaks, special));
                 } else {
-                    font
+                    // NOTE: the range may be empty; we need it anyway (unless
+                    // we modify the last run's special property).
+                    let range = (start..non_control_end).into();
+                    self.push_run(font, input, range, breaks, special, first_real)?;
                 };
-                self.push_run(f, input, range, breaks, special, first_real)?;
                 first_real = None;
 
                 start = index;
                 non_control_end = index;
-                input.level = levels[index];
-                input.script = Script::Unknown.into();
+                if let Some(level) = levels.get(index) {
+                    input.level = *level;
+                }
+                input.script = script;
                 breaks = Default::default();
             } else if is_break && !is_control {
                 // We do break runs when hitting control chars, but only when
@@ -289,33 +341,14 @@ impl TextDisplay {
 
             last_is_control = is_control;
             last_is_htab = is_htab;
-            last_is_emoji = is_emoji;
+            emoji_start = new_emoji_start;
             input.dpem = dpem;
             if let Some(script) = new_script {
                 input.script = script;
             }
         }
 
-        let is_break = next_break == Some(text.len());
-        let hard_break = is_break && ends_with_hard_break(&text);
-
-        // Conclude: add last run. This may be empty, but we want it anyway.
-        if !last_is_control {
-            non_control_end = text.len();
-        }
-        let range = (start..non_control_end).into();
-        let special = match () {
-            _ if hard_break => RunSpecial::HardBreak,
-            _ if last_is_htab => RunSpecial::HTab,
-            _ => RunSpecial::None,
-        };
-
-        let f = if last_is_emoji {
-            FontSelector::EMOJI
-        } else {
-            font
-        };
-        self.push_run(f, input, range, breaks, special, first_real)?;
+        let hard_break = ends_with_hard_break(&text);
 
         // Following a hard break we have an implied empty line.
         if hard_break {
@@ -356,5 +389,142 @@ impl TextDisplay {
         }
         */
         Ok(())
+    }
+}
+
+fn is_real(script: Script) -> bool {
+    !matches!(script, Script::Common | Script::Unknown | Script::Inherited)
+}
+
+fn emoji_face_id() -> Result<FaceId, NoFontMatch> {
+    static ONCE: OnceLock<Result<FaceId, NoFontMatch>> = OnceLock::new();
+    *ONCE.get_or_init(|| {
+        let fonts = fonts::library();
+        let font = fonts.select_font(&FontSelector::EMOJI, Script::Common.into());
+        font.map(|font_id| fonts.first_face_for(font_id).expect("invalid FontId"))
+    })
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum EmojiBreak {
+    /// Not an Emoji
+    None,
+    /// Start of an Emoji sequence
+    Start,
+    /// Mid Emoji sequence, valid
+    Prohibit,
+    /// End of a valid Emoji sequence
+    End,
+    /// End of one Emoji and start of another
+    Restart,
+    /// Error; revert to last known good index
+    Error,
+}
+
+enum EmojiState {
+    None,
+    RI1,
+    RI2,
+    Emoji,
+    EMod,
+    VarSelector,
+    TagModifier,
+    ZWJ,
+}
+
+impl EmojiState {
+    /// Advance the emoji state machine
+    ///
+    /// Returns whether a break should occur before `c`.
+    fn advance(&mut self, c: char) -> EmojiBreak {
+        // Reference: https://unicode.org/reports/tr51/#EBNF_and_Regex
+        #[allow(non_snake_case)]
+        fn end_unless_ZWJ(c: char, b: &mut EmojiBreak) -> EmojiState {
+            if c == '\u{200D}' {
+                EmojiState::ZWJ
+            } else {
+                *b = EmojiBreak::End;
+                EmojiState::None
+            }
+        }
+        let mut b = EmojiBreak::None;
+        *self = match *self {
+            EmojiState::None => {
+                if CodePointSetData::new::<RegionalIndicator>().contains(c) {
+                    b = EmojiBreak::Start;
+                    EmojiState::RI1
+                } else if CodePointSetData::new::<Emoji>().contains(c) {
+                    b = EmojiBreak::Start;
+                    EmojiState::Emoji
+                } else {
+                    EmojiState::None
+                }
+            }
+            EmojiState::RI1 => {
+                if CodePointSetData::new::<RegionalIndicator>().contains(c) {
+                    b = EmojiBreak::Prohibit;
+                    EmojiState::RI2
+                } else {
+                    b = EmojiBreak::Error;
+                    EmojiState::None
+                }
+            }
+            EmojiState::RI2 => end_unless_ZWJ(c, &mut b),
+            EmojiState::Emoji => {
+                if CodePointSetData::new::<EmojiModifier>().contains(c) {
+                    EmojiState::EMod
+                } else if c == '\u{FE0F}' {
+                    EmojiState::VarSelector
+                } else if ('\u{E0020}'..='\u{E007E}').contains(&c) {
+                    EmojiState::TagModifier
+                } else if c == '\u{200D}' {
+                    EmojiState::ZWJ
+                } else {
+                    b = EmojiBreak::End;
+                    EmojiState::None
+                }
+            }
+            EmojiState::EMod => end_unless_ZWJ(c, &mut b),
+            EmojiState::VarSelector => {
+                if c == '\u{20E3}' {
+                    end_unless_ZWJ(c, &mut b)
+                } else {
+                    b = EmojiBreak::End;
+                    EmojiState::None
+                }
+            }
+            EmojiState::TagModifier => {
+                if ('\u{E0020}'..='\u{E007E}').contains(&c) {
+                    EmojiState::TagModifier
+                } else if c == '\u{E007F}' {
+                    end_unless_ZWJ(c, &mut b)
+                } else {
+                    b = EmojiBreak::Error;
+                    EmojiState::None
+                }
+            }
+            EmojiState::ZWJ => {
+                if CodePointSetData::new::<RegionalIndicator>().contains(c) {
+                    EmojiState::RI1
+                } else if CodePointSetData::new::<Emoji>().contains(c) {
+                    EmojiState::Emoji
+                } else {
+                    b = EmojiBreak::Error;
+                    EmojiState::None
+                }
+            }
+        };
+        if b == EmojiBreak::End {
+            *self = if CodePointSetData::new::<RegionalIndicator>().contains(c) {
+                b = EmojiBreak::Restart;
+                EmojiState::RI1
+            } else if CodePointSetData::new::<Emoji>().contains(c) {
+                b = EmojiBreak::Restart;
+                EmojiState::Emoji
+            } else {
+                EmojiState::None
+            };
+        }
+        b
     }
 }

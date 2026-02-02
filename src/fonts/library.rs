@@ -38,7 +38,7 @@ pub struct InvalidFontId;
 /// No matching font found
 ///
 /// Text layout failed.
-#[derive(Error, Debug)]
+#[derive(Clone, Copy, Error, Debug)]
 #[error("no font match")]
 pub struct NoFontMatch;
 

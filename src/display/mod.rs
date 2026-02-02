@@ -125,11 +125,11 @@ pub struct TextDisplay {
 fn size_of_elts() {
     use std::mem::size_of;
     assert_eq!(size_of::<TinyVec<[u8; 0]>>(), 24);
-    assert_eq!(size_of::<shaper::GlyphRun>(), 120);
+    assert_eq!(size_of::<shaper::GlyphRun>(), 112);
     assert_eq!(size_of::<RunPart>(), 24);
     assert_eq!(size_of::<Line>(), 24);
     #[cfg(not(feature = "num_glyphs"))]
-    assert_eq!(size_of::<TextDisplay>(), 208);
+    assert_eq!(size_of::<TextDisplay>(), 200);
     #[cfg(feature = "num_glyphs")]
     assert_eq!(size_of::<TextDisplay>(), 216);
 }
