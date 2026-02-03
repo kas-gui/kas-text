@@ -13,7 +13,7 @@ use crate::fonts::{self, FaceId, FontSelector, NoFontMatch};
 use crate::format::FormattableText;
 use crate::util::ends_with_hard_break;
 use crate::{Direction, Range, shaper};
-use icu_properties::props::{Emoji, EmojiModifier, RegionalIndicator, Script};
+use icu_properties::props::{EmojiModifier, EmojiPresentation, RegionalIndicator, Script};
 use icu_properties::{CodePointMapData, CodePointSetData};
 use icu_segmenter::LineSegmenter;
 use std::sync::OnceLock;
@@ -453,7 +453,7 @@ impl EmojiState {
                 if CodePointSetData::new::<RegionalIndicator>().contains(c) {
                     b = EmojiBreak::Start;
                     EmojiState::RI1
-                } else if CodePointSetData::new::<Emoji>().contains(c) {
+                } else if CodePointSetData::new::<EmojiPresentation>().contains(c) {
                     b = EmojiBreak::Start;
                     EmojiState::Emoji
                 } else {
@@ -506,7 +506,7 @@ impl EmojiState {
             EmojiState::ZWJ => {
                 if CodePointSetData::new::<RegionalIndicator>().contains(c) {
                     EmojiState::RI1
-                } else if CodePointSetData::new::<Emoji>().contains(c) {
+                } else if CodePointSetData::new::<EmojiPresentation>().contains(c) {
                     EmojiState::Emoji
                 } else {
                     b = EmojiBreak::Error;
@@ -518,7 +518,7 @@ impl EmojiState {
             *self = if CodePointSetData::new::<RegionalIndicator>().contains(c) {
                 b = EmojiBreak::Restart;
                 EmojiState::RI1
-            } else if CodePointSetData::new::<Emoji>().contains(c) {
+            } else if CodePointSetData::new::<EmojiPresentation>().contains(c) {
                 b = EmojiBreak::Restart;
                 EmojiState::Emoji
             } else {
