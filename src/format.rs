@@ -18,7 +18,7 @@ mod markdown;
 pub use markdown::{Error as MarkdownError, Markdown};
 
 /// Text, optionally with formatting data
-pub trait FormattableText: std::cmp::PartialEq + std::fmt::Debug {
+pub trait FormattableText: std::cmp::PartialEq {
     /// Length of text
     ///
     /// Default implementation uses [`FormattableText::as_str`].
