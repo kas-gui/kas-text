@@ -195,7 +195,7 @@ fn parse(input: &str) -> Result<Markdown, Error> {
         if token.flags != flags {
             effects.push(Effect {
                 start: token.start,
-                e: 0,
+                color: 0,
                 flags: token.flags,
             });
             flags = token.flags;

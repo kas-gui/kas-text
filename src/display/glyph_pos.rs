@@ -24,8 +24,11 @@ pub struct Effect {
     /// (Note that we use `u32` not `usize` since it can be assumed text length
     /// will never exceed `u32::MAX`.)
     pub start: u32,
-    /// User-specified value, e.g. index into a colour palette
-    pub e: u16,
+    /// User-specified value
+    ///
+    /// Usage is not specified by `kas-text`, but typically this field will be
+    /// used as an index into a colour palette or not used at all.
+    pub color: u16,
     /// Effect flags
     pub flags: EffectFlags,
 }
@@ -170,8 +173,8 @@ impl<'a> GlyphRun<'a> {
 
     /// Yield glyphs and effects for this run
     ///
-    /// The callback `f` receives `glyph, e` where `e` is the [`Effect::e`]
-    /// value (defaults to 0).
+    /// The callback `f` receives `glyph, color` where `color` is the
+    /// [`Effect::color`] value (defaults to 0).
     ///
     /// The callback `g` receives positioning for each underline/strike-through
     /// segment: `x1, x2, y_top, h` where `h` is the thickness (height). Note
@@ -235,7 +238,7 @@ impl<'a> GlyphRun<'a> {
                 let y_top = position.1 - metrics.position;
                 let h = metrics.thickness;
                 let x1 = position.0;
-                underline = Some((x1, y_top, h, fmt.e));
+                underline = Some((x1, y_top, h, fmt.color));
             }
             if fmt.flags.contains(EffectFlags::STRIKETHROUGH)
                 && let Some(metrics) = sf.strikethrough_metrics()
@@ -243,7 +246,7 @@ impl<'a> GlyphRun<'a> {
                 let y_top = position.1 - metrics.position;
                 let h = metrics.thickness;
                 let x1 = position.0;
-                strikethrough = Some((x1, y_top, h, fmt.e));
+                strikethrough = Some((x1, y_top, h, fmt.color));
             }
         }
 
@@ -297,7 +300,7 @@ impl<'a> GlyphRun<'a> {
                         let y_top = glyph.position.1 - metrics.position;
                         let h = metrics.thickness;
                         let x1 = glyph.position.0;
-                        underline = Some((x1, y_top, h, fmt.e));
+                        underline = Some((x1, y_top, h, fmt.color));
                     }
                 }
                 if strikethrough.is_some() != fmt.flags.contains(EffectFlags::STRIKETHROUGH) {
@@ -309,12 +312,12 @@ impl<'a> GlyphRun<'a> {
                         let y_top = glyph.position.1 - metrics.position;
                         let h = metrics.thickness;
                         let x1 = glyph.position.0;
-                        strikethrough = Some((x1, y_top, h, fmt.e));
+                        strikethrough = Some((x1, y_top, h, fmt.color));
                     }
                 }
             }
 
-            f(glyph, fmt.e);
+            f(glyph, fmt.color);
         }
 
         // Effects end at the following glyph's start (or end of this run part)
