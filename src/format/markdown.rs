@@ -106,15 +106,13 @@ impl<'a> ExactSizeIterator for FontTokenIter<'a> {}
 impl<'a> FusedIterator for FontTokenIter<'a> {}
 
 impl FormattableText for Markdown {
-    type FontTokenIter<'a> = FontTokenIter<'a>;
-
     #[inline]
     fn as_str(&self) -> &str {
         &self.text
     }
 
     #[inline]
-    fn font_tokens<'a>(&'a self, dpem: f32) -> Self::FontTokenIter<'a> {
+    fn font_tokens(&self, dpem: f32) -> impl Iterator<Item = FontToken> {
         FontTokenIter::new(&self.fmt, dpem)
     }
 

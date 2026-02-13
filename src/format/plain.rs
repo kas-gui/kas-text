@@ -9,16 +9,11 @@ use super::{FontToken, FormattableText};
 use crate::Effect;
 
 impl FormattableText for str {
-    type FontTokenIter<'a>
-        = std::iter::Empty<FontToken>
-    where
-        Self: 'a;
-
     fn as_str(&self) -> &str {
         self
     }
 
-    fn font_tokens<'a>(&'a self, _: f32) -> Self::FontTokenIter<'a> {
+    fn font_tokens(&self, _: f32) -> impl Iterator<Item = FontToken> {
         std::iter::empty()
     }
 
@@ -28,13 +23,11 @@ impl FormattableText for str {
 }
 
 impl FormattableText for String {
-    type FontTokenIter<'a> = std::iter::Empty<FontToken>;
-
     fn as_str(&self) -> &str {
         self
     }
 
-    fn font_tokens<'a>(&'a self, _: f32) -> Self::FontTokenIter<'a> {
+    fn font_tokens(&self, _: f32) -> impl Iterator<Item = FontToken> {
         std::iter::empty()
     }
 

@@ -22,10 +22,6 @@ pub use markdown::{Error as MarkdownError, Markdown};
 /// Any `F: FormattableText` automatically support [`FormattableTextDyn`].
 /// Implement either this or [`FormattableTextDyn`], not both.
 pub trait FormattableText: std::cmp::PartialEq + std::fmt::Debug {
-    type FontTokenIter<'a>: Iterator<Item = FontToken>
-    where
-        Self: 'a;
-
     /// Length of text
     ///
     /// Default implementation uses [`FormattableText::as_str`].
@@ -46,7 +42,7 @@ pub trait FormattableText: std::cmp::PartialEq + std::fmt::Debug {
     /// as a reference.
     ///
     /// For plain text this iterator will be empty.
-    fn font_tokens<'a>(&'a self, dpem: f32) -> Self::FontTokenIter<'a>;
+    fn font_tokens(&self, dpem: f32) -> impl Iterator<Item = FontToken>;
 
     /// Get the sequence of effect tokens
     ///
@@ -60,16 +56,11 @@ pub trait FormattableText: std::cmp::PartialEq + std::fmt::Debug {
 }
 
 impl<F: FormattableText + ?Sized> FormattableText for &F {
-    type FontTokenIter<'a>
-        = F::FontTokenIter<'a>
-    where
-        Self: 'a;
-
     fn as_str(&self) -> &str {
         F::as_str(self)
     }
 
-    fn font_tokens<'a>(&'a self, dpem: f32) -> Self::FontTokenIter<'a> {
+    fn font_tokens(&self, dpem: f32) -> impl Iterator<Item = FontToken> {
         F::font_tokens(self, dpem)
     }
 
@@ -148,11 +139,6 @@ impl<'t> PartialEq for &'t dyn FormattableTextDyn {
 }
 
 impl<'t> FormattableText for &'t dyn FormattableTextDyn {
-    type FontTokenIter<'a>
-        = OwningVecIter<FontToken>
-    where
-        Self: 'a;
-
     #[inline]
     fn str_len(&self) -> usize {
         FormattableTextDyn::str_len(*self)
@@ -164,7 +150,7 @@ impl<'t> FormattableText for &'t dyn FormattableTextDyn {
     }
 
     #[inline]
-    fn font_tokens(&self, dpem: f32) -> OwningVecIter<FontToken> {
+    fn font_tokens(&self, dpem: f32) -> impl Iterator<Item = FontToken> {
         FormattableTextDyn::font_tokens(*self, dpem)
     }
 
