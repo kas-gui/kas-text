@@ -33,41 +33,6 @@ impl Status {
     }
 }
 
-/// An iterator over a `Vec` which clones elements
-pub struct OwningVecIter<T: Clone> {
-    v: Vec<T>,
-    i: usize,
-}
-
-impl<T: Clone> OwningVecIter<T> {
-    /// Construct from a `Vec`
-    pub fn new(v: Vec<T>) -> Self {
-        let i = 0;
-        OwningVecIter { v, i }
-    }
-}
-
-impl<T: Clone> Iterator for OwningVecIter<T> {
-    type Item = T;
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.i < self.v.len() {
-            let item = self.v[self.i].clone();
-            self.i += 1;
-            Some(item)
-        } else {
-            None
-        }
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let len = self.v.len() - self.i;
-        (len, Some(len))
-    }
-}
-
-impl<T: Clone> ExactSizeIterator for OwningVecIter<T> {}
-impl<T: Clone> std::iter::FusedIterator for OwningVecIter<T> {}
-
 /// Returns `true` when `text` ends with a hard break, assuming that it ends
 /// with a valid line break.
 ///
