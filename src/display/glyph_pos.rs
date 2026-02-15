@@ -449,8 +449,11 @@ impl TextDisplay {
     /// free).
     ///
     /// An [`Effect`] sequence supports underline, strikethrough and custom
-    /// indexing (e.g. for a color palette). Pass `&[]` if effects are not
-    /// required. (The default effect is always [`Effect::default()`].)
+    /// indexing (e.g. for a color palette). This sequence may be the result of
+    /// [`FormattableText::effect_tokens`], `&[]`, or any other sequence such
+    /// that [`Effect::start`] values are strictly increasing and compatible
+    /// with text `char` indices (see also [`FormattableText::effect_tokens`]).
+    /// (It is not required to re-prepare text when changing the sequence.)
     ///
     /// Runs are yielded in undefined order. The total number of
     /// glyphs yielded will equal [`TextDisplay::num_glyphs`].
@@ -462,6 +465,21 @@ impl TextDisplay {
         offset: Vec2,
         effects: &'a [Effect],
     ) -> impl Iterator<Item = GlyphRun<'a>> + 'a {
+        #[cfg(debug_assertions)]
+        {
+            let mut start = None;
+            for effect in effects {
+                if let Some(i) = start
+                    && effect.start <= i
+                {
+                    panic!(
+                        "TextDisplay::runs: Effect::start indices are not strictly increasing in {effects:?}"
+                    );
+                }
+                start = Some(effect.start);
+            }
+        }
+
         self.wrapped_runs
             .iter()
             .filter(|part| !part.glyph_range.is_empty())

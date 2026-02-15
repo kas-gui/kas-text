@@ -328,14 +328,10 @@ impl<T: FormattableText + ?Sized> Text<T> {
         is_rtl
     }
 
-    /// Get the sequence of effect tokens
+    /// Return the sequence of effect tokens
     ///
-    /// This method has some limitations: (1) it may only return a reference to
-    /// an existing sequence, (2) effect tokens cannot be generated dependent
-    /// on input state, and (3) it does not incorporate color information. For
-    /// most uses it should still be sufficient, but for other cases it may be
-    /// preferable not to use this method (use a dummy implementation returning
-    /// `&[]` and use inherent methods on the text object via [`Text::text`]).
+    /// This method simply forwards the result of
+    /// [`FormattableText::effect_tokens`].
     #[inline]
     pub fn effect_tokens(&self) -> &[Effect] {
         self.text.effect_tokens()
@@ -397,7 +393,7 @@ impl<T: FormattableText + ?Sized> Text<T> {
                 self.display
                     .prepare_runs(&self.text, self.direction, self.font, self.dpem)?
             }
-            Status::ResizeLevelRuns => self.display.resize_runs(&self.text, self.dpem),
+            Status::ResizeLevelRuns => self.display.resize_runs(&self.text, self.font, self.dpem),
             _ => (),
         }
 

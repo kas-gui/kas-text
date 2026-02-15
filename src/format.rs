@@ -41,14 +41,18 @@ pub trait FormattableText: std::cmp::PartialEq {
     /// For plain text this iterator will be empty.
     fn font_tokens(&self, dpem: f32) -> impl Iterator<Item = FontToken>;
 
-    /// Get the sequence of effect tokens
+    /// Return the sequence of effect tokens
     ///
-    /// This method has some limitations: (1) it may only return a reference to
-    /// an existing sequence, (2) effect tokens cannot be generated dependent
-    /// on input state, and (3) it does not incorporate color information. For
-    /// most uses it should still be sufficient, but for other cases it may be
-    /// preferable not to use this method (use a dummy implementation returning
-    /// `&[]` and use inherent methods on the text object via [`Text::text`]).
+    /// These tokens are used to select the font color and
+    /// [effects](crate::EffectFlags).
+    ///
+    /// The values of [`Effect::start`] are expected to be strictly increasing
+    /// in order, less than [`Self::str_len`]. In case the slice is empty or the
+    /// first [`Effect::start`] value is greater than zero, values from
+    /// [`Effect::default()`] are used.
+    ///
+    /// Changes to the result of this method do not require any re-preparation
+    /// of text.
     fn effect_tokens(&self) -> &[Effect];
 }
 
