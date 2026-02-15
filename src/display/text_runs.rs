@@ -289,9 +289,7 @@ impl TextDisplay {
             if let Some(fmt) = next_fmt.as_ref()
                 && to_usize(fmt.start) == index
             {
-                font = fmt.font;
-                dpem = fmt.dpem;
-                next_fmt = font_tokens.next();
+                require_break = true;
             }
 
             let mut new_script = None;
@@ -339,10 +337,23 @@ impl TextDisplay {
                 breaks.push(shaper::GlyphBreak::new(to_u32(index)));
             }
 
+            if let Some(fmt) = next_fmt.as_ref()
+                && to_usize(fmt.start) == index
+            {
+                font = fmt.font;
+                input.dpem = fmt.dpem;
+                next_fmt = font_tokens.next();
+                debug_assert!(
+                    next_fmt
+                        .as_ref()
+                        .map(|fmt| to_usize(fmt.start) > index)
+                        .unwrap_or(true)
+                );
+            }
+
             last_is_control = is_control;
             last_is_htab = is_htab;
             emoji_start = new_emoji_start;
-            input.dpem = dpem;
             if let Some(script) = new_script {
                 input.script = script;
             }
