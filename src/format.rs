@@ -30,16 +30,23 @@ pub trait FormattableText: std::cmp::PartialEq {
     /// Access whole text as contiguous `str`
     fn as_str(&self) -> &str;
 
-    /// Construct an iterator over formatting items
+    /// Return an iterator of font tokens
     ///
-    /// It is expected that [`FontToken::start`] of yielded items is strictly
-    /// increasing; if not, formatting may not be applied correctly.
+    /// These tokens are used to select the font and font size.
+    /// Each text object has a configured
+    /// [font size][crate::Text::set_font_size] and [`FontSelector`]; these
+    /// values are passed as a reference (`dpem` and `font`).
     ///
-    /// The default [font size][crate::Text::set_font_size] (`dpem`) is passed
-    /// as a reference.
+    /// The iterator is expected to yield a stream of tokens such that
+    /// [`FontToken::start`] values are strictly increasing, less than
+    /// [`Self::str_len`] and at `char` boundaries (i.e. an index value returned
+    /// by [`str::char_indices`]. In case the returned iterator is empty or the
+    /// first [`FontToken::start`] value is greater than zero the reference
+    /// `dpem` and `font` values are used.
     ///
-    /// For plain text this iterator will be empty.
-    fn font_tokens(&self, dpem: f32) -> impl Iterator<Item = FontToken>;
+    /// Any changes to the result of this method require full re-preparation of
+    /// text since this affects run breaking and font resolution.
+    fn font_tokens(&self, dpem: f32, font: FontSelector) -> impl Iterator<Item = FontToken>;
 
     /// Return the sequence of effect tokens
     ///
@@ -61,8 +68,8 @@ impl<F: FormattableText + ?Sized> FormattableText for &F {
         F::as_str(self)
     }
 
-    fn font_tokens(&self, dpem: f32) -> impl Iterator<Item = FontToken> {
-        F::font_tokens(self, dpem)
+    fn font_tokens(&self, dpem: f32, font: FontSelector) -> impl Iterator<Item = FontToken> {
+        F::font_tokens(self, dpem, font)
     }
 
     fn effect_tokens(&self) -> &[Effect] {

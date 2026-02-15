@@ -112,7 +112,7 @@ impl FormattableText for Markdown {
     }
 
     #[inline]
-    fn font_tokens(&self, dpem: f32) -> impl Iterator<Item = FontToken> {
+    fn font_tokens(&self, dpem: f32, _: FontSelector) -> impl Iterator<Item = FontToken> {
         FontTokenIter::new(&self.fmt, dpem)
     }
 

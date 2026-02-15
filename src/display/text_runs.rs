@@ -38,8 +38,13 @@ impl TextDisplay {
     ///
     /// This updates the result of [`TextDisplay::prepare_runs`] due to change
     /// in font size.
-    pub fn resize_runs<F: FormattableText + ?Sized>(&mut self, text: &F, mut dpem: f32) {
-        let mut font_tokens = text.font_tokens(dpem);
+    pub fn resize_runs<F: FormattableText + ?Sized>(
+        &mut self,
+        text: &F,
+        font: FontSelector,
+        mut dpem: f32,
+    ) {
+        let mut font_tokens = text.font_tokens(dpem, font);
         let mut next_fmt = font_tokens.next();
 
         let text = text.as_str();
@@ -171,7 +176,7 @@ impl TextDisplay {
 
         self.runs.clear();
 
-        let mut font_tokens = text.font_tokens(dpem);
+        let mut font_tokens = text.font_tokens(dpem, font);
         let mut next_fmt = font_tokens.next();
         if let Some(fmt) = next_fmt.as_ref()
             && fmt.start == 0
@@ -292,6 +297,12 @@ impl TextDisplay {
                 font = fmt.font;
                 dpem = fmt.dpem;
                 next_fmt = font_tokens.next();
+                debug_assert!(
+                    next_fmt
+                        .as_ref()
+                        .map(|fmt| to_usize(fmt.start) > index)
+                        .unwrap_or(true)
+                );
             }
 
             let mut new_script = None;
