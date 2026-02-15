@@ -231,9 +231,9 @@ impl TextDisplay {
             if !last_is_control {
                 non_control_end = index;
             }
-            let is_control = c.is_control();
             let is_htab = c == '\t';
-            let mut require_break = is_htab;
+            let mut require_break = last_is_htab;
+            let is_control = c.is_control();
 
             // Is wrapping allowed at this position?
             let is_break = next_break == Some(index);
@@ -332,8 +332,6 @@ impl TextDisplay {
                 input.script = script;
                 breaks = Default::default();
             } else if is_break && !is_control {
-                // We do break runs when hitting control chars, but only when
-                // encountering the next non-control character.
                 breaks.push(shaper::GlyphBreak::new(to_u32(index)));
             }
 
