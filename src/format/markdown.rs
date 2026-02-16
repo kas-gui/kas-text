@@ -67,14 +67,16 @@ pub struct FontTokenIter<'a> {
     index: usize,
     fmt: &'a [Fmt],
     base_dpem: f32,
+    base_font: FontSelector,
 }
 
 impl<'a> FontTokenIter<'a> {
-    fn new(fmt: &'a [Fmt], base_dpem: f32) -> Self {
+    fn new(fmt: &'a [Fmt], base_dpem: f32, base_font: FontSelector) -> Self {
         FontTokenIter {
             index: 0,
             fmt,
             base_dpem,
+            base_font,
         }
     }
 }
@@ -86,11 +88,20 @@ impl<'a> Iterator for FontTokenIter<'a> {
         if self.index < self.fmt.len() {
             let fmt = &self.fmt[self.index];
             self.index += 1;
-            Some(FontToken {
-                start: fmt.start,
-                font: fmt.font,
-                dpem: self.base_dpem * fmt.rel_size,
-            })
+            let start = fmt.start;
+            let dpem = self.base_dpem * fmt.rel_size;
+
+            let mut font = self.base_font;
+            if fmt.bold {
+                font.weight = FontWeight::BOLD;
+            }
+            if fmt.italic {
+                font.style = FontStyle::Italic;
+            }
+            if fmt.monospace {
+                font.family = FamilySelector::MONOSPACE;
+            }
+            Some(FontToken { start, font, dpem })
         } else {
             None
         }
@@ -106,16 +117,14 @@ impl<'a> ExactSizeIterator for FontTokenIter<'a> {}
 impl<'a> FusedIterator for FontTokenIter<'a> {}
 
 impl FormattableText for Markdown {
-    type FontTokenIter<'a> = FontTokenIter<'a>;
-
     #[inline]
     fn as_str(&self) -> &str {
         &self.text
     }
 
     #[inline]
-    fn font_tokens<'a>(&'a self, dpem: f32) -> Self::FontTokenIter<'a> {
-        FontTokenIter::new(&self.fmt, dpem)
+    fn font_tokens(&self, dpem: f32, font: FontSelector) -> impl Iterator<Item = FontToken> {
+        FontTokenIter::new(&self.fmt, dpem, font)
     }
 
     fn effect_tokens(&self) -> &[Effect] {
@@ -127,9 +136,9 @@ fn parse(input: &str) -> Result<Markdown, Error> {
     let mut text = String::with_capacity(input.len());
     let mut fmt: Vec<Fmt> = Vec::new();
     let mut set_last = |item: &StackItem| {
-        let f = Fmt::new(item);
+        let f = item.fmt.clone();
         if let Some(last) = fmt.last_mut()
-            && last.start >= item.start
+            && last.start >= item.fmt.start
         {
             *last = f;
             return;
@@ -145,7 +154,7 @@ fn parse(input: &str) -> Result<Markdown, Error> {
     for ev in pulldown_cmark::Parser::new_ext(input, options) {
         match ev {
             Event::Start(tag) => {
-                item.start = to_u32(text.len());
+                item.fmt.start = to_u32(text.len());
                 if let Some(clone) = item.start_tag(&mut text, &mut state, tag)? {
                     stack.push(item);
                     item = clone;
@@ -155,7 +164,7 @@ fn parse(input: &str) -> Result<Markdown, Error> {
             Event::End(tag) => {
                 if item.end_tag(&mut state, tag) {
                     item = stack.pop().unwrap();
-                    item.start = to_u32(text.len());
+                    item.fmt.start = to_u32(text.len());
                     set_last(&item);
                 }
             }
@@ -165,15 +174,15 @@ fn parse(input: &str) -> Result<Markdown, Error> {
             }
             Event::Code(part) => {
                 state.part(&mut text);
-                item.start = to_u32(text.len());
+                item.fmt.start = to_u32(text.len());
 
                 let mut item2 = item.clone();
-                item2.sel.family = FamilySelector::MONOSPACE;
+                item2.fmt.monospace = true;
                 set_last(&item2);
 
                 text.push_str(&part);
 
-                item.start = to_u32(text.len());
+                item.fmt.start = to_u32(text.len());
                 set_last(&item);
             }
             Event::InlineMath(_) | Event::DisplayMath(_) => {
@@ -197,7 +206,7 @@ fn parse(input: &str) -> Result<Markdown, Error> {
         if token.flags != flags {
             effects.push(Effect {
                 start: token.start,
-                e: 0,
+                color: 0,
                 flags: token.flags,
             });
             flags = token.flags;
@@ -254,41 +263,30 @@ impl State {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Fmt {
     start: u32,
-    font: FontSelector,
     rel_size: f32,
+    bold: bool,
+    italic: bool,
+    monospace: bool,
     flags: EffectFlags,
 }
 
-impl Fmt {
-    fn new(item: &StackItem) -> Self {
-        Fmt {
-            start: item.start,
-            font: item.sel,
-            rel_size: item.rel_size,
-            flags: item.flags,
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-struct StackItem {
-    list: Option<u64>,
-    start: u32,
-    sel: FontSelector,
-    rel_size: f32,
-    flags: EffectFlags,
-}
-
-impl Default for StackItem {
+impl Default for Fmt {
     fn default() -> Self {
-        StackItem {
-            list: None,
+        Fmt {
             start: 0,
-            sel: Default::default(),
             rel_size: 1.0,
+            bold: false,
+            italic: false,
+            monospace: false,
             flags: EffectFlags::empty(),
         }
     }
+}
+
+#[derive(Clone, Debug, Default)]
+struct StackItem {
+    list: Option<u64>,
+    fmt: Fmt,
 }
 
 impl StackItem {
@@ -312,10 +310,10 @@ impl StackItem {
             }
             Tag::Heading { level, .. } => {
                 state.start_block(text);
-                self.start = to_u32(text.len());
+                self.fmt.start = to_u32(text.len());
                 with_clone(self, |item| {
                     // CSS sizes: https://www.w3.org/TR/2018/REC-css-fonts-3-20180920/#font-size-prop
-                    item.rel_size = match level {
+                    item.fmt.rel_size = match level {
                         HeadingLevel::H1 => 2.0 / 1.0,
                         HeadingLevel::H2 => 3.0 / 2.0,
                         HeadingLevel::H3 => 6.0 / 5.0,
@@ -327,9 +325,9 @@ impl StackItem {
             }
             Tag::CodeBlock(_) => {
                 state.start_block(text);
-                self.start = to_u32(text.len());
+                self.fmt.start = to_u32(text.len());
                 with_clone(self, |item| {
-                    item.sel.family = FamilySelector::MONOSPACE;
+                    item.fmt.monospace = true;
                 })
                 // TODO: within a code block, the last \n should be suppressed?
             }
@@ -352,10 +350,10 @@ impl StackItem {
                 }
                 None
             }
-            Tag::Emphasis => with_clone(self, |item| item.sel.style = FontStyle::Italic),
-            Tag::Strong => with_clone(self, |item| item.sel.weight = FontWeight::BOLD),
+            Tag::Emphasis => with_clone(self, |item| item.fmt.italic = true),
+            Tag::Strong => with_clone(self, |item| item.fmt.bold = true),
             Tag::Strikethrough => with_clone(self, |item| {
-                item.flags.set(EffectFlags::STRIKETHROUGH, true)
+                item.fmt.flags.set(EffectFlags::STRIKETHROUGH, true)
             }),
             Tag::BlockQuote(_) => return Err(Error::NotSupported("block quote")),
             Tag::FootnoteDefinition(_) => return Err(Error::NotSupported("footnote")),
