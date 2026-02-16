@@ -36,8 +36,8 @@ Examples
 
 Since `kas-text` only concerns text-layout, all examples here are courtesy of KAS GUI. See [the examples directory](https://github.com/kas-gui/kas/tree/master/examples).
 
-![BIDI layout and editing](https://github.com/kas-gui/data-dump/blob/master/screenshots/layout.png)
-![Markdown](https://github.com/kas-gui/data-dump/blob/master/screenshots/markdown.png)
+![BIDI layout and editing](https://github.com/kas-gui/data-dump/blob/master/kas_0_17/images/layout.png)
+![Markdown](https://github.com/kas-gui/data-dump/blob/master/kas_0_17/images/markdown.png)
 
 
 Alternatives
