@@ -237,9 +237,6 @@ impl TextDisplay {
                 non_control_end = index;
             }
             let is_htab = c == '\t';
-            if is_htab {
-                eprintln!("\\t at {index}");
-            }
             let mut require_break = last_is_htab;
             let is_control = c.is_control();
 
