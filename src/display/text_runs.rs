@@ -231,9 +231,9 @@ impl TextDisplay {
             if !last_is_control {
                 non_control_end = index;
             }
-            let is_control = c.is_control();
             let is_htab = c == '\t';
-            let mut require_break = is_htab;
+            let mut require_break = last_is_htab;
+            let is_control = c.is_control();
 
             // Is wrapping allowed at this position?
             let is_break = next_break == Some(index);
@@ -289,9 +289,7 @@ impl TextDisplay {
             if let Some(fmt) = next_fmt.as_ref()
                 && to_usize(fmt.start) == index
             {
-                font = fmt.font;
-                dpem = fmt.dpem;
-                next_fmt = font_tokens.next();
+                require_break = true;
             }
 
             let mut new_script = None;
@@ -334,15 +332,26 @@ impl TextDisplay {
                 input.script = script;
                 breaks = Default::default();
             } else if is_break && !is_control {
-                // We do break runs when hitting control chars, but only when
-                // encountering the next non-control character.
                 breaks.push(shaper::GlyphBreak::new(to_u32(index)));
+            }
+
+            if let Some(fmt) = next_fmt.as_ref()
+                && to_usize(fmt.start) == index
+            {
+                font = fmt.font;
+                input.dpem = fmt.dpem;
+                next_fmt = font_tokens.next();
+                debug_assert!(
+                    next_fmt
+                        .as_ref()
+                        .map(|fmt| to_usize(fmt.start) > index)
+                        .unwrap_or(true)
+                );
             }
 
             last_is_control = is_control;
             last_is_htab = is_htab;
             emoji_start = new_emoji_start;
-            input.dpem = dpem;
             if let Some(script) = new_script {
                 input.script = script;
             }

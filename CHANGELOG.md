@@ -2,6 +2,11 @@
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.3] — 2026-02-16
+
+-   Fix: allow font formatting tokens to break text runs (#128)
+-   Fix: break text runs after horizontal tabs (`\t`) (#128)
+
 ## [0.9.2] — 2026-02-03
 
 -   Fix: do not match chars which are not not by default presented as emojis as emojis (#125)
