@@ -15,8 +15,9 @@ rust-version = "1.88.0"
 
 [package.metadata.docs.rs]
 # To build locally:
-# cargo +nightly doc --all-features --no-deps --open
+# RUSTDOCFLAGS="--cfg docsrs" cargo +nightly doc --all-features --no-deps --open
 all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
 # Support num_glyphs method
