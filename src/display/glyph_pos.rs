@@ -5,14 +5,11 @@
 
 //! Methods using positioned glyphs
 
-#![allow(clippy::collapsible_else_if)]
-#![allow(clippy::or_fun_call)]
-#![allow(clippy::never_loop)]
-#![allow(clippy::needless_range_loop)]
-
 use super::{Line, TextDisplay};
 use crate::conv::to_usize;
 use crate::fonts::{self, FaceId};
+#[allow(unused)]
+use crate::format::FormattableText;
 use crate::{Glyph, Range, Vec2, shaper};
 
 /// Effect formatting marker
@@ -405,7 +402,7 @@ impl TextDisplay {
             }
 
             // else: index < to_usize(run_part.text_end)
-            let pos = 'b: loop {
+            let pos = 'b: {
                 if glyph_run.level.is_ltr() {
                     for glyph in glyph_run.glyphs[run_part.glyph_range.to_std()].iter().rev() {
                         if to_usize(glyph.index) <= index {
@@ -621,7 +618,7 @@ impl TextDisplay {
                 .scale_by_dpu(glyph_run.dpu);
 
             let b;
-            'c: loop {
+            'c: {
                 if glyph_run.level.is_ltr() {
                     for glyph in glyph_run.glyphs[run_part.glyph_range.to_std()].iter().rev() {
                         if to_usize(glyph.index) <= range.end {

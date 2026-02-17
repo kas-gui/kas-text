@@ -27,7 +27,7 @@ jobs:
         run: |
           cargo fmt --all -- --check
       - name: doc
-        run: RUSTDOCFLAGS="--cfg doc_cfg" cargo doc --all-features --no-deps
+        run: RUSTDOCFLAGS="--cfg doc_cfg" cargo doc --all-features --no-deps -Zwarnings --config 'build.warnings="deny"'
       - name: Clippy
         run: cargo +nightly clippy --all-features
       - name: Test (all features including GAT)
