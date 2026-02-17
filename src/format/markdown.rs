@@ -134,7 +134,7 @@ impl FormattableText for Markdown {
 
 fn parse(input: &str) -> Result<Markdown, Error> {
     let mut text = String::with_capacity(input.len());
-    let mut fmt: Vec<Fmt> = Vec::new();
+    let mut fmt: Vec<Fmt> = vec![Fmt::default()];
     let mut set_last = |item: &StackItem| {
         let f = item.fmt.clone();
         if let Some(last) = fmt.last_mut()

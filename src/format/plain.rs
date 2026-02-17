@@ -15,8 +15,9 @@ impl FormattableText for str {
     }
 
     #[inline]
-    fn font_tokens(&self, _: f32, _: FontSelector) -> impl Iterator<Item = FontToken> {
-        std::iter::empty()
+    fn font_tokens(&self, dpem: f32, font: FontSelector) -> impl Iterator<Item = FontToken> {
+        let start = 0;
+        std::iter::once(FontToken { start, dpem, font })
     }
 
     #[inline]
@@ -32,8 +33,9 @@ impl FormattableText for String {
     }
 
     #[inline]
-    fn font_tokens(&self, _: f32, _: FontSelector) -> impl Iterator<Item = FontToken> {
-        std::iter::empty()
+    fn font_tokens(&self, dpem: f32, font: FontSelector) -> impl Iterator<Item = FontToken> {
+        let start = 0;
+        std::iter::once(FontToken { start, dpem, font })
     }
 
     #[inline]
