@@ -20,7 +20,7 @@ impl FormattableText for str {
     }
 
     #[inline]
-    fn effect_tokens(&self) -> &[Effect] {
+    fn effect_tokens(&self) -> &[(u32, Effect)] {
         &[]
     }
 }
@@ -37,7 +37,7 @@ impl FormattableText for String {
     }
 
     #[inline]
-    fn effect_tokens(&self) -> &[Effect] {
+    fn effect_tokens(&self) -> &[(u32, Effect)] {
         &[]
     }
 }

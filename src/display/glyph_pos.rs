@@ -8,19 +8,12 @@
 use super::{Line, TextDisplay};
 use crate::conv::to_usize;
 use crate::fonts::{self, FaceId};
-#[allow(unused)]
-use crate::format::FormattableText;
 use crate::{Glyph, Range, Vec2, shaper};
 
 /// Effect formatting marker
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Effect {
-    /// Index in text at which formatting becomes active
-    ///
-    /// (Note that we use `u32` not `usize` since it can be assumed text length
-    /// will never exceed `u32::MAX`.)
-    pub start: u32,
     /// User-specified value
     ///
     /// Usage is not specified by `kas-text`, but typically this field will be
@@ -136,7 +129,7 @@ pub struct GlyphRun<'a> {
     run: &'a shaper::GlyphRun,
     range: Range,
     offset: Vec2,
-    effects: &'a [Effect],
+    effects: &'a [(u32, Effect)],
 }
 
 impl<'a> GlyphRun<'a> {
@@ -205,7 +198,7 @@ impl<'a> GlyphRun<'a> {
         while self
             .effects
             .get(effect_next)
-            .map(|e| e.start <= left_index)
+            .map(|e| e.0 <= left_index)
             .unwrap_or(false)
         {
             effect_cur = effect_next;
@@ -215,35 +208,35 @@ impl<'a> GlyphRun<'a> {
         let mut next_start = self
             .effects
             .get(effect_next)
-            .map(|e| e.start)
+            .map(|e| e.0)
             .unwrap_or(u32::MAX);
 
         let mut fmt = self
             .effects
             .get(effect_cur)
             .cloned()
-            .unwrap_or(Effect::default());
+            .unwrap_or((0, Effect::default()));
 
         // In case an effect applies to the left-most glyph, it starts from that
         // glyph's x coordinate.
-        if !fmt.flags.is_empty() {
+        if !fmt.1.flags.is_empty() {
             let glyph = &self.run.glyphs[self.range.start()];
             let position = glyph.position + self.offset;
-            if fmt.flags.contains(EffectFlags::UNDERLINE)
+            if fmt.1.flags.contains(EffectFlags::UNDERLINE)
                 && let Some(metrics) = sf.underline_metrics()
             {
                 let y_top = position.1 - metrics.position;
                 let h = metrics.thickness;
                 let x1 = position.0;
-                underline = Some((x1, y_top, h, fmt.color));
+                underline = Some((x1, y_top, h, fmt.1.color));
             }
-            if fmt.flags.contains(EffectFlags::STRIKETHROUGH)
+            if fmt.1.flags.contains(EffectFlags::STRIKETHROUGH)
                 && let Some(metrics) = sf.strikethrough_metrics()
             {
                 let y_top = position.1 - metrics.position;
                 let h = metrics.thickness;
                 let x1 = position.0;
-                strikethrough = Some((x1, y_top, h, fmt.color));
+                strikethrough = Some((x1, y_top, h, fmt.1.color));
             }
         }
 
@@ -252,7 +245,7 @@ impl<'a> GlyphRun<'a> {
             glyph.position += self.offset;
 
             // Does the effect change?
-            if (ltr && next_start <= glyph.index) || (!ltr && fmt.start > glyph.index) {
+            if (ltr && next_start <= glyph.index) || (!ltr && fmt.0 > glyph.index) {
                 if ltr {
                     // Find the next active effect
                     loop {
@@ -261,7 +254,7 @@ impl<'a> GlyphRun<'a> {
                         if self
                             .effects
                             .get(effect_next)
-                            .map(|e| e.start > glyph.index)
+                            .map(|e| e.0 > glyph.index)
                             .unwrap_or(true)
                         {
                             break;
@@ -270,14 +263,13 @@ impl<'a> GlyphRun<'a> {
                     next_start = self
                         .effects
                         .get(effect_next)
-                        .map(|e| e.start)
+                        .map(|e| e.0)
                         .unwrap_or(u32::MAX);
                 } else {
                     // Find the previous active effect
                     loop {
                         effect_cur = effect_cur.wrapping_sub(1);
-                        if self.effects.get(effect_cur).map(|e| e.start).unwrap_or(0) <= glyph.index
-                        {
+                        if self.effects.get(effect_cur).map(|e| e.0).unwrap_or(0) <= glyph.index {
                             break;
                         }
                     }
@@ -286,9 +278,9 @@ impl<'a> GlyphRun<'a> {
                     .effects
                     .get(effect_cur)
                     .cloned()
-                    .unwrap_or(Effect::default());
+                    .unwrap_or((0, Effect::default()));
 
-                if underline.is_some() != fmt.flags.contains(EffectFlags::UNDERLINE) {
+                if underline.is_some() != fmt.1.flags.contains(EffectFlags::UNDERLINE) {
                     if let Some((x1, y_top, h, e)) = underline {
                         let x2 = glyph.position.0;
                         g(x1, x2, y_top, h, e);
@@ -297,10 +289,10 @@ impl<'a> GlyphRun<'a> {
                         let y_top = glyph.position.1 - metrics.position;
                         let h = metrics.thickness;
                         let x1 = glyph.position.0;
-                        underline = Some((x1, y_top, h, fmt.color));
+                        underline = Some((x1, y_top, h, fmt.1.color));
                     }
                 }
-                if strikethrough.is_some() != fmt.flags.contains(EffectFlags::STRIKETHROUGH) {
+                if strikethrough.is_some() != fmt.1.flags.contains(EffectFlags::STRIKETHROUGH) {
                     if let Some((x1, y_top, h, e)) = strikethrough {
                         let x2 = glyph.position.0;
                         g(x1, x2, y_top, h, e);
@@ -309,12 +301,12 @@ impl<'a> GlyphRun<'a> {
                         let y_top = glyph.position.1 - metrics.position;
                         let h = metrics.thickness;
                         let x1 = glyph.position.0;
-                        strikethrough = Some((x1, y_top, h, fmt.color));
+                        strikethrough = Some((x1, y_top, h, fmt.1.color));
                     }
                 }
             }
 
-            f(glyph, fmt.color);
+            f(glyph, fmt.1.color);
         }
 
         // Effects end at the following glyph's start (or end of this run part)
@@ -445,12 +437,13 @@ impl TextDisplay {
     /// All glyphs are translated by the given `offset` (this is practically
     /// free).
     ///
-    /// An [`Effect`] sequence supports underline, strikethrough and custom
-    /// indexing (e.g. for a color palette). This sequence may be the result of
-    /// [`FormattableText::effect_tokens`], `&[]`, or any other sequence such
-    /// that [`Effect::start`] values are strictly increasing and compatible
-    /// with text `char` indices (see also [`FormattableText::effect_tokens`]).
-    /// (It is not required to re-prepare text when changing the sequence.)
+    /// The `effects` sequence may be used for rendering effects: glyph color,
+    /// background color, strike-through, underline. Use `&[]` for no effects
+    /// (effectively using [`Effect::default()`] everywhere), or use a sequence
+    /// such that `effects[i].0` values are strictly increasing. A glyph for
+    /// index `j` in the source text will use effect `effects[i].1` where `i` is
+    /// the largest value such that `effects[i].0 <= j`, or
+    /// [`Effect::default()`] if no such `i` exists.
     ///
     /// Runs are yielded in undefined order. The total number of
     /// glyphs yielded will equal [`TextDisplay::num_glyphs`].
@@ -460,20 +453,20 @@ impl TextDisplay {
     pub fn runs<'a>(
         &'a self,
         offset: Vec2,
-        effects: &'a [Effect],
+        effects: &'a [(u32, Effect)],
     ) -> impl Iterator<Item = GlyphRun<'a>> + 'a {
         #[cfg(debug_assertions)]
         {
             let mut start = None;
             for effect in effects {
                 if let Some(i) = start
-                    && effect.start <= i
+                    && effect.0 <= i
                 {
                     panic!(
                         "TextDisplay::runs: Effect::start indices are not strictly increasing in {effects:?}"
                     );
                 }
-                start = Some(effect.start);
+                start = Some(effect.0);
             }
         }
 

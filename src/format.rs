@@ -50,17 +50,17 @@ pub trait FormattableText: std::cmp::PartialEq {
 
     /// Return the sequence of effect tokens
     ///
-    /// These tokens are used to select the font color and
-    /// [effects](crate::EffectFlags).
-    ///
-    /// The values of [`Effect::start`] are expected to be strictly increasing
-    /// in order, less than [`Self::str_len`]. In case the slice is empty or the
-    /// first [`Effect::start`] value is greater than zero, values from
-    /// [`Effect::default()`] are used.
+    /// The `effects` sequence may be used for rendering effects: glyph color,
+    /// background color, strike-through, underline. Use `&[]` for no effects
+    /// (effectively using [`Effect::default()`] everywhere), or use a sequence
+    /// such that `effects[i].0` values are strictly increasing. A glyph for
+    /// index `j` in the source text will use effect `effects[i].1` where `i` is
+    /// the largest value such that `effects[i].0 <= j`, or
+    /// [`Effect::default()`] if no such `i` exists.
     ///
     /// Changes to the result of this method do not require any re-preparation
     /// of text.
-    fn effect_tokens(&self) -> &[Effect];
+    fn effect_tokens(&self) -> &[(u32, Effect)];
 }
 
 impl<F: FormattableText + ?Sized> FormattableText for &F {
@@ -72,7 +72,7 @@ impl<F: FormattableText + ?Sized> FormattableText for &F {
         F::font_tokens(self, dpem, font)
     }
 
-    fn effect_tokens(&self) -> &[Effect] {
+    fn effect_tokens(&self) -> &[(u32, Effect)] {
         F::effect_tokens(self)
     }
 }

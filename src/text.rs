@@ -333,7 +333,7 @@ impl<T: FormattableText + ?Sized> Text<T> {
     /// This method simply forwards the result of
     /// [`FormattableText::effect_tokens`].
     #[inline]
-    pub fn effect_tokens(&self) -> &[Effect] {
+    pub fn effect_tokens(&self) -> &[(u32, Effect)] {
         self.text.effect_tokens()
     }
 }
@@ -549,16 +549,20 @@ impl<T: FormattableText + ?Sized> Text<T> {
     /// All glyphs are translated by the given `offset` (this is practically
     /// free).
     ///
-    /// An [`Effect`] sequence supports underline, strikethrough and custom
-    /// indexing (e.g. for a color palette). Pass `&[]` if effects are not
-    /// required. (The default effect is always [`Effect::default()`].)
+    /// The `effects` sequence may be used for rendering effects: glyph color,
+    /// background color, strike-through, underline. Use `&[]` for no effects
+    /// (effectively using [`Effect::default()`] everywhere), or use a sequence
+    /// such that `effects[i].0` values are strictly increasing. A glyph for
+    /// index `j` in the source text will use effect `effects[i].1` where `i` is
+    /// the largest value such that `effects[i].0 <= j`, or
+    /// [`Effect::default()`] if no such `i` exists.
     ///
     /// Runs are yielded in undefined order. The total number of
     /// glyphs yielded will equal [`TextDisplay::num_glyphs`].
     pub fn runs<'a>(
         &'a self,
         offset: Vec2,
-        effects: &'a [Effect],
+        effects: &'a [(u32, Effect)],
     ) -> Result<impl Iterator<Item = GlyphRun<'a>> + 'a, NotReady> {
         Ok(self.display()?.runs(offset, effects))
     }
