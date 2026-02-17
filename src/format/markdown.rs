@@ -5,10 +5,9 @@
 
 //! Markdown parsing
 
-use super::{FontToken, FormattableText};
+use super::{Effect, EffectFlags, FontToken, FormattableText};
 use crate::conv::to_u32;
 use crate::fonts::{FamilySelector, FontSelector, FontStyle, FontWeight};
-use crate::{Effect, EffectFlags};
 use pulldown_cmark::{Event, HeadingLevel, Tag, TagEnd};
 use std::fmt::Write;
 use std::iter::FusedIterator;
@@ -117,6 +116,8 @@ impl<'a> ExactSizeIterator for FontTokenIter<'a> {}
 impl<'a> FusedIterator for FontTokenIter<'a> {}
 
 impl FormattableText for Markdown {
+    type Effect = Effect;
+
     #[inline]
     fn as_str(&self) -> &str {
         &self.text

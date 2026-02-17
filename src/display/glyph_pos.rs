@@ -9,31 +9,7 @@ use super::{Line, TextDisplay};
 use crate::conv::to_usize;
 use crate::fonts::{self, FaceId, ScaledFaceRef};
 use crate::{Glyph, Range, Vec2, shaper};
-
-/// Effect formatting marker
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct Effect {
-    /// User-specified value
-    ///
-    /// Usage is not specified by `kas-text`, but typically this field will be
-    /// used as an index into a colour palette or not used at all.
-    pub color: u16,
-    /// Effect flags
-    pub flags: EffectFlags,
-}
-
-bitflags::bitflags! {
-    /// Text effects
-    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-    pub struct EffectFlags: u16 {
-        /// Glyph is underlined
-        const UNDERLINE = 1 << 0;
-        /// Glyph is crossed through by a center-line
-        const STRIKETHROUGH = 1 << 1;
-    }
-}
+use std::fmt::Debug;
 
 /// Used to return the position of a glyph with associated metrics
 #[derive(Copy, Clone, Debug, Default, PartialEq)]
@@ -125,16 +101,16 @@ impl ExactSizeIterator for MarkerPosIter {}
 /// A sequence of positioned glyphs with effects
 ///
 /// Yielded by [`TextDisplay::runs`].
-pub struct GlyphRun<'a> {
+pub struct GlyphRun<'a, E> {
     run: &'a shaper::GlyphRun,
     range: Range,
     offset: Vec2,
     top: f32,
     bottom: f32,
-    effects: &'a [(u32, Effect)],
+    effects: &'a [(u32, E)],
 }
 
-impl<'a> GlyphRun<'a> {
+impl<'a, E: Copy + Default> GlyphRun<'a, E> {
     /// Get the [`FaceId`] for this run
     #[inline]
     pub fn face_id(&self) -> FaceId {
@@ -212,8 +188,8 @@ impl<'a> GlyphRun<'a> {
     /// result, though this is not really necessary.
     pub fn glyphs_with_effects<F, G>(&self, mut f: F, mut g: G)
     where
-        F: FnMut(Glyph, Effect),
-        G: FnMut(Vec2, f32, Effect),
+        F: FnMut(Glyph, E),
+        G: FnMut(Vec2, f32, E),
     {
         let ltr = self.run.level.is_ltr();
 
@@ -243,7 +219,7 @@ impl<'a> GlyphRun<'a> {
             .effects
             .get(effect_cur)
             .cloned()
-            .unwrap_or((0, Effect::default()));
+            .unwrap_or((0, E::default()));
 
         // In case an effect applies to the left-most glyph, it starts from that
         // glyph's x coordinate.
@@ -290,7 +266,7 @@ impl<'a> GlyphRun<'a> {
                     .effects
                     .get(effect_cur)
                     .cloned()
-                    .unwrap_or((0, Effect::default()));
+                    .unwrap_or((0, E::default()));
 
                 range_start = glyph.position;
             }
@@ -418,22 +394,22 @@ impl TextDisplay {
     ///
     /// The `effects` sequence may be used for rendering effects: glyph color,
     /// background color, strike-through, underline. Use `&[]` for no effects
-    /// (effectively using [`Effect::default()`] everywhere), or use a sequence
-    /// such that `effects[i].0` values are strictly increasing. A glyph for
-    /// index `j` in the source text will use effect `effects[i].1` where `i` is
-    /// the largest value such that `effects[i].0 <= j`, or
-    /// [`Effect::default()`] if no such `i` exists.
+    /// (effectively using the default value of `E` everywhere), or use a
+    /// sequence such that `effects[i].0` values are strictly increasing. A
+    /// glyph for index `j` in the source text will use effect `effects[i].1`
+    /// where `i` is the largest value such that `effects[i].0 <= j`, or the
+    /// default value of `E` if no such `i` exists.
     ///
     /// Runs are yielded in undefined order. The total number of
     /// glyphs yielded will equal [`TextDisplay::num_glyphs`].
     ///
     /// [Requires status][Self#status-of-preparation]:
     /// text is fully prepared for display.
-    pub fn runs<'a>(
+    pub fn runs<'a, E: Copy + Debug + Default>(
         &'a self,
         offset: Vec2,
-        effects: &'a [(u32, Effect)],
-    ) -> impl Iterator<Item = GlyphRun<'a>> + 'a {
+        effects: &'a [(u32, E)],
+    ) -> impl Iterator<Item = GlyphRun<'a, E>> + 'a {
         #[cfg(debug_assertions)]
         {
             let mut start = None;
@@ -442,7 +418,7 @@ impl TextDisplay {
                     && effect.0 <= i
                 {
                     panic!(
-                        "TextDisplay::runs: Effect::start indices are not strictly increasing in {effects:?}"
+                        "TextDisplay::runs: effect start indices are not strictly increasing in {effects:?}"
                     );
                 }
                 start = Some(effect.0);

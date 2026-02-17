@@ -6,9 +6,11 @@
 //! Implementations for plain text
 
 use super::{FontToken, FormattableText};
-use crate::{Effect, fonts::FontSelector};
+use crate::fonts::FontSelector;
 
 impl FormattableText for str {
+    type Effect = ();
+
     #[inline]
     fn as_str(&self) -> &str {
         self
@@ -21,12 +23,14 @@ impl FormattableText for str {
     }
 
     #[inline]
-    fn effect_tokens(&self) -> &[(u32, Effect)] {
+    fn effect_tokens(&self) -> &[(u32, ())] {
         &[]
     }
 }
 
 impl FormattableText for String {
+    type Effect = ();
+
     #[inline]
     fn as_str(&self) -> &str {
         self
@@ -39,7 +43,7 @@ impl FormattableText for String {
     }
 
     #[inline]
-    fn effect_tokens(&self) -> &[(u32, Effect)] {
+    fn effect_tokens(&self) -> &[(u32, ())] {
         &[]
     }
 }
