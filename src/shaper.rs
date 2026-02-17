@@ -309,7 +309,7 @@ pub(crate) fn shape(
         face_id,
         special,
         level: input.level,
-        script: input.script.into(),
+        script: input.script,
 
         glyphs,
         breaks,

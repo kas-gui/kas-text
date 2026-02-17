@@ -5,8 +5,6 @@
 
 //! Text preparation: line breaking and BIDI
 
-#![allow(clippy::unnecessary_unwrap)]
-
 use super::TextDisplay;
 use crate::conv::{to_u32, to_usize};
 use crate::fonts::{self, FaceId, FontSelector, NoFontMatch};
@@ -362,7 +360,7 @@ impl TextDisplay {
             }
         }
 
-        let hard_break = ends_with_hard_break(&text);
+        let hard_break = ends_with_hard_break(text);
 
         // Following a hard break we have an implied empty line.
         if hard_break {
@@ -435,6 +433,7 @@ enum EmojiBreak {
     Error,
 }
 
+#[allow(clippy::upper_case_acronyms)]
 enum EmojiState {
     None,
     RI1,

@@ -5,8 +5,6 @@
 
 //! Font library
 
-#![allow(clippy::len_without_is_empty)]
-
 use super::{FaceRef, FontSelector, Resolver};
 use crate::conv::{to_u32, to_usize};
 use fontique::{Blob, QueryStatus, Script, Synthesis};

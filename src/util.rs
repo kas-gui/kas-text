@@ -79,7 +79,7 @@ impl<'a> Iterator for LineIterator<'a> {
     type Item = Range<usize>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        while let Some(index) = self.break_iter.next() {
+        for index in self.break_iter.by_ref() {
             if ends_with_hard_break(&self.text[..index]) || index == self.text.len() {
                 let range = self.start..index;
                 self.start = index;
