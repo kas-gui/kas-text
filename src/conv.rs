@@ -47,7 +47,7 @@ impl DPU {
     }
     pub(crate) fn to_line_metrics(self, metrics: ttf_parser::LineMetrics) -> LineMetrics {
         LineMetrics {
-            position: self.i16_to_px(metrics.position),
+            top: self.i16_to_px(metrics.position),
             thickness: self.i16_to_px(metrics.thickness),
         }
     }
@@ -56,6 +56,11 @@ impl DPU {
 /// Metrics for line marks
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct LineMetrics {
-    pub position: f32,
+    /// The vertical position of the top of the line
+    pub top: f32,
+    /// The recommended thickness of the line
+    ///
+    /// Be aware that `top` and `top + thickness` could round to the same value,
+    /// thus adjustments might be necessary to ensure visibility of the line.
     pub thickness: f32,
 }

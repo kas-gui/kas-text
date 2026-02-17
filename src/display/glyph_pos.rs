@@ -7,11 +7,11 @@
 
 use super::{Line, TextDisplay};
 use crate::conv::to_usize;
-use crate::fonts::{self, FaceId};
+use crate::fonts::{self, FaceId, ScaledFaceRef};
 use crate::{Glyph, Range, Vec2, shaper};
 
 /// Effect formatting marker
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Effect {
     /// User-specified value
@@ -133,18 +133,28 @@ pub struct GlyphRun<'a> {
 }
 
 impl<'a> GlyphRun<'a> {
-    /// Get the font face used for this run
+    /// Get the [`FaceId`] for this run
     #[inline]
     pub fn face_id(&self) -> FaceId {
         self.run.face_id
     }
 
-    /// Get the font size used for this run
+    /// Get the font size for this run
     ///
     /// Units are dots-per-Em (see [crate::fonts]).
     #[inline]
     pub fn dpem(&self) -> f32 {
         self.run.dpem
+    }
+
+    /// Get the [`ScaledFaceRef`] for this run
+    ///
+    /// This may be useful to access font metrics.
+    #[inline]
+    pub fn scaled_face(&self) -> ScaledFaceRef<'_> {
+        fonts::library()
+            .get_face(self.run.face_id)
+            .scale_by_dpu(self.run.dpu)
     }
 
     /// Get an iterator over glyphs for this run
@@ -163,31 +173,25 @@ impl<'a> GlyphRun<'a> {
 
     /// Yield glyphs and effects for this run
     ///
-    /// The callback `f` receives `glyph, color` where `color` is the
-    /// [`Effect::color`] value (defaults to 0).
+    /// The callback `f` is called for each `glyph` in unspecified order. The
+    /// corresponding `effect` is passed.
     ///
-    /// The callback `g` receives positioning for each underline/strike-through
-    /// segment: `x1, x2, y_top, h` where `h` is the thickness (height). Note
-    /// that it is possible to have `h < 1.0` and `y_top, y_top + h` to round to
-    /// the same number; the renderer is responsible for ensuring such lines
-    /// are actually visible. The last parameter is `e` as for `f`.
+    /// The callback `g` is called for sub-ranges of glyphs with parameters
+    /// `(p, x2, effect)`; `p.0` and `x2` are the x-axis positions of the left
+    /// and right edges of this sub-range respectively while `x.1` is the
+    /// vertical position of glyphs (the baseline). This may be combined with
+    /// information from [`Self::scaled_face`] to draw underline, strike-through
+    /// and background effects.
     ///
     /// Note: this is more computationally expensive than [`GlyphRun::glyphs`],
     /// so you may prefer to call that. Optionally one may choose to cache the
     /// result, though this is not really necessary.
     pub fn glyphs_with_effects<F, G>(&self, mut f: F, mut g: G)
     where
-        F: FnMut(Glyph, u16),
-        G: FnMut(f32, f32, f32, f32, u16),
+        F: FnMut(Glyph, Effect),
+        G: FnMut(Vec2, f32, Effect),
     {
-        let sf = fonts::library()
-            .get_face(self.run.face_id)
-            .scale_by_dpu(self.run.dpu);
-
         let ltr = self.run.level.is_ltr();
-
-        let mut underline = None;
-        let mut strikethrough = None;
 
         let mut effect_cur = usize::MAX;
         let mut effect_next = 0;
@@ -219,26 +223,7 @@ impl<'a> GlyphRun<'a> {
 
         // In case an effect applies to the left-most glyph, it starts from that
         // glyph's x coordinate.
-        if !fmt.1.flags.is_empty() {
-            let glyph = &self.run.glyphs[self.range.start()];
-            let position = glyph.position + self.offset;
-            if fmt.1.flags.contains(EffectFlags::UNDERLINE)
-                && let Some(metrics) = sf.underline_metrics()
-            {
-                let y_top = position.1 - metrics.position;
-                let h = metrics.thickness;
-                let x1 = position.0;
-                underline = Some((x1, y_top, h, fmt.1.color));
-            }
-            if fmt.1.flags.contains(EffectFlags::STRIKETHROUGH)
-                && let Some(metrics) = sf.strikethrough_metrics()
-            {
-                let y_top = position.1 - metrics.position;
-                let h = metrics.thickness;
-                let x1 = position.0;
-                strikethrough = Some((x1, y_top, h, fmt.1.color));
-            }
-        }
+        let mut range_start = self.run.glyphs[self.range.start()].position + self.offset;
 
         // Iterate over glyphs in left-to-right order.
         for mut glyph in self.run.glyphs[self.range.to_std()].iter().cloned() {
@@ -246,6 +231,9 @@ impl<'a> GlyphRun<'a> {
 
             // Does the effect change?
             if (ltr && next_start <= glyph.index) || (!ltr && fmt.0 > glyph.index) {
+                let x2 = glyph.position.0;
+                g(range_start, x2, fmt.1);
+
                 if ltr {
                     // Find the next active effect
                     loop {
@@ -280,52 +268,19 @@ impl<'a> GlyphRun<'a> {
                     .cloned()
                     .unwrap_or((0, Effect::default()));
 
-                if underline.is_some() != fmt.1.flags.contains(EffectFlags::UNDERLINE) {
-                    if let Some((x1, y_top, h, e)) = underline {
-                        let x2 = glyph.position.0;
-                        g(x1, x2, y_top, h, e);
-                        underline = None;
-                    } else if let Some(metrics) = sf.underline_metrics() {
-                        let y_top = glyph.position.1 - metrics.position;
-                        let h = metrics.thickness;
-                        let x1 = glyph.position.0;
-                        underline = Some((x1, y_top, h, fmt.1.color));
-                    }
-                }
-                if strikethrough.is_some() != fmt.1.flags.contains(EffectFlags::STRIKETHROUGH) {
-                    if let Some((x1, y_top, h, e)) = strikethrough {
-                        let x2 = glyph.position.0;
-                        g(x1, x2, y_top, h, e);
-                        strikethrough = None;
-                    } else if let Some(metrics) = sf.strikethrough_metrics() {
-                        let y_top = glyph.position.1 - metrics.position;
-                        let h = metrics.thickness;
-                        let x1 = glyph.position.0;
-                        strikethrough = Some((x1, y_top, h, fmt.1.color));
-                    }
-                }
+                range_start = glyph.position;
             }
 
-            f(glyph, fmt.1.color);
+            f(glyph, fmt.1);
         }
 
         // Effects end at the following glyph's start (or end of this run part)
-        if let Some((x1, y_top, h, e)) = underline {
-            let x2 = if self.range.end() < self.run.glyphs.len() {
-                self.run.glyphs[self.range.end()].position.0
-            } else {
-                self.run.caret
-            } + self.offset.0;
-            g(x1, x2, y_top, h, e);
-        }
-        if let Some((x1, y_top, h, e)) = strikethrough {
-            let x2 = if self.range.end() < self.run.glyphs.len() {
-                self.run.glyphs[self.range.end()].position.0
-            } else {
-                self.run.caret
-            } + self.offset.0;
-            g(x1, x2, y_top, h, e);
-        }
+        let x2 = if self.range.end() < self.run.glyphs.len() {
+            self.run.glyphs[self.range.end()].position.0
+        } else {
+            self.run.caret
+        } + self.offset.0;
+        g(range_start, x2, fmt.1);
     }
 }
 

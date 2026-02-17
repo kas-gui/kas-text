@@ -19,7 +19,7 @@ mod env;
 pub use env::*;
 
 mod conv;
-pub use conv::DPU;
+pub use conv::{DPU, LineMetrics};
 
 mod data;
 use data::Range;
