@@ -129,6 +129,8 @@ pub struct GlyphRun<'a> {
     run: &'a shaper::GlyphRun,
     range: Range,
     offset: Vec2,
+    top: f32,
+    bottom: f32,
     effects: &'a [(u32, Effect)],
 }
 
@@ -155,6 +157,28 @@ impl<'a> GlyphRun<'a> {
         fonts::library()
             .get_face(self.run.face_id)
             .scale_by_dpu(self.run.dpu)
+    }
+
+    /// Get the `top` position of the line
+    ///
+    /// Note that there may be multiple runs per line and that these may not all
+    /// have the same [`ScaledFaceRef::ascent`] value when multiple fonts are
+    /// used, thus it is usually preferable to use the this value for
+    /// background colors (highlighting).
+    #[inline]
+    pub fn line_top(&self) -> f32 {
+        self.top
+    }
+
+    /// Get the `bottom` position of the line
+    ///
+    /// Note that there may be multiple runs per line and that these may not all
+    /// have the same [`ScaledFaceRef::descent`] value when multiple fonts are
+    /// used, thus it is usually preferable to use the this value for
+    /// background colors (highlighting).
+    #[inline]
+    pub fn line_bottom(&self) -> f32 {
+        self.bottom
     }
 
     /// Get an iterator over glyphs for this run
@@ -425,14 +449,23 @@ impl TextDisplay {
             }
         }
 
+        let mut line_iter = self.lines.iter();
+        let mut line = line_iter.next().unwrap();
         self.wrapped_runs
             .iter()
             .filter(|part| !part.glyph_range.is_empty())
-            .map(move |part| GlyphRun {
-                run: &self.runs[to_usize(part.glyph_run)],
-                range: part.glyph_range,
-                offset: offset + part.offset,
-                effects,
+            .map(move |part| {
+                while part.text_end > line.text_range.end {
+                    line = line_iter.next().unwrap();
+                }
+                GlyphRun {
+                    run: &self.runs[to_usize(part.glyph_run)],
+                    range: part.glyph_range,
+                    offset: offset + part.offset,
+                    top: offset.1 + line.top,
+                    bottom: offset.1 + line.bottom,
+                    effects,
+                }
             })
     }
 
