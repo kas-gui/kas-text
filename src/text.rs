@@ -33,7 +33,7 @@ use std::num::NonZeroUsize;
 /// text.set_bounds(Vec2(200.0, 50.0));
 /// text.prepare().unwrap();
 ///
-/// for run in text.runs(Vec2::ZERO, &[]).unwrap() {
+/// for run in text.runs(Vec2::ZERO).unwrap() {
 ///     let (face, dpem) = (run.face_id(), run.dpem());
 ///     for glyph in run.glyphs() {
 ///         println!("{face:?} - {dpem}px - {glyph:?}");
@@ -549,6 +549,22 @@ impl<T: FormattableText + ?Sized> Text<T> {
     /// All glyphs are translated by the given `offset` (this is practically
     /// free).
     ///
+    /// Uses effect tokens supplied by [`FormattableText::effect_tokens`].
+    ///
+    /// Runs are yielded in undefined order. The total number of
+    /// glyphs yielded will equal [`TextDisplay::num_glyphs`].
+    pub fn runs<'a>(
+        &'a self,
+        offset: Vec2,
+    ) -> Result<impl Iterator<Item = GlyphRun<'a>> + 'a, NotReady> {
+        Ok(self.display()?.runs(offset, self.text.effect_tokens()))
+    }
+
+    /// Iterate over runs of positioned glyphs using a custom effects list
+    ///
+    /// All glyphs are translated by the given `offset` (this is practically
+    /// free).
+    ///
     /// The `effects` sequence may be used for rendering effects: glyph color,
     /// background color, strike-through, underline. Use `&[]` for no effects
     /// (effectively using [`Effect::default()`] everywhere), or use a sequence
@@ -559,7 +575,7 @@ impl<T: FormattableText + ?Sized> Text<T> {
     ///
     /// Runs are yielded in undefined order. The total number of
     /// glyphs yielded will equal [`TextDisplay::num_glyphs`].
-    pub fn runs<'a>(
+    pub fn runs_with_effects<'a>(
         &'a self,
         offset: Vec2,
         effects: &'a [(u32, Effect)],
