@@ -236,31 +236,20 @@ impl<'a, E: Copy + Default> GlyphRun<'a, E> {
 
                 if ltr {
                     // Find the next active effect
-                    loop {
-                        effect_cur = effect_next;
-                        effect_next += 1;
-                        if self
-                            .effects
-                            .get(effect_next)
-                            .map(|e| e.0 > glyph.index)
-                            .unwrap_or(true)
-                        {
-                            break;
-                        }
-                    }
+                    effect_cur = effect_next;
+                    effect_next += 1;
                     next_start = self
                         .effects
                         .get(effect_next)
                         .map(|e| e.0)
+                        .inspect(|start| debug_assert!(*start > glyph.index))
                         .unwrap_or(u32::MAX);
                 } else {
                     // Find the previous active effect
-                    loop {
-                        effect_cur = effect_cur.wrapping_sub(1);
-                        if self.effects.get(effect_cur).map(|e| e.0).unwrap_or(0) <= glyph.index {
-                            break;
-                        }
-                    }
+                    effect_cur = effect_cur.wrapping_sub(1);
+                    debug_assert!(
+                        self.effects.get(effect_cur).map(|e| e.0).unwrap_or(0) <= glyph.index
+                    );
                 }
                 fmt = self
                     .effects
@@ -395,7 +384,8 @@ impl TextDisplay {
     /// The `effects` sequence may be used for rendering effects: glyph color,
     /// background color, strike-through, underline. Use `&[]` for no effects
     /// (effectively using the default value of `E` everywhere), or use a
-    /// sequence such that `effects[i].0` values are strictly increasing. A
+    /// sequence such that `effects[i].0` values are strictly increasing and
+    /// each mapping to a distinct glyph cluster. A
     /// glyph for index `j` in the source text will use effect `effects[i].1`
     /// where `i` is the largest value such that `effects[i].0 <= j`, or the
     /// default value of `E` if no such `i` exists.
