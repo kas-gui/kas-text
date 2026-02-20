@@ -8,7 +8,7 @@
 use super::TextDisplay;
 use crate::conv::{to_u32, to_usize};
 use crate::fonts::{self, FaceId, FontSelector, NoFontMatch};
-use crate::format::FormattableText;
+use crate::format::FontToken;
 use crate::util::ends_with_hard_break;
 use crate::{Direction, Range, shaper};
 use icu_properties::props::{EmojiModifier, EmojiPresentation, RegionalIndicator, Script};
@@ -36,24 +36,17 @@ impl TextDisplay {
     ///
     /// This updates the result of [`TextDisplay::prepare_runs`] due to change
     /// in font size.
-    pub fn resize_runs<F: FormattableText + ?Sized>(
-        &mut self,
-        text: &F,
-        font: FontSelector,
-        mut dpem: f32,
-    ) {
-        let mut font_tokens = text.font_tokens(dpem, font);
-        let mut next_fmt = font_tokens.next();
-
-        let text = text.as_str();
+    pub fn resize_runs(&mut self, text: &str, mut font_tokens: impl Iterator<Item = FontToken>) {
+        let (mut dpem, _) = read_initial_token(&mut font_tokens);
+        let mut next_token = font_tokens.next();
 
         for run in &mut self.runs {
-            while let Some(fmt) = next_fmt.as_ref() {
-                if fmt.start > run.range.start {
+            while let Some(token) = next_token.as_ref() {
+                if token.start > run.range.start {
                     break;
                 }
-                dpem = fmt.dpem;
-                next_fmt = font_tokens.next();
+                dpem = token.dpem;
+                next_token = font_tokens.next();
             }
 
             let input = shaper::Input {
@@ -159,12 +152,11 @@ impl TextDisplay {
     /// maximal slices of the `text` which do not contain explicit line breaks
     /// and have a single text direction according to the
     /// [Unicode Bidirectional Algorithm](http://www.unicode.org/reports/tr9/).
-    pub fn prepare_runs<F: FormattableText + ?Sized>(
+    pub fn prepare_runs(
         &mut self,
-        text: &F,
+        text: &str,
         direction: Direction,
-        mut font: FontSelector,
-        mut dpem: f32,
+        mut font_tokens: impl Iterator<Item = FontToken>,
     ) -> Result<(), NoFontMatch> {
         // This method constructs a list of "hard lines" (the initial line and any
         // caused by a hard break), each composed of a list of "level runs" (the
@@ -174,17 +166,15 @@ impl TextDisplay {
 
         self.runs.clear();
 
-        let mut font_tokens = text.font_tokens(dpem, font);
-        let mut next_fmt = font_tokens.next();
-        if let Some(fmt) = next_fmt.as_ref()
-            && fmt.start == 0
+        let (mut dpem, mut font) = read_initial_token(&mut font_tokens);
+        let mut next_token = font_tokens.next();
+        if let Some(token) = next_token.as_ref()
+            && token.start == 0
         {
-            font = fmt.font;
-            dpem = fmt.dpem;
-            next_fmt = font_tokens.next();
+            font = token.font;
+            dpem = token.dpem;
+            next_token = font_tokens.next();
         }
-
-        let text = text.as_str();
 
         let default_para_level = match direction {
             Direction::Auto => None,
@@ -289,8 +279,8 @@ impl TextDisplay {
                 .map(|level| *level != input.level)
                 .unwrap_or(true);
 
-            if let Some(fmt) = next_fmt.as_ref()
-                && to_usize(fmt.start) == index
+            if let Some(token) = next_token.as_ref()
+                && to_usize(token.start) == index
             {
                 require_break = true;
             }
@@ -338,16 +328,16 @@ impl TextDisplay {
                 breaks.push(shaper::GlyphBreak::new(to_u32(index)));
             }
 
-            if let Some(fmt) = next_fmt.as_ref()
-                && to_usize(fmt.start) == index
+            if let Some(token) = next_token.as_ref()
+                && to_usize(token.start) == index
             {
-                font = fmt.font;
-                input.dpem = fmt.dpem;
-                next_fmt = font_tokens.next();
+                font = token.font;
+                input.dpem = token.dpem;
+                next_token = font_tokens.next();
                 debug_assert!(
-                    next_fmt
+                    next_token
                         .as_ref()
-                        .map(|fmt| to_usize(fmt.start) > index)
+                        .map(|token| to_usize(token.start) > index)
                         .unwrap_or(true)
                 );
             }
@@ -402,6 +392,15 @@ impl TextDisplay {
         */
         Ok(())
     }
+}
+
+fn read_initial_token(iter: &mut impl Iterator<Item = FontToken>) -> (f32, FontSelector) {
+    let Some(FontToken { start, dpem, font }) = iter.next() else {
+        debug_assert!(false, "iterator font_tokens is empty");
+        return (16.0, FontSelector::default());
+    };
+    debug_assert_eq!(start, 0, "iterator font_tokens does not start at 0");
+    (dpem, font)
 }
 
 fn is_real(script: Script) -> bool {

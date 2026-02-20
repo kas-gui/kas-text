@@ -5,10 +5,11 @@
 
 //! Text object
 
-use crate::display::{Effect, MarkerPosIter, NotReady, TextDisplay};
+use crate::display::{MarkerPosIter, NotReady, TextDisplay};
 use crate::fonts::{FontSelector, NoFontMatch};
 use crate::format::FormattableText;
 use crate::{Align, Direction, GlyphRun, Line, Status, Vec2};
+use std::fmt::Debug;
 use std::num::NonZeroUsize;
 
 /// Text type-setting object (high-level API)
@@ -33,7 +34,7 @@ use std::num::NonZeroUsize;
 /// text.set_bounds(Vec2(200.0, 50.0));
 /// text.prepare().unwrap();
 ///
-/// for run in text.runs(Vec2::ZERO, &[]).unwrap() {
+/// for run in text.runs(Vec2::ZERO).unwrap() {
 ///     let (face, dpem) = (run.face_id(), run.dpem());
 ///     for glyph in run.glyphs() {
 ///         println!("{face:?} - {dpem}px - {glyph:?}");
@@ -333,7 +334,7 @@ impl<T: FormattableText + ?Sized> Text<T> {
     /// This method simply forwards the result of
     /// [`FormattableText::effect_tokens`].
     #[inline]
-    pub fn effect_tokens(&self) -> &[Effect] {
+    pub fn effect_tokens(&self) -> &[(u32, T::Effect)] {
         self.text.effect_tokens()
     }
 }
@@ -389,11 +390,15 @@ impl<T: FormattableText + ?Sized> Text<T> {
     #[inline]
     fn prepare_runs(&mut self) -> Result<(), NoFontMatch> {
         match self.status {
-            Status::New => {
-                self.display
-                    .prepare_runs(&self.text, self.direction, self.font, self.dpem)?
-            }
-            Status::ResizeLevelRuns => self.display.resize_runs(&self.text, self.font, self.dpem),
+            Status::New => self.display.prepare_runs(
+                self.text.as_str(),
+                self.direction,
+                self.text.font_tokens(self.dpem, self.font),
+            )?,
+            Status::ResizeLevelRuns => self.display.resize_runs(
+                self.text.as_str(),
+                self.text.font_tokens(self.dpem, self.font),
+            ),
             _ => (),
         }
 
@@ -549,17 +554,37 @@ impl<T: FormattableText + ?Sized> Text<T> {
     /// All glyphs are translated by the given `offset` (this is practically
     /// free).
     ///
-    /// An [`Effect`] sequence supports underline, strikethrough and custom
-    /// indexing (e.g. for a color palette). Pass `&[]` if effects are not
-    /// required. (The default effect is always [`Effect::default()`].)
+    /// Uses effect tokens supplied by [`FormattableText::effect_tokens`].
     ///
     /// Runs are yielded in undefined order. The total number of
     /// glyphs yielded will equal [`TextDisplay::num_glyphs`].
     pub fn runs<'a>(
         &'a self,
         offset: Vec2,
-        effects: &'a [Effect],
-    ) -> Result<impl Iterator<Item = GlyphRun<'a>> + 'a, NotReady> {
+    ) -> Result<impl Iterator<Item = GlyphRun<'a, T::Effect>> + 'a, NotReady> {
+        Ok(self.display()?.runs(offset, self.text.effect_tokens()))
+    }
+
+    /// Iterate over runs of positioned glyphs using a custom effects list
+    ///
+    /// All glyphs are translated by the given `offset` (this is practically
+    /// free).
+    ///
+    /// The `effects` sequence may be used for rendering effects: glyph color,
+    /// background color, strike-through, underline. Use `&[]` for no effects
+    /// (effectively using the default value of `E` everywhere), or use a
+    /// sequence such that `effects[i].0` values are strictly increasing. A
+    /// glyph for index `j` in the source text will use effect `effects[i].1`
+    /// where `i` is the largest value such that `effects[i].0 <= j`, or the
+    /// default value of `E` if no such `i` exists.
+    ///
+    /// Runs are yielded in undefined order. The total number of
+    /// glyphs yielded will equal [`TextDisplay::num_glyphs`].
+    pub fn runs_with_effects<'a, E: Copy + Debug + Default>(
+        &'a self,
+        offset: Vec2,
+        effects: &'a [(u32, E)],
+    ) -> Result<impl Iterator<Item = GlyphRun<'a, E>> + 'a, NotReady> {
         Ok(self.display()?.runs(offset, effects))
     }
 

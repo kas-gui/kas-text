@@ -61,7 +61,9 @@ impl<'a> FaceRef<'a> {
 
 /// Handle to a loaded font face
 ///
-/// TODO: verify whether these values need adjustment for variations.
+/// Several values are relative to the vertical baseline of the text. Due to
+/// common axis conventions, it may be necessary to negate these; for example
+/// `baseline - self.ascent()`.
 #[derive(Copy, Clone, Debug)]
 pub struct ScaledFaceRef<'a>(&'a Face<'a>, DPU);
 impl<'a> ScaledFaceRef<'a> {

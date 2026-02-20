@@ -5,10 +5,9 @@
 
 //! Markdown parsing
 
-use super::{FontToken, FormattableText};
+use super::{Effect, EffectFlags, FontToken, FormattableText};
 use crate::conv::to_u32;
 use crate::fonts::{FamilySelector, FontSelector, FontStyle, FontWeight};
-use crate::{Effect, EffectFlags};
 use pulldown_cmark::{Event, HeadingLevel, Tag, TagEnd};
 use std::fmt::Write;
 use std::iter::FusedIterator;
@@ -49,7 +48,7 @@ pub enum Error {
 pub struct Markdown {
     text: String,
     fmt: Vec<Fmt>,
-    effects: Vec<Effect>,
+    effects: Vec<(u32, Effect)>,
 }
 
 impl Markdown {
@@ -117,6 +116,8 @@ impl<'a> ExactSizeIterator for FontTokenIter<'a> {}
 impl<'a> FusedIterator for FontTokenIter<'a> {}
 
 impl FormattableText for Markdown {
+    type Effect = Effect;
+
     #[inline]
     fn as_str(&self) -> &str {
         &self.text
@@ -127,14 +128,14 @@ impl FormattableText for Markdown {
         FontTokenIter::new(&self.fmt, dpem, font)
     }
 
-    fn effect_tokens(&self) -> &[Effect] {
+    fn effect_tokens(&self) -> &[(u32, Effect)] {
         &self.effects
     }
 }
 
 fn parse(input: &str) -> Result<Markdown, Error> {
     let mut text = String::with_capacity(input.len());
-    let mut fmt: Vec<Fmt> = Vec::new();
+    let mut fmt: Vec<Fmt> = vec![Fmt::default()];
     let mut set_last = |item: &StackItem| {
         let f = item.fmt.clone();
         if let Some(last) = fmt.last_mut()
@@ -204,11 +205,13 @@ fn parse(input: &str) -> Result<Markdown, Error> {
     let mut flags = EffectFlags::default();
     for token in &fmt {
         if token.flags != flags {
-            effects.push(Effect {
-                start: token.start,
-                color: 0,
-                flags: token.flags,
-            });
+            effects.push((
+                token.start,
+                Effect {
+                    color: 0,
+                    flags: token.flags,
+                },
+            ));
             flags = token.flags;
         }
     }

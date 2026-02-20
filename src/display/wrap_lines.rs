@@ -26,8 +26,8 @@ pub struct RunPart {
 /// Per-line data (post wrapping)
 #[derive(Clone, Debug, Default)]
 pub struct Line {
-    text_range: Range,           // range in text
-    pub(crate) run_range: Range, // range in wrapped_runs
+    pub(crate) text_range: Range, // range in text
+    pub(crate) run_range: Range,  // range in wrapped_runs
     pub(crate) top: f32,
     pub(crate) bottom: f32,
 }
@@ -702,6 +702,7 @@ impl PartAccumulator for LineAdder {
                 }
                 offset = part.len_no_space - part.len;
             }
+            debug_assert!(text_end <= line_text_end);
 
             let xoffset = if part.end_space {
                 end_caret - part.offset + offset

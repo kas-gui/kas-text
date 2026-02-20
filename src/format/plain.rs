@@ -6,38 +6,44 @@
 //! Implementations for plain text
 
 use super::{FontToken, FormattableText};
-use crate::{Effect, fonts::FontSelector};
+use crate::fonts::FontSelector;
 
 impl FormattableText for str {
+    type Effect = ();
+
     #[inline]
     fn as_str(&self) -> &str {
         self
     }
 
     #[inline]
-    fn font_tokens(&self, _: f32, _: FontSelector) -> impl Iterator<Item = FontToken> {
-        std::iter::empty()
+    fn font_tokens(&self, dpem: f32, font: FontSelector) -> impl Iterator<Item = FontToken> {
+        let start = 0;
+        std::iter::once(FontToken { start, dpem, font })
     }
 
     #[inline]
-    fn effect_tokens(&self) -> &[Effect] {
+    fn effect_tokens(&self) -> &[(u32, ())] {
         &[]
     }
 }
 
 impl FormattableText for String {
+    type Effect = ();
+
     #[inline]
     fn as_str(&self) -> &str {
         self
     }
 
     #[inline]
-    fn font_tokens(&self, _: f32, _: FontSelector) -> impl Iterator<Item = FontToken> {
-        std::iter::empty()
+    fn font_tokens(&self, dpem: f32, font: FontSelector) -> impl Iterator<Item = FontToken> {
+        let start = 0;
+        std::iter::once(FontToken { start, dpem, font })
     }
 
     #[inline]
-    fn effect_tokens(&self) -> &[Effect] {
+    fn effect_tokens(&self) -> &[(u32, ())] {
         &[]
     }
 }
