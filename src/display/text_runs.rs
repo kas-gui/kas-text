@@ -34,6 +34,9 @@ impl TextDisplay {
     /// [Requires status][Self#status-of-preparation]: level runs have been
     /// prepared and are valid in all ways except size (`dpem`).
     ///
+    /// Parameters must match those passed to [`Self::prepare_runs`] for the
+    /// result to be valid.
+    ///
     /// This updates the result of [`TextDisplay::prepare_runs`] due to change
     /// in font size.
     pub fn resize_runs(&mut self, text: &str, mut font_tokens: impl Iterator<Item = FontToken>) {
@@ -145,7 +148,12 @@ impl TextDisplay {
     ///
     /// [Requires status][Self#status-of-preparation]: none.
     ///
-    /// Must be called again if any of `text`, `direction` or `font` change.
+    /// The `font_tokens` iterator must not be empty and the first token yielded
+    /// must have [`FontToken::start`] == 0. (Failure to do so will result in an
+    /// error on debug builds and usage of default values on release builds.)
+    ///
+    /// Must be called again if any of `text`, `direction` or `font_tokens`
+    /// change.
     /// If only `dpem` changes, [`Self::resize_runs`] may be called instead.
     ///
     /// The text is broken into a set of contiguous "level runs". These runs are
@@ -538,5 +546,65 @@ impl EmojiState {
             };
         }
         b
+    }
+}
+
+/// Warning: test results may depend on system fonts
+#[cfg(test)]
+mod test {
+    use super::*;
+    use std::iter;
+    use std::ops::Range;
+    use unicode_bidi::Level;
+
+    fn test_breaking(
+        text: &str,
+        dir: Direction,
+        expected: &[(Range<usize>, RunSpecial, Level, Script, &[u32])],
+    ) {
+        let fonts = iter::once(FontToken {
+            start: 0,
+            dpem: 16.0,
+            font: Default::default(),
+        });
+
+        let mut display = TextDisplay::default();
+        assert!(display.prepare_runs(text, dir, fonts).is_ok());
+
+        for (i, (run, expected)) in display.runs.iter().zip(expected.iter()).enumerate() {
+            assert_eq!(
+                run.range.to_std(),
+                expected.0,
+                "text range for text \"{text}\", run {i}"
+            );
+            assert_eq!(
+                run.special, expected.1,
+                "RunSpecial for text \"{text}\", run {i}"
+            );
+            assert_eq!(run.level, expected.2, "for text \"{text}\", run {i}");
+            assert_eq!(run.script, expected.3, "for text \"{text}\", run {i}");
+            assert_eq!(
+                run.breaks.iter().map(|b| b.index).collect::<Vec<_>>(),
+                expected.4,
+                "wrap-points for text \"{text}\", run {i}"
+            );
+        }
+        assert_eq!(display.runs.len(), expected.len(), "number of runs");
+    }
+
+    #[test]
+    fn test_breaking_simple() {
+        let sample = "Layout demo 123";
+        test_breaking(
+            sample,
+            Direction::Auto,
+            &[(
+                0..sample.len(),
+                RunSpecial::None,
+                Level::ltr(),
+                Script::Latin,
+                &[0, 7, 12],
+            )],
+        );
     }
 }
