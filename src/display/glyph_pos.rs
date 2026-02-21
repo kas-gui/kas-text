@@ -429,6 +429,10 @@ impl TextDisplay {
     /// text is fully prepared for display.
     ///
     /// Calls `f(top_left, bottom_right)` for each highlighting rectangle.
+    #[deprecated(
+        since = "0.10.0",
+        note = "Since the same result may be achieved using text background colors this will likely be removed in the future."
+    )]
     pub fn highlight_range(&self, range: std::ops::Range<usize>, f: &mut dyn FnMut(Vec2, Vec2)) {
         for line in &self.lines {
             let line_range = line.text_range();
@@ -441,6 +445,7 @@ impl TextDisplay {
                 let br = Vec2(self.r_bound, line.bottom);
                 f(tl, br);
             } else {
+                #[allow(deprecated)]
                 self.highlight_line(line.clone(), range.clone(), f);
             }
         }
@@ -453,6 +458,10 @@ impl TextDisplay {
     ///
     /// Warning: runs are in logical order which does not correspond to display
     /// order. As a result, the order of results (on a line) is not known.
+    #[deprecated(
+        since = "0.10.0",
+        note = "Since the same result may be achieved using text background colors this will likely be removed in the future."
+    )]
     fn highlight_line(
         &self,
         line: Line,

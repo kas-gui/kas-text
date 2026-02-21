@@ -580,6 +580,10 @@ impl<T: FormattableText + ?Sized> Text<T> {
     /// Yield a sequence of rectangles to highlight a given text range
     ///
     /// Calls `f(top_left, bottom_right)` for each highlighting rectangle.
+    #[deprecated(
+        since = "0.10.0",
+        note = "Since the same result may be achieved using text background colors this will likely be removed in the future."
+    )]
     pub fn highlight_range<F>(
         &self,
         range: std::ops::Range<usize>,
@@ -588,6 +592,7 @@ impl<T: FormattableText + ?Sized> Text<T> {
     where
         F: FnMut(Vec2, Vec2),
     {
+        #[allow(deprecated)]
         Ok(self.display()?.highlight_range(range, &mut f))
     }
 }
