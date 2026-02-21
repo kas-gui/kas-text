@@ -365,17 +365,6 @@ impl TextDisplay {
         MarkerPosIter { v, a, b }
     }
 
-    /// Get the number of glyphs
-    ///
-    /// [Requires status][Self#status-of-preparation]: lines have been wrapped.
-    ///
-    /// This method is a simple memory-read.
-    #[inline]
-    #[cfg(feature = "num_glyphs")]
-    pub fn num_glyphs(&self) -> usize {
-        to_usize(self.num_glyphs)
-    }
-
     /// Iterate over runs of positioned glyphs
     ///
     /// All glyphs are translated by the given `offset` (this is practically
@@ -390,8 +379,7 @@ impl TextDisplay {
     /// where `i` is the largest value such that `effects[i].0 <= j`, or the
     /// default value of `E` if no such `i` exists.
     ///
-    /// Runs are yielded in undefined order. The total number of
-    /// glyphs yielded will equal [`TextDisplay::num_glyphs`].
+    /// Runs are yielded in undefined order.
     ///
     /// [Requires status][Self#status-of-preparation]:
     /// text is fully prepared for display.
@@ -441,6 +429,10 @@ impl TextDisplay {
     /// text is fully prepared for display.
     ///
     /// Calls `f(top_left, bottom_right)` for each highlighting rectangle.
+    #[deprecated(
+        since = "0.10.0",
+        note = "Since the same result may be achieved using text background colors this will likely be removed in the future."
+    )]
     pub fn highlight_range(&self, range: std::ops::Range<usize>, f: &mut dyn FnMut(Vec2, Vec2)) {
         for line in &self.lines {
             let line_range = line.text_range();
@@ -453,6 +445,7 @@ impl TextDisplay {
                 let br = Vec2(self.r_bound, line.bottom);
                 f(tl, br);
             } else {
+                #[allow(deprecated)]
                 self.highlight_line(line.clone(), range.clone(), f);
             }
         }
@@ -465,6 +458,10 @@ impl TextDisplay {
     ///
     /// Warning: runs are in logical order which does not correspond to display
     /// order. As a result, the order of results (on a line) is not known.
+    #[deprecated(
+        since = "0.10.0",
+        note = "Since the same result may be achieved using text background colors this will likely be removed in the future."
+    )]
     fn highlight_line(
         &self,
         line: Line,

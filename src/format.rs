@@ -5,6 +5,8 @@
 
 //! Parsers for formatted text
 
+#![allow(deprecated)]
+
 use crate::fonts::FontSelector;
 #[allow(unused)]
 use crate::{Text, TextDisplay};
@@ -20,6 +22,10 @@ pub use markdown::{Error as MarkdownError, Markdown};
 /// A possible effect formatting marker
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[deprecated(
+    since = "0.10.0",
+    note = "Since the effects type is generic, a more appropriate type may be defined downstream."
+)]
 pub struct Effect {
     /// User-specified value
     ///
@@ -34,6 +40,10 @@ bitflags::bitflags! {
     /// Text effects
     #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
     #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+    #[deprecated(
+        since = "0.10.0",
+        note = "Since the effects type is generic, a more appropriate type may be defined downstream."
+    )]
     pub struct EffectFlags: u16 {
         /// Glyph is underlined
         const UNDERLINE = 1 << 0;

@@ -217,10 +217,6 @@ impl TextDisplay {
 
         self.wrapped_runs = adder.wrapped_runs;
         self.lines = adder.lines;
-        #[cfg(feature = "num_glyphs")]
-        {
-            self.num_glyphs = adder.num_glyphs;
-        }
         self.l_bound = adder.l_bound.min(adder.r_bound);
         self.r_bound = adder.r_bound;
         adder.vcaret
@@ -403,8 +399,6 @@ struct LineAdder {
     l_bound: f32,
     r_bound: f32,
     vcaret: f32,
-    #[cfg(feature = "num_glyphs")]
-    num_glyphs: u32,
     h_align: Align,
     width_bound: f32,
 }
@@ -683,11 +677,6 @@ impl PartAccumulator for LineAdder {
 
         for (i, part) in parts.iter().enumerate() {
             let run = &runs[to_usize(part.run)];
-
-            #[cfg(feature = "num_glyphs")]
-            {
-                self.num_glyphs += to_u32(part.glyph_range.len());
-            }
 
             let mut text_end = run.range.end;
             let mut offset = 0.0;

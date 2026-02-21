@@ -540,15 +540,6 @@ impl<T: FormattableText + ?Sized> Text<T> {
         Ok(self.display()?.text_glyph_pos(index))
     }
 
-    /// Get the number of glyphs
-    ///
-    /// See [`TextDisplay::num_glyphs`].
-    #[inline]
-    #[cfg(feature = "num_glyphs")]
-    pub fn num_glyphs(&self) -> Result<usize, NotReady> {
-        Ok(self.wrapped_display()?.num_glyphs())
-    }
-
     /// Iterate over runs of positioned glyphs
     ///
     /// All glyphs are translated by the given `offset` (this is practically
@@ -556,8 +547,7 @@ impl<T: FormattableText + ?Sized> Text<T> {
     ///
     /// Uses effect tokens supplied by [`FormattableText::effect_tokens`].
     ///
-    /// Runs are yielded in undefined order. The total number of
-    /// glyphs yielded will equal [`TextDisplay::num_glyphs`].
+    /// Runs are yielded in undefined order.
     pub fn runs<'a>(
         &'a self,
         offset: Vec2,
@@ -578,8 +568,7 @@ impl<T: FormattableText + ?Sized> Text<T> {
     /// where `i` is the largest value such that `effects[i].0 <= j`, or the
     /// default value of `E` if no such `i` exists.
     ///
-    /// Runs are yielded in undefined order. The total number of
-    /// glyphs yielded will equal [`TextDisplay::num_glyphs`].
+    /// Runs are yielded in undefined order.
     pub fn runs_with_effects<'a, E: Copy + Debug + Default>(
         &'a self,
         offset: Vec2,
@@ -591,6 +580,10 @@ impl<T: FormattableText + ?Sized> Text<T> {
     /// Yield a sequence of rectangles to highlight a given text range
     ///
     /// Calls `f(top_left, bottom_right)` for each highlighting rectangle.
+    #[deprecated(
+        since = "0.10.0",
+        note = "Since the same result may be achieved using text background colors this will likely be removed in the future."
+    )]
     pub fn highlight_range<F>(
         &self,
         range: std::ops::Range<usize>,
@@ -599,6 +592,7 @@ impl<T: FormattableText + ?Sized> Text<T> {
     where
         F: FnMut(Vec2, Vec2),
     {
+        #[allow(deprecated)]
         Ok(self.display()?.highlight_range(range, &mut f))
     }
 }

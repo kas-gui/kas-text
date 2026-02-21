@@ -114,8 +114,6 @@ pub struct TextDisplay {
     wrapped_runs: TinyVec<[RunPart; 1]>,
     /// Visual (wrapped) lines, in visual and logical order
     lines: TinyVec<[Line; 1]>,
-    #[cfg(feature = "num_glyphs")]
-    num_glyphs: u32,
     l_bound: f32,
     r_bound: f32,
 }
@@ -128,10 +126,7 @@ fn size_of_elts() {
     assert_eq!(size_of::<shaper::GlyphRun>(), 112);
     assert_eq!(size_of::<RunPart>(), 24);
     assert_eq!(size_of::<Line>(), 24);
-    #[cfg(not(feature = "num_glyphs"))]
     assert_eq!(size_of::<TextDisplay>(), 200);
-    #[cfg(feature = "num_glyphs")]
-    assert_eq!(size_of::<TextDisplay>(), 208);
 }
 
 impl Default for TextDisplay {
@@ -140,8 +135,6 @@ impl Default for TextDisplay {
             runs: Default::default(),
             wrapped_runs: Default::default(),
             lines: Default::default(),
-            #[cfg(feature = "num_glyphs")]
-            num_glyphs: 0,
             l_bound: 0.0,
             r_bound: 0.0,
         }

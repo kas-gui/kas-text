@@ -45,6 +45,10 @@ pub enum Error {
 /// -   Tables
 /// -   Task lists
 #[derive(Clone, Debug, Default, PartialEq)]
+#[deprecated(
+    since = "0.10.0",
+    note = "Since the effects type is generic and this requires a fixed Effect token it is likely to be removed."
+)]
 pub struct Markdown {
     text: String,
     fmt: Vec<Fmt>,
