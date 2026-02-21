@@ -63,4 +63,4 @@ jobs:
       - name: Test (reduced features)
         run: cargo test --all-targets --features markdown
       - name: Test (all features except GAT)
-        run: cargo test --features markdown,shaping,serde,num_glyphs
+        run: cargo test --features markdown,shaping,serde

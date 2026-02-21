@@ -20,9 +20,6 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
-# Support num_glyphs method
-num_glyphs = []
-
 # Enable shaping with the default dependency.
 shaping = ["rustybuzz"]
 # Enable shaping via rustybuzz.

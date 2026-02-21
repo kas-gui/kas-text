@@ -365,17 +365,6 @@ impl TextDisplay {
         MarkerPosIter { v, a, b }
     }
 
-    /// Get the number of glyphs
-    ///
-    /// [Requires status][Self#status-of-preparation]: lines have been wrapped.
-    ///
-    /// This method is a simple memory-read.
-    #[inline]
-    #[cfg(feature = "num_glyphs")]
-    pub fn num_glyphs(&self) -> usize {
-        to_usize(self.num_glyphs)
-    }
-
     /// Iterate over runs of positioned glyphs
     ///
     /// All glyphs are translated by the given `offset` (this is practically
@@ -390,8 +379,7 @@ impl TextDisplay {
     /// where `i` is the largest value such that `effects[i].0 <= j`, or the
     /// default value of `E` if no such `i` exists.
     ///
-    /// Runs are yielded in undefined order. The total number of
-    /// glyphs yielded will equal [`TextDisplay::num_glyphs`].
+    /// Runs are yielded in undefined order.
     ///
     /// [Requires status][Self#status-of-preparation]:
     /// text is fully prepared for display.
