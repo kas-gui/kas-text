@@ -332,7 +332,7 @@ impl TextDisplay {
                 }
                 input.script = script;
                 breaks = Default::default();
-            } else if is_break && !is_control {
+            } else if is_break && !is_control && index > start {
                 breaks.push(shaper::GlyphBreak::new(to_u32(index)));
             }
 
@@ -603,7 +603,7 @@ mod test {
                 RunSpecial::None,
                 Level::ltr(),
                 Script::Latin,
-                &[0, 7, 12],
+                &[7, 12],
             )],
         );
     }
