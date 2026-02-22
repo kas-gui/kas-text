@@ -9,7 +9,7 @@ use super::{FaceRef, FontSelector, Resolver};
 use crate::conv::{to_u32, to_usize};
 use fontique::{Blob, QueryStatus, Script, Synthesis};
 use std::collections::hash_map::{Entry, HashMap};
-use std::sync::{LazyLock, Mutex, MutexGuard, RwLock};
+use std::sync::{LazyLock, Mutex, MutexGuard};
 use thiserror::Error;
 pub(crate) use ttf_parser::Face;
 
@@ -303,7 +303,7 @@ impl FontList {
 /// function. Thread-safety is handled via internal locks.
 pub struct FontLibrary {
     resolver: Mutex<Resolver>,
-    fonts: RwLock<FontList>,
+    fonts: Mutex<FontList>,
 }
 
 /// Font management
@@ -318,7 +318,7 @@ impl FontLibrary {
     /// Each font identifier has at least one font face. This resolves the first
     /// (default) one.
     pub fn first_face_for(&self, font_id: FontId) -> Result<FaceId, InvalidFontId> {
-        let fonts = self.fonts.read().unwrap();
+        let fonts = self.fonts.lock().unwrap();
         for (id, list, _) in &fonts.fonts {
             if *id == font_id {
                 return Ok(*list.first().unwrap());
@@ -338,7 +338,7 @@ impl FontLibrary {
 
     /// Check whether a [`FaceId`] is part of a [`FontId`]
     pub fn contains_face(&self, font_id: FontId, face_id: FaceId) -> Result<bool, InvalidFontId> {
-        let fonts = self.fonts.read().unwrap();
+        let fonts = self.fonts.lock().unwrap();
         for (id, list, _) in &fonts.fonts {
             if *id == font_id {
                 return Ok(list.contains(&face_id));
@@ -361,7 +361,7 @@ impl FontLibrary {
         c: char,
     ) -> Result<Option<FaceId>, InvalidFontId> {
         self.fonts
-            .write()
+            .lock()
             .unwrap()
             .face_for_char(font_id, last_face_id, c)
     }
@@ -386,7 +386,7 @@ impl FontLibrary {
         };
 
         let mut resolver = self.resolver.lock().unwrap();
-        let mut fonts = self.fonts.write().unwrap();
+        let mut fonts = self.fonts.lock().unwrap();
 
         for (h, id) in &fonts.sel_hash {
             if *h == sel_hash {
@@ -470,7 +470,7 @@ impl FontLibrary {
     ///
     /// Panics if `id` is not valid (required: `id.get() < self.num_faces()`).
     pub fn get_face_store(&self, id: FaceId) -> &'static FaceStore {
-        let fonts = self.fonts.read().unwrap();
+        let fonts = self.fonts.lock().unwrap();
         assert!(id.get() < fonts.faces.len(), "FontLibrary: invalid {id:?}!",);
         let faces: &FaceStore = &fonts.faces[id.get()];
         // Safety: elements of self.faces are never dropped or modified
