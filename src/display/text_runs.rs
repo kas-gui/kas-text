@@ -380,8 +380,13 @@ impl TextDisplay {
         for run in &self.runs {
             let slice = &text[run.range];
             print!(
-                "\t{:?}, text[{}..{}]: '{}', ",
-                run.level, run.range.start, run.range.end, slice
+                "\t{:?}, text[{}..{}], script {:?}, {} glyphs: '{}', ",
+                run.level,
+                run.range.start,
+                run.range.end,
+                run.script,
+                run.glyphs.len(),
+                slice
             );
             match run.special {
                 RunSpecial::None => (),
