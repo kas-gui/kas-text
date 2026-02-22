@@ -317,31 +317,11 @@ impl FontLibrary {
     ///
     /// Each font identifier has at least one font face. This resolves the first
     /// (default) one.
-    pub fn first_face_for(&self, font_id: FontId) -> Result<FaceId, InvalidFontId> {
+    pub(crate) fn first_face_for(&self, font_id: FontId) -> Result<FaceId, InvalidFontId> {
         let fonts = self.fonts.lock().unwrap();
         for (id, list, _) in &fonts.fonts {
             if *id == font_id {
                 return Ok(*list.first().unwrap());
-            }
-        }
-        Err(InvalidFontId)
-    }
-
-    /// Get the first face for a font
-    ///
-    /// This is a wrapper around [`FontLibrary::first_face_for`] and [`FontLibrary::get_face`].
-    #[inline]
-    pub fn get_first_face(&self, font_id: FontId) -> Result<FaceRef<'_>, InvalidFontId> {
-        let face_id = self.first_face_for(font_id)?;
-        Ok(self.get_face(face_id))
-    }
-
-    /// Check whether a [`FaceId`] is part of a [`FontId`]
-    pub fn contains_face(&self, font_id: FontId, face_id: FaceId) -> Result<bool, InvalidFontId> {
-        let fonts = self.fonts.lock().unwrap();
-        for (id, list, _) in &fonts.fonts {
-            if *id == font_id {
-                return Ok(list.contains(&face_id));
             }
         }
         Err(InvalidFontId)
@@ -354,7 +334,7 @@ impl FontLibrary {
     /// unnecessarily, such as when encountering a space amid Arabic text.)
     ///
     /// Otherwise, return the first face of `font_id` which covers `c`.
-    pub fn face_for_char(
+    pub(crate) fn face_for_char(
         &self,
         font_id: FontId,
         last_face_id: Option<FaceId>,
@@ -370,7 +350,7 @@ impl FontLibrary {
     ///
     /// This method uses internal caching to enable fast look-ups of existing
     /// (loaded) fonts. Resolving new fonts may be slower.
-    pub fn select_font(
+    pub(crate) fn select_font(
         &self,
         selector: &FontSelector,
         script: Script,
