@@ -607,4 +607,24 @@ mod test {
             )],
         );
     }
+
+    #[test]
+    fn test_breaking_bidi() {
+        let sample = "abc אבג def";
+        test_breaking(
+            sample,
+            Direction::Auto,
+            &[
+                (0..4, RunSpecial::None, Level::ltr(), Script::Latin, &[]),
+                (
+                    4..10,
+                    RunSpecial::NoBreak,
+                    Level::rtl(),
+                    Script::Hebrew,
+                    &[],
+                ),
+                (10..14, RunSpecial::None, Level::ltr(), Script::Latin, &[11]),
+            ],
+        );
+    }
 }
