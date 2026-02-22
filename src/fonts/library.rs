@@ -220,37 +220,80 @@ impl FaceStore {
 }
 
 #[derive(Default)]
-struct FaceList {
+struct FontList {
     // Safety: unsafe code depends on entries never moving (hence the otherwise
     // redundant use of Box). See e.g. FontLibrary::get_face().
     #[allow(clippy::vec_box)]
     faces: Vec<Box<FaceStore>>,
     // These are vec-maps. Why? Because length should be short.
     source_hash: Vec<(u64, FaceId)>,
-}
-
-impl FaceList {
-    fn push(&mut self, face: Box<FaceStore>, source_hash: u64) -> FaceId {
-        let id = FaceId(to_u32(self.faces.len()));
-        self.faces.push(face);
-        self.source_hash.push((source_hash, id));
-        id
-    }
-}
-
-#[derive(Default)]
-struct FontList {
     // A "font" is a list of faces (primary + fallbacks); we cache glyph-lookups per char
     fonts: Vec<(FontId, Vec<FaceId>, HashMap<char, Option<FaceId>>)>,
     sel_hash: Vec<(u64, FontId)>,
 }
 
 impl FontList {
-    fn push(&mut self, list: Vec<FaceId>, sel_hash: u64) -> FontId {
+    fn push_face(&mut self, face: Box<FaceStore>, source_hash: u64) -> FaceId {
+        let id = FaceId(to_u32(self.faces.len()));
+        self.faces.push(face);
+        self.source_hash.push((source_hash, id));
+        id
+    }
+
+    fn push_font(&mut self, list: Vec<FaceId>, sel_hash: u64) -> FontId {
         let id = FontId(to_u32(self.fonts.len()));
         self.fonts.push((id, list, HashMap::new()));
         self.sel_hash.push((sel_hash, id));
         id
+    }
+
+    fn face_for_char(
+        &mut self,
+        font_id: FontId,
+        last_face_id: Option<FaceId>,
+        c: char,
+    ) -> Result<Option<FaceId>, InvalidFontId> {
+        // TODO: `face.glyph_index` is a bit slow to use like this where several
+        // faces may return no result before we find a match. Caching results
+        // in a HashMap helps. Perhaps better would be to (somehow) determine
+        // the script/language in use and check whether the font face supports
+        // that, perhaps also checking it has shaping support.
+        let faces = &self.faces;
+        let fonts = &mut self.fonts;
+        let font = fonts
+            .iter_mut()
+            .find(|item| item.0 == font_id)
+            .ok_or(InvalidFontId)?;
+
+        if let Some(face_id) = last_face_id
+            && font.1.contains(&face_id)
+        {
+            let face = &faces[face_id.get()];
+            // TODO(opt): should we cache this lookup?
+            if face.face.glyph_index(c).is_some() {
+                return Ok(Some(face_id));
+            }
+        }
+
+        Ok(match font.2.entry(c) {
+            Entry::Occupied(entry) => *entry.get(),
+            Entry::Vacant(entry) => {
+                let mut id: Option<FaceId> = None;
+                for face_id in font.1.iter() {
+                    let face = &faces[face_id.get()];
+                    if face.face.glyph_index(c).is_some() {
+                        id = Some(*face_id);
+                        break;
+                    }
+                }
+
+                // TODO: we need some mechanism to widen the search when this
+                // fails (certain chars might only be found in a special font).
+
+                entry.insert(id);
+                id
+            }
+        })
     }
 }
 
@@ -260,7 +303,6 @@ impl FontList {
 /// function. Thread-safety is handled via internal locks.
 pub struct FontLibrary {
     resolver: Mutex<Resolver>,
-    faces: RwLock<FaceList>,
     fonts: RwLock<FontList>,
 }
 
@@ -318,49 +360,10 @@ impl FontLibrary {
         last_face_id: Option<FaceId>,
         c: char,
     ) -> Result<Option<FaceId>, InvalidFontId> {
-        // TODO: `face.glyph_index` is a bit slow to use like this where several
-        // faces may return no result before we find a match. Caching results
-        // in a HashMap helps. Perhaps better would be to (somehow) determine
-        // the script/language in use and check whether the font face supports
-        // that, perhaps also checking it has shaping support.
-        let mut fonts = self.fonts.write().unwrap();
-        let font = fonts
-            .fonts
-            .iter_mut()
-            .find(|item| item.0 == font_id)
-            .ok_or(InvalidFontId)?;
-
-        let faces = self.faces.read().unwrap();
-
-        if let Some(face_id) = last_face_id
-            && font.1.contains(&face_id)
-        {
-            let face = &faces.faces[face_id.get()];
-            // TODO(opt): should we cache this lookup?
-            if face.face.glyph_index(c).is_some() {
-                return Ok(Some(face_id));
-            }
-        }
-
-        Ok(match font.2.entry(c) {
-            Entry::Occupied(entry) => *entry.get(),
-            Entry::Vacant(entry) => {
-                let mut id: Option<FaceId> = None;
-                for face_id in font.1.iter() {
-                    let face = &faces.faces[face_id.get()];
-                    if face.face.glyph_index(c).is_some() {
-                        id = Some(*face_id);
-                        break;
-                    }
-                }
-
-                // TODO: we need some mechanism to widen the search when this
-                // fails (certain chars might only be found in a special font).
-
-                entry.insert(id);
-                id
-            }
-        })
+        self.fonts
+            .write()
+            .unwrap()
+            .face_for_char(font_id, last_face_id, c)
     }
 
     /// Select a font
@@ -382,18 +385,17 @@ impl FontLibrary {
             s.finish()
         };
 
-        let fonts = self.fonts.read().unwrap();
+        let mut resolver = self.resolver.lock().unwrap();
+        let mut fonts = self.fonts.write().unwrap();
+
         for (h, id) in &fonts.sel_hash {
             if *h == sel_hash {
                 return Ok(*id);
             }
         }
-        drop(fonts);
 
         let mut faces = Vec::new();
         let mut families = Vec::new();
-        let mut resolver = self.resolver.lock().unwrap();
-        let mut face_list = self.faces.write().unwrap();
 
         selector.select(&mut resolver, script, |qf| {
             if log::log_enabled!(log::Level::Debug) {
@@ -415,9 +417,9 @@ impl FontLibrary {
                 hasher.finish()
             };
 
-            for (h, id) in face_list.source_hash.iter().cloned() {
+            for (h, id) in fonts.source_hash.iter().cloned() {
                 if h == source_hash {
-                    let face = &face_list.faces[id.get()];
+                    let face = &fonts.faces[id.get()];
                     if face.blob.id() == qf.blob.id()
                         && face.index == qf.index
                         && face.synthesis == qf.synthesis
@@ -430,7 +432,7 @@ impl FontLibrary {
 
             match FaceStore::new(qf.blob.clone(), qf.index, qf.synthesis) {
                 Ok(store) => {
-                    let id = face_list.push(Box::new(store), source_hash);
+                    let id = fonts.push_face(Box::new(store), source_hash);
                     faces.push(id);
                 }
                 Err(err) => {
@@ -450,7 +452,7 @@ impl FontLibrary {
         if faces.is_empty() {
             return Err(NoFontMatch);
         }
-        let font = self.fonts.write().unwrap().push(faces, sel_hash);
+        let font = fonts.push_font(faces, sel_hash);
         Ok(font)
     }
 }
@@ -468,9 +470,9 @@ impl FontLibrary {
     ///
     /// Panics if `id` is not valid (required: `id.get() < self.num_faces()`).
     pub fn get_face_store(&self, id: FaceId) -> &'static FaceStore {
-        let faces = self.faces.read().unwrap();
-        assert!(id.get() < faces.faces.len(), "FontLibrary: invalid {id:?}!",);
-        let faces: &FaceStore = &faces.faces[id.get()];
+        let fonts = self.fonts.read().unwrap();
+        assert!(id.get() < fonts.faces.len(), "FontLibrary: invalid {id:?}!",);
+        let faces: &FaceStore = &fonts.faces[id.get()];
         // Safety: elements of self.faces are never dropped or modified
         unsafe { extend_lifetime(faces) }
     }
@@ -482,7 +484,6 @@ pub(crate) unsafe fn extend_lifetime<'b, T: ?Sized>(r: &'b T) -> &'static T {
 
 static LIBRARY: LazyLock<FontLibrary> = LazyLock::new(|| FontLibrary {
     resolver: Mutex::new(Resolver::new()),
-    faces: Default::default(),
     fonts: Default::default(),
 });
 
