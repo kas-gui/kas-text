@@ -509,19 +509,10 @@ impl PartAccumulator for LineAdder {
         let line_text_start = {
             let part = &parts[0];
             let run = &runs[to_usize(part.run)];
-            if run.level.is_ltr() {
-                if part.glyph_range.start() < run.glyphs.len() {
-                    run.glyphs[part.glyph_range.start()].index
-                } else {
-                    run.range.start
-                }
+            if part.glyph_range.start() < run.glyphs.len() {
+                run.glyphs[part.glyph_range.start()].index
             } else {
-                let start = part.glyph_range.start();
-                if start < run.glyphs.len() && 0 < start {
-                    run.glyphs[start].index
-                } else {
-                    run.range.start
-                }
+                run.range.start
             }
         };
 
@@ -545,17 +536,8 @@ impl PartAccumulator for LineAdder {
             }
 
             line_text_end = run.range.end;
-            if run.level.is_ltr() {
-                if part.glyph_range.end() < run.glyphs.len() {
-                    line_text_end = run.glyphs[part.glyph_range.end()].index;
-                }
-            } else {
-                // let start = part.glyph_range.start();
-                let len = run.glyphs.len();
-                let end = part.glyph_range.end();
-                if end < len && 0 < end {
-                    line_text_end = run.glyphs[end].index
-                }
+            if part.glyph_range.end() < run.glyphs.len() {
+                line_text_end = run.glyphs[part.glyph_range.end()].index;
             }
 
             // With bidi text, the logical end may not actually be at the end;
@@ -671,21 +653,15 @@ impl PartAccumulator for LineAdder {
             let run = &runs[to_usize(part.run)];
 
             let mut text_end = run.range.end;
-            let mut offset = 0.0;
-            if run.level.is_ltr() {
-                if part.glyph_range.end() < run.glyphs.len() {
-                    text_end = run.glyphs[part.glyph_range.end()].index;
-                }
-            } else {
-                // let start = part.glyph_range.start();
-                let len = run.glyphs.len();
-                let end = part.glyph_range.end();
-                if end < len && 0 < end {
-                    text_end = run.glyphs[end].index
-                }
-                offset = part.len_no_space - part.len;
+            if part.glyph_range.end() < run.glyphs.len() {
+                text_end = run.glyphs[part.glyph_range.end()].index;
             }
             debug_assert!(text_end <= line_text_end);
+
+            let mut offset = 0.0;
+            if run.level.is_rtl() {
+                offset = part.len_no_space - part.len;
+            }
 
             let xoffset = if part.end_space {
                 end_caret - part.offset + offset
