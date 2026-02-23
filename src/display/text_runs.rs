@@ -293,13 +293,11 @@ impl TextDisplay {
                 require_break = true;
             }
 
-            let mut new_script = None;
             if is_real(script) {
                 if first_real.is_none() {
                     first_real = Some(c);
                 }
                 if script != input.script {
-                    new_script = Some(script);
                     require_break |= is_real(input.script);
                 }
             }
@@ -332,8 +330,16 @@ impl TextDisplay {
                 }
                 input.script = script;
                 breaks = Default::default();
-            } else if is_break && !is_control && index > start {
-                breaks.push(shaper::GlyphBreak::new(to_u32(index)));
+            } else {
+                if is_break && !is_control && index > start {
+                    breaks.push(shaper::GlyphBreak::new(to_u32(index)));
+                }
+
+                if input.script == Script::Unknown
+                    || matches!(input.script, Script::Common | Script::Inherited) && is_real(script)
+                {
+                    input.script = script;
+                }
             }
 
             if let Some(token) = next_token.as_ref()
@@ -353,9 +359,6 @@ impl TextDisplay {
             last_is_control = is_control;
             last_is_htab = is_htab;
             emoji_start = new_emoji_start;
-            if let Some(script) = new_script {
-                input.script = script;
-            }
         }
 
         let hard_break = ends_with_hard_break(text);
@@ -631,7 +634,7 @@ mod test {
         let sample = "123 (1-2)";
 
         let expected_ltr: Expected =
-            &[(0..9, RunSpecial::None, Level::ltr(), Script::Unknown, &[4])];
+            &[(0..9, RunSpecial::None, Level::ltr(), Script::Common, &[4])];
         test_breaking(sample, Direction::Auto, &expected_ltr[..]);
         test_breaking(sample, Direction::Ltr, &expected_ltr[..]);
 
@@ -640,7 +643,7 @@ mod test {
                 0..3,
                 RunSpecial::NoBreak,
                 Level::new(2).unwrap(),
-                Script::Unknown,
+                Script::Common,
                 &[],
             ),
             (
