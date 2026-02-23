@@ -294,9 +294,6 @@ impl TextDisplay {
             }
 
             if is_real(script) {
-                if first_real.is_none() {
-                    first_real = Some(c);
-                }
                 if script != input.script {
                     require_break |= is_real(input.script);
                 }
@@ -339,6 +336,12 @@ impl TextDisplay {
                     || matches!(input.script, Script::Common | Script::Inherited) && is_real(script)
                 {
                     input.script = script;
+                }
+            }
+
+            if is_real(script) {
+                if first_real.is_none() {
+                    first_real = Some(c);
                 }
             }
 
