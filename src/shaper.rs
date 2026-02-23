@@ -103,7 +103,7 @@ pub(crate) struct GlyphRun {
 
     /// Sequence of all glyphs, in left-to-right order
     pub glyphs: Vec<Glyph>,
-    /// All soft-breaks within this run, in left-to-right order
+    /// All soft-breaks within this run, in logical order
     ///
     /// Note: it would be equivalent to use a separate `Run` for each sub-range
     /// in the text instead of tracking breaks via this field.
@@ -157,7 +157,7 @@ impl GlyphRun {
             if range.start <= self.breaks.len() {
                 part.len = self.caret;
                 if range.start > 0 {
-                    let b = self.breaks.len() - range.start;
+                    let b = range.start - 1;
                     let gi = to_usize(self.breaks[b].gi);
                     if gi < self.glyphs.len() {
                         part.len = self.glyphs[gi].position.0;
@@ -170,7 +170,7 @@ impl GlyphRun {
                 if range.end == 0 {
                     part.len_no_space = 0.0;
                 } else {
-                    let b = self.breaks.len() - range.end;
+                    let b = range.end - 1;
                     let b = self.breaks[b];
                     part.len_no_space -= b.no_space_end;
                     if to_usize(b.gi) < self.glyphs.len() {
@@ -186,35 +186,39 @@ impl GlyphRun {
 
     /// Get glyph index from part index
     pub fn to_glyph_range(&self, range: std::ops::Range<usize>) -> Range {
-        let mut start = range.start;
-        let mut end = range.end;
+        if self.level.is_ltr() {
+            let map = |part: usize| {
+                if part == 0 {
+                    0
+                } else if part <= self.breaks.len() {
+                    to_usize(self.breaks[part - 1].gi)
+                } else {
+                    debug_assert_eq!(part, self.breaks.len() + 1);
+                    self.glyphs.len()
+                }
+            };
 
-        let rtl = self.level.is_rtl();
-        if rtl {
+            let start = map(range.start);
+            let end = map(range.end);
+            Range::from(start..end)
+        } else {
+            let map = |part: usize| {
+                if part == 0 {
+                    0
+                } else if part <= self.breaks.len() {
+                    let b = self.breaks.len() - part;
+                    to_usize(self.breaks[b].gi)
+                } else {
+                    debug_assert_eq!(part, self.breaks.len() + 1);
+                    self.glyphs.len()
+                }
+            };
+
             let num_parts = self.num_parts();
-            start = num_parts - start;
-            end = num_parts - end;
+            let start = map(num_parts - range.start);
+            let end = map(num_parts - range.end);
+            Range::from(end..start)
         }
-
-        let map = |part: usize| {
-            if part == 0 {
-                0
-            } else if part <= self.breaks.len() {
-                to_usize(self.breaks[part - 1].gi)
-            } else {
-                debug_assert_eq!(part, self.breaks.len() + 1);
-                self.glyphs.len()
-            }
-        };
-
-        let mut start = map(start);
-        let mut end = map(end);
-
-        if rtl {
-            std::mem::swap(&mut start, &mut end);
-        }
-
-        Range::from(start..end)
     }
 }
 
@@ -251,6 +255,7 @@ pub(crate) fn shape(
     */
 
     if input.level.is_rtl() {
+        // Breaks must be reversed for shaping; they are reversed again after
         breaks.reverse();
     }
 
@@ -276,7 +281,8 @@ pub(crate) fn shape(
 
     if input.level.is_rtl() {
         // With RTL text, no_space_end means start_no_space; recalculate
-        let mut break_i = breaks.len().wrapping_sub(1);
+        breaks.reverse();
+        let mut break_i = 0;
         let mut start_no_space = caret;
         let mut last_id = None;
         let side_bearing = |id: Option<GlyphId>| id.map(|id| sf.h_side_bearing(id)).unwrap_or(0.0);
@@ -287,7 +293,7 @@ pub(crate) fn shape(
                 assert!(gi < glyphs.len());
                 b.gi = to_u32(gi) + 1;
                 b.no_space_end = start_no_space - side_bearing(last_id);
-                break_i = break_i.wrapping_sub(1);
+                break_i += 1;
             }
             if !input.text[to_usize(glyph.index)..]
                 .chars()
@@ -594,8 +600,8 @@ mod test {
             2, 0,
         ];
         let break_gi = [
-            5, 8, 13, 19, 23, 29, 35, 40, 46, 55, 62, 68, 73, 86, 92, 99, 105, 109, 115, 119, 123,
-            126, 129,
+            129, 126, 123, 119, 115, 109, 105, 99, 92, 86, 73, 68, 62, 55, 46, 40, 35, 29, 23, 19,
+            13, 8, 5,
         ];
         test_shaping(
             sample,
@@ -631,11 +637,11 @@ mod test {
         ];
         #[cfg(not(feature = "shaping"))]
         let break_gi_2 = [
-            7, 12, 18, 24, 30, 33, 40, 48, 54, 60, 64, 73, 81, 84, 92, 100, 106, 111, 116,
+            116, 111, 106, 100, 92, 84, 81, 73, 64, 60, 54, 48, 40, 33, 30, 24, 18, 12, 7,
         ];
         #[cfg(feature = "shaping")]
         let break_gi_2 = [
-            9, 14, 22, 30, 37, 42, 51, 61, 68, 75, 80, 91, 100, 104, 116, 124, 132, 138, 144,
+            144, 138, 132, 124, 116, 104, 100, 91, 80, 75, 68, 61, 51, 42, 37, 30, 22, 14, 9,
         ];
         test_shaping(
             sample,

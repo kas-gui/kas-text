@@ -60,9 +60,6 @@ impl TextDisplay {
             };
             let mut breaks = Default::default();
             std::mem::swap(&mut breaks, &mut run.breaks);
-            if run.level.is_rtl() {
-                breaks.reverse();
-            }
             *run = shaper::shape(input, run.range, run.face_id, breaks, run.special);
         }
     }
@@ -689,8 +686,8 @@ mod test {
                 Level::rtl(),
                 Script::Hebrew,
                 &[
-                    232, 227, 218, 207, 200, 189, 178, 169, 158, 142, 129, 118, 109, 85, 74, 61,
-                    50, 43, 32, 25, 18, 13, 9,
+                    9, 13, 18, 25, 32, 43, 50, 61, 74, 85, 109, 118, 129, 142, 158, 169, 178, 189,
+                    200, 207, 218, 227, 232,
                 ],
             )],
         );
@@ -714,8 +711,8 @@ mod test {
                     Level::rtl(),
                     Script::Arabic,
                     &[
-                        214, 205, 194, 183, 172, 167, 154, 139, 128, 117, 110, 94, 79, 74, 59, 44,
-                        33, 24, 15,
+                        15, 24, 33, 44, 59, 74, 79, 94, 110, 117, 128, 139, 154, 167, 172, 183,
+                        194, 205, 214,
                     ],
                 ),
             ],
