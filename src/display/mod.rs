@@ -308,7 +308,7 @@ impl TextDisplay {
                 end_index = run_part.text_end;
             } else {
                 let mut index = run_part.text_end;
-                for glyph in &glyph_run.glyphs[run_part.glyph_range.to_std()] {
+                for glyph in glyph_run.glyphs[run_part.glyph_range.to_std()].iter().rev() {
                     let dist = (glyph.position.0 - rel_pos).abs();
                     try_best(dist, index);
                     index = glyph.index

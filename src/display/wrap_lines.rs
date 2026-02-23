@@ -443,12 +443,10 @@ impl PartAccumulator for LineAdder {
         {
             // Merge into last part info (not strictly necessary)
 
-            if glyph_run.level.is_ltr() {
-                info.glyph_range.end = glyph_range.end;
-            } else {
+            if glyph_run.level.is_rtl() {
                 info.offset = part.offset;
-                info.glyph_range.start = glyph_range.start;
             }
+            info.glyph_range.end = glyph_range.end;
             debug_assert!(info.glyph_range.start <= info.glyph_range.end);
 
             if part.len_no_space > 0.0 {
@@ -518,9 +516,9 @@ impl PartAccumulator for LineAdder {
                     run.range.start
                 }
             } else {
-                let end = part.glyph_range.end();
-                if 0 < end && end < run.glyphs.len() {
-                    run.glyphs[end - 1].index
+                let start = part.glyph_range.start();
+                if start < run.glyphs.len() && 0 < start {
+                    run.glyphs[start].index
                 } else {
                     run.range.start
                 }
@@ -542,11 +540,7 @@ impl PartAccumulator for LineAdder {
                 // next line's start). It also avoids highlighting whitespace
                 // when selecting wrapped bidi text, for a single space.
                 if part.glyph_range.start < part.glyph_range.end {
-                    if run.level.is_ltr() {
-                        part.glyph_range.end -= 1;
-                    } else {
-                        part.glyph_range.start += 1;
-                    }
+                    part.glyph_range.end -= 1;
                 }
             }
 
@@ -556,9 +550,11 @@ impl PartAccumulator for LineAdder {
                     line_text_end = run.glyphs[part.glyph_range.end()].index;
                 }
             } else {
-                let start = part.glyph_range.start();
-                if 0 < start && start < run.glyphs.len() {
-                    line_text_end = run.glyphs[start - 1].index
+                // let start = part.glyph_range.start();
+                let len = run.glyphs.len();
+                let end = part.glyph_range.end();
+                if end < len && 0 < end {
+                    line_text_end = run.glyphs[end].index
                 }
             }
 
@@ -625,11 +621,7 @@ impl PartAccumulator for LineAdder {
                 let mut num_gaps = 0;
                 for (i, part) in parts[..len - 1].iter().enumerate() {
                     let run = &runs[to_usize(part.run)];
-                    let not_at_end = if run.level.is_ltr() {
-                        part.glyph_range.end() < run.glyphs.len()
-                    } else {
-                        part.glyph_range.start > 0
-                    };
+                    let not_at_end = part.glyph_range.end() < run.glyphs.len();
                     if not_at_end || run.special != RunSpecial::NoBreak {
                         is_gap[i] = true;
                         num_gaps += 1;
@@ -685,9 +677,11 @@ impl PartAccumulator for LineAdder {
                     text_end = run.glyphs[part.glyph_range.end()].index;
                 }
             } else {
-                let start = part.glyph_range.start();
-                if 0 < start && start < run.glyphs.len() {
-                    text_end = run.glyphs[start - 1].index
+                // let start = part.glyph_range.start();
+                let len = run.glyphs.len();
+                let end = part.glyph_range.end();
+                if end < len && 0 < end {
+                    text_end = run.glyphs[end].index
                 }
                 offset = part.len_no_space - part.len;
             }
@@ -698,6 +692,7 @@ impl PartAccumulator for LineAdder {
             } else {
                 caret - part.offset
             };
+
             self.wrapped_runs.push(RunPart {
                 text_end,
                 glyph_run: part.run,
