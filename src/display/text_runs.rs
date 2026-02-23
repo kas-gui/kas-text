@@ -557,11 +557,9 @@ mod test {
     use std::ops::Range;
     use unicode_bidi::Level;
 
-    fn test_breaking(
-        text: &str,
-        dir: Direction,
-        expected: &[(Range<usize>, RunSpecial, Level, Script, &[u32])],
-    ) {
+    type Expected<'a> = &'a [(Range<usize>, RunSpecial, Level, Script, &'a [u32])];
+
+    fn test_breaking(text: &str, dir: Direction, expected: Expected) {
         let fonts = iter::once(FontToken {
             start: 0,
             dpem: 16.0,
@@ -626,5 +624,42 @@ mod test {
                 (10..14, RunSpecial::None, Level::ltr(), Script::Latin, &[11]),
             ],
         );
+    }
+
+    #[test]
+    fn test_breaking_weak_bidi() {
+        let sample = "123 (1-2)";
+
+        let expected_ltr: Expected =
+            &[(0..9, RunSpecial::None, Level::ltr(), Script::Unknown, &[4])];
+        test_breaking(sample, Direction::Auto, &expected_ltr[..]);
+        test_breaking(sample, Direction::Ltr, &expected_ltr[..]);
+
+        let expected_rtl: Expected = &[
+            (
+                0..3,
+                RunSpecial::NoBreak,
+                Level::new(2).unwrap(),
+                Script::Unknown,
+                &[],
+            ),
+            (
+                3..5,
+                RunSpecial::NoBreak,
+                Level::rtl(),
+                Script::Common,
+                &[4],
+            ),
+            (
+                5..8,
+                RunSpecial::NoBreak,
+                Level::new(2).unwrap(),
+                Script::Common,
+                &[],
+            ),
+            (8..9, RunSpecial::None, Level::rtl(), Script::Common, &[]),
+        ];
+        test_breaking(sample, Direction::AutoRtl, &expected_rtl[..]);
+        test_breaking(sample, Direction::Rtl, &expected_rtl[..]);
     }
 }
