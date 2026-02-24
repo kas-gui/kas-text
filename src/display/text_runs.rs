@@ -34,6 +34,9 @@ impl TextDisplay {
     /// [Requires status][Self#status-of-preparation]: level runs have been
     /// prepared and are valid in all ways except size (`dpem`).
     ///
+    /// Parameters must match those passed to [`Self::prepare_runs`] for the
+    /// result to be valid.
+    ///
     /// This updates the result of [`TextDisplay::prepare_runs`] due to change
     /// in font size.
     pub fn resize_runs(&mut self, text: &str, mut font_tokens: impl Iterator<Item = FontToken>) {
@@ -145,7 +148,12 @@ impl TextDisplay {
     ///
     /// [Requires status][Self#status-of-preparation]: none.
     ///
-    /// Must be called again if any of `text`, `direction` or `font` change.
+    /// The `font_tokens` iterator must not be empty and the first token yielded
+    /// must have [`FontToken::start`] == 0. (Failure to do so will result in an
+    /// error on debug builds and usage of default values on release builds.)
+    ///
+    /// Must be called again if any of `text`, `direction` or `font_tokens`
+    /// change.
     /// If only `dpem` changes, [`Self::resize_runs`] may be called instead.
     ///
     /// The text is broken into a set of contiguous "level runs". These runs are
@@ -285,13 +293,8 @@ impl TextDisplay {
                 require_break = true;
             }
 
-            let mut new_script = None;
             if is_real(script) {
-                if first_real.is_none() {
-                    first_real = Some(c);
-                }
                 if script != input.script {
-                    new_script = Some(script);
                     require_break |= is_real(input.script);
                 }
             }
@@ -324,8 +327,22 @@ impl TextDisplay {
                 }
                 input.script = script;
                 breaks = Default::default();
-            } else if is_break && !is_control {
-                breaks.push(shaper::GlyphBreak::new(to_u32(index)));
+            } else {
+                if is_break && !is_control && index > start {
+                    breaks.push(shaper::GlyphBreak::new(to_u32(index)));
+                }
+
+                if input.script == Script::Unknown
+                    || matches!(input.script, Script::Common | Script::Inherited) && is_real(script)
+                {
+                    input.script = script;
+                }
+            }
+
+            if is_real(script) {
+                if first_real.is_none() {
+                    first_real = Some(c);
+                }
             }
 
             if let Some(token) = next_token.as_ref()
@@ -345,9 +362,6 @@ impl TextDisplay {
             last_is_control = is_control;
             last_is_htab = is_htab;
             emoji_start = new_emoji_start;
-            if let Some(script) = new_script {
-                input.script = script;
-            }
         }
 
         let hard_break = ends_with_hard_break(text);
@@ -538,5 +552,120 @@ impl EmojiState {
             };
         }
         b
+    }
+}
+
+/// Warning: test results may depend on system fonts
+#[cfg(test)]
+mod test {
+    use super::*;
+    use std::iter;
+    use std::ops::Range;
+    use unicode_bidi::Level;
+
+    type Expected<'a> = &'a [(Range<usize>, RunSpecial, Level, Script, &'a [u32])];
+
+    fn test_breaking(text: &str, dir: Direction, expected: Expected) {
+        let fonts = iter::once(FontToken {
+            start: 0,
+            dpem: 16.0,
+            font: Default::default(),
+        });
+
+        let mut display = TextDisplay::default();
+        assert!(display.prepare_runs(text, dir, fonts).is_ok());
+
+        for (i, (run, expected)) in display.runs.iter().zip(expected.iter()).enumerate() {
+            assert_eq!(
+                run.range.to_std(),
+                expected.0,
+                "text range for text \"{text}\", run {i}"
+            );
+            assert_eq!(
+                run.special, expected.1,
+                "RunSpecial for text \"{text}\", run {i}"
+            );
+            assert_eq!(run.level, expected.2, "for text \"{text}\", run {i}");
+            assert_eq!(run.script, expected.3, "for text \"{text}\", run {i}");
+            assert_eq!(
+                run.breaks.iter().map(|b| b.index).collect::<Vec<_>>(),
+                expected.4,
+                "wrap-points for text \"{text}\", run {i}"
+            );
+        }
+        assert_eq!(display.runs.len(), expected.len(), "number of runs");
+    }
+
+    #[test]
+    fn test_breaking_simple() {
+        let sample = "Layout demo 123";
+        test_breaking(
+            sample,
+            Direction::Auto,
+            &[(
+                0..sample.len(),
+                RunSpecial::None,
+                Level::ltr(),
+                Script::Latin,
+                &[7, 12],
+            )],
+        );
+    }
+
+    #[test]
+    fn test_breaking_bidi() {
+        let sample = "abc אבג def";
+        test_breaking(
+            sample,
+            Direction::Auto,
+            &[
+                (0..4, RunSpecial::None, Level::ltr(), Script::Latin, &[]),
+                (
+                    4..10,
+                    RunSpecial::NoBreak,
+                    Level::rtl(),
+                    Script::Hebrew,
+                    &[],
+                ),
+                (10..14, RunSpecial::None, Level::ltr(), Script::Latin, &[11]),
+            ],
+        );
+    }
+
+    #[test]
+    fn test_breaking_weak_bidi() {
+        let sample = "123 (1-2)";
+
+        let expected_ltr: Expected =
+            &[(0..9, RunSpecial::None, Level::ltr(), Script::Common, &[4])];
+        test_breaking(sample, Direction::Auto, &expected_ltr[..]);
+        test_breaking(sample, Direction::Ltr, &expected_ltr[..]);
+
+        let expected_rtl: Expected = &[
+            (
+                0..3,
+                RunSpecial::NoBreak,
+                Level::new(2).unwrap(),
+                Script::Common,
+                &[],
+            ),
+            (
+                3..5,
+                RunSpecial::NoBreak,
+                Level::rtl(),
+                Script::Common,
+                &[4],
+            ),
+            (
+                5..8,
+                RunSpecial::NoBreak,
+                Level::new(2).unwrap(),
+                Script::Common,
+                &[],
+            ),
+            (8..9, RunSpecial::None, Level::rtl(), Script::Common, &[]),
+        ];
+        test_breaking(sample, Direction::AutoRtl, &expected_rtl[..]);
+        test_breaking(sample, Direction::Rtl, &expected_rtl[..]);
     }
 }
