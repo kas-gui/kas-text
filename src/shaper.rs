@@ -544,4 +544,36 @@ mod test {
             )],
         );
     }
+
+    #[test]
+    fn test_shaping_bidi() {
+        let sample = "abc אבג def";
+        test_shaping(
+            sample,
+            Direction::Auto,
+            &[
+                (0..4, &[0, 1, 2, 3], &[]),
+                (4..10, &[8, 6, 4], &[]),
+                (10..14, &[10, 11, 12, 13], &[1]),
+            ],
+        );
+    }
+
+    #[test]
+    fn test_shaping_weak_bidi() {
+        let sample = "123 (1-2)";
+
+        let expected_ltr: Expected = &[(0..9, &[0, 1, 2, 3, 4, 5, 6, 7, 8], &[4])];
+        test_shaping(sample, Direction::Auto, &expected_ltr[..]);
+        test_shaping(sample, Direction::Ltr, &expected_ltr[..]);
+
+        let expected_rtl: Expected = &[
+            (0..3, &[0, 1, 2], &[]),
+            (3..5, &[4, 3], &[1]),
+            (5..8, &[5, 6, 7], &[]),
+            (8..9, &[8], &[]),
+        ];
+        test_shaping(sample, Direction::AutoRtl, &expected_rtl[..]);
+        test_shaping(sample, Direction::Rtl, &expected_rtl[..]);
+    }
 }
