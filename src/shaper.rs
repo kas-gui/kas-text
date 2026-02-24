@@ -489,3 +489,59 @@ fn shape_simple(
 
     (glyphs, no_space_end, caret)
 }
+
+/// Warning: test results may depend on system fonts
+///
+/// Tests are extensions of those in `display/text_runs.rs`.
+#[cfg(test)]
+mod test {
+    use crate::{Direction, TextDisplay, format::FontToken};
+    use std::iter;
+    use std::ops::Range;
+
+    type Expected<'a> = &'a [(Range<usize>, &'a [u32], &'a [u32])];
+
+    fn test_shaping(text: &str, dir: Direction, expected: Expected) {
+        let fonts = iter::once(FontToken {
+            start: 0,
+            dpem: 16.0,
+            font: Default::default(),
+        });
+
+        let mut display = TextDisplay::default();
+        assert!(display.prepare_runs(text, dir, fonts).is_ok());
+
+        for (i, (run, expected)) in display.raw_runs().iter().zip(expected.iter()).enumerate() {
+            assert_eq!(
+                run.range.to_std(),
+                expected.0,
+                "text range for text \"{text}\", run {i}"
+            );
+            assert_eq!(
+                run.glyphs.iter().map(|g| g.index).collect::<Vec<_>>(),
+                expected.1,
+                "glyph indices for text \"{text}\", run {i}"
+            );
+            assert_eq!(
+                run.breaks.iter().map(|b| b.gi).collect::<Vec<_>>(),
+                expected.2,
+                "glyph break indices for text \"{text}\", run {i}"
+            );
+        }
+        assert_eq!(display.raw_runs().len(), expected.len(), "number of runs");
+    }
+
+    #[test]
+    fn test_shaping_simple() {
+        let sample = "Layout demo 123";
+        test_shaping(
+            sample,
+            Direction::Auto,
+            &[(
+                0..sample.len(),
+                &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14],
+                &[7, 12],
+            )],
+        );
+    }
+}

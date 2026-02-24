@@ -326,4 +326,9 @@ impl TextDisplay {
 
         Some(best)
     }
+
+    #[cfg(test)]
+    pub(crate) fn raw_runs(&self) -> &[shaper::GlyphRun] {
+        &self.runs
+    }
 }
