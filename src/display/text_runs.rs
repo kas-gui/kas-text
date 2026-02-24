@@ -668,4 +668,52 @@ mod test {
         test_breaking(sample, Direction::AutoRtl, &expected_rtl[..]);
         test_breaking(sample, Direction::Rtl, &expected_rtl[..]);
     }
+
+    #[test]
+    fn test_breaking_rtl() {
+        // Additional tests for right-to-left languages: Hebrew, Arabic.
+        // Samples are translations of the first article of the UDHR from https://r12a.github.io/
+
+        let sample = "סעיף א. כל בני אדם נולדו בני חורין ושווים בערכם ובזכויותיהם. כולם חוננו בתבונה ובמצפון, לפיכך חובה עליהם לנהוג איש ברעהו ברוח של אחוה.";
+        test_breaking(
+            sample,
+            Direction::Auto,
+            &[(
+                0..sample.len(),
+                RunSpecial::None,
+                Level::rtl(),
+                Script::Hebrew,
+                &[
+                    232, 227, 218, 207, 200, 189, 178, 169, 158, 142, 129, 118, 109, 85, 74, 61,
+                    50, 43, 32, 25, 18, 13, 9,
+                ],
+            )],
+        );
+
+        let sample = "المادة 1 يولد جميع الناس أحرارًا متساوين في الكرامة والحقوق. وقد وهبوا عقلاً وضميرًا وعليهم أن يعامل بعضهم بعضًا بروح الإخاء.";
+        test_breaking(
+            sample,
+            Direction::Auto,
+            &[
+                (0..13, RunSpecial::None, Level::rtl(), Script::Arabic, &[]),
+                (
+                    13..14,
+                    RunSpecial::NoBreak,
+                    Level::new(2).unwrap(),
+                    Script::Common,
+                    &[],
+                ),
+                (
+                    14..sample.len(),
+                    RunSpecial::None,
+                    Level::rtl(),
+                    Script::Arabic,
+                    &[
+                        214, 205, 194, 183, 172, 167, 154, 139, 128, 117, 110, 94, 79, 74, 59, 44,
+                        33, 24, 15,
+                    ],
+                ),
+            ],
+        );
+    }
 }
