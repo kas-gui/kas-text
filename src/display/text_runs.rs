@@ -88,19 +88,20 @@ impl TextDisplay {
                 .expect("invalid FontId");
         }
 
-        let mut face = match face_id {
+        let preferred_face = match face_id {
             Some(id) => id,
             None => {
                 // We failed to find a font face for the run
                 fonts.first_face_for(font_id).expect("invalid FontId")
             }
         };
+        let mut face = preferred_face;
 
         let mut start = 0;
         for (index, c) in text.char_indices() {
             let index = to_u32(index);
             if let Some(new_face) = fonts
-                .face_for_char(font_id, Some(face), c)
+                .face_for_char(font_id, Some(preferred_face), c)
                 .expect("invalid FontId")
                 && new_face != face
             {
