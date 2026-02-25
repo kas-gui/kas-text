@@ -616,20 +616,43 @@ mod test {
 
     #[test]
     fn test_breaking_bidi() {
-        let sample = "abc אבג def";
+        let sample = "one אחת שתיים two";
         test_breaking(
             sample,
             Direction::Auto,
             &[
                 (0..4, RunSpecial::None, Level::ltr(), Script::Latin, &[]),
                 (
-                    4..10,
+                    4..21,
                     RunSpecial::NoBreak,
                     Level::rtl(),
                     Script::Hebrew,
-                    &[],
+                    &[11],
                 ),
-                (10..14, RunSpecial::None, Level::ltr(), Script::Latin, &[11]),
+                (21..25, RunSpecial::None, Level::ltr(), Script::Latin, &[22]),
+            ],
+        );
+
+        let sample = "אחת one two שתיים";
+        test_breaking(
+            sample,
+            Direction::Auto,
+            &[
+                (0..7, RunSpecial::None, Level::rtl(), Script::Hebrew, &[]),
+                (
+                    7..14,
+                    RunSpecial::NoBreak,
+                    Level::new(2).unwrap(),
+                    Script::Latin,
+                    &[11],
+                ),
+                (
+                    14..25,
+                    RunSpecial::None,
+                    Level::rtl(),
+                    Script::Hebrew,
+                    &[15],
+                ),
             ],
         );
     }
