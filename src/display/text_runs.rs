@@ -115,7 +115,14 @@ impl TextDisplay {
                             j = i + 1;
                         }
                     }
-                    let rest = breaks.split_off(j);
+                    let mut rest = breaks.split_off(j);
+                    if rest
+                        .first()
+                        .map(|b| b.index == sub_range.end)
+                        .unwrap_or(false)
+                    {
+                        rest.remove(0);
+                    }
 
                     self.runs.push(shaper::shape(
                         input,
@@ -762,7 +769,7 @@ mod test {
                     RunSpecial::NoBreak,
                     Level::rtl(),
                     Script::Arabic,
-                    &[39],
+                    &[],
                 ),
                 (
                     42..54,
@@ -783,7 +790,7 @@ mod test {
                     RunSpecial::NoBreak,
                     Level::new(2).unwrap(),
                     Script::Common,
-                    &[55],
+                    &[],
                 ),
                 (
                     58..196,
@@ -797,7 +804,7 @@ mod test {
                     RunSpecial::NoBreak,
                     Level::rtl(),
                     Script::Arabic,
-                    &[196],
+                    &[],
                 ),
                 (
                     197..215,
