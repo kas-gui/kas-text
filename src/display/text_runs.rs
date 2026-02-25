@@ -741,4 +741,132 @@ mod test {
             ],
         );
     }
+
+    #[test]
+    fn test_breaking_complex_arabic() {
+        // Another, more complex, Arabic sample. Source: https://r12a.github.io/scripts/tutorial/summaries/arabic
+        let sample = " عندما يريد العالم أن ‪يتكلّم ‬ ، فهو يتحدّث بلغة يونيكود. تسجّل الآن لحضور المؤتمر الدولي العاشر ليونيكود (Unicode Conference)، الذي سيعقد في 10-12 آذار 1997 بمدينة مَايِنْتْس، ألمانيا. و سيجمع المؤتمر بين خبراء من كافة قطاعات الصناعة على الشبكة العالمية انترنيت ويونيكود، حيث ستتم، على الصعيدين الدولي والمحلي على حد سواء مناقشة سبل استخدام يونكود في النظم القائمة وفيما يخص التطبيقات الحاسوبية، الخطوط، تصميم النصوص والحوسبة متعددة اللغات.";
+        test_breaking(
+            sample,
+            Direction::Auto,
+            &[
+                (
+                    0..39,
+                    RunSpecial::NoBreak,
+                    Level::rtl(),
+                    Script::Arabic,
+                    &[1, 12, 21, 34],
+                ),
+                (
+                    39..42,
+                    RunSpecial::NoBreak,
+                    Level::rtl(),
+                    Script::Arabic,
+                    &[39],
+                ),
+                (
+                    42..54,
+                    RunSpecial::NoBreak,
+                    Level::new(3).unwrap(),
+                    Script::Arabic,
+                    &[],
+                ),
+                (
+                    54..55,
+                    RunSpecial::NoBreak,
+                    Level::new(2).unwrap(),
+                    Script::Common,
+                    &[],
+                ),
+                (
+                    55..58,
+                    RunSpecial::NoBreak,
+                    Level::new(2).unwrap(),
+                    Script::Common,
+                    &[55],
+                ),
+                (
+                    58..196,
+                    RunSpecial::NoBreak,
+                    Level::rtl(),
+                    Script::Arabic,
+                    &[62, 69, 82, 91, 107, 118, 127, 138, 153, 166, 179],
+                ),
+                (
+                    196..197,
+                    RunSpecial::NoBreak,
+                    Level::rtl(),
+                    Script::Arabic,
+                    &[196],
+                ),
+                (
+                    197..215,
+                    RunSpecial::NoBreak,
+                    Level::new(2).unwrap(),
+                    Script::Latin,
+                    &[205],
+                ),
+                (
+                    215..216,
+                    RunSpecial::NoBreak,
+                    Level::rtl(),
+                    Script::Arabic,
+                    &[],
+                ),
+                (
+                    216..244,
+                    RunSpecial::None,
+                    Level::rtl(),
+                    Script::Arabic,
+                    &[219, 228, 239],
+                ),
+                (
+                    244..246,
+                    RunSpecial::NoBreak,
+                    Level::new(2).unwrap(),
+                    Script::Common,
+                    &[],
+                ),
+                (
+                    246..247,
+                    RunSpecial::NoBreak,
+                    Level::rtl(),
+                    Script::Common,
+                    &[],
+                ),
+                (
+                    247..249,
+                    RunSpecial::NoBreak,
+                    Level::new(2).unwrap(),
+                    Script::Common,
+                    &[],
+                ),
+                (
+                    249..259,
+                    RunSpecial::None,
+                    Level::rtl(),
+                    Script::Arabic,
+                    &[250],
+                ),
+                (
+                    259..263,
+                    RunSpecial::NoBreak,
+                    Level::new(2).unwrap(),
+                    Script::Common,
+                    &[],
+                ),
+                (
+                    263..sample.len(),
+                    RunSpecial::None,
+                    Level::rtl(),
+                    Script::Arabic,
+                    &[
+                        264, 277, 300, 316, 319, 330, 345, 352, 363, 368, 377, 390, 405, 412, 425,
+                        442, 457, 476, 483, 494, 501, 518, 531, 546, 553, 558, 567, 580, 587, 602,
+                        615, 620, 631, 646, 657, 664, 683, 704, 719, 730, 743, 760, 773,
+                    ],
+                ),
+            ],
+        );
+    }
 }
