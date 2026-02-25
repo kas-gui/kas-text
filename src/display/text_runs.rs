@@ -11,8 +11,11 @@ use crate::fonts::{self, FaceId, FontSelector, NoFontMatch};
 use crate::format::FontToken;
 use crate::util::ends_with_hard_break;
 use crate::{Direction, Range, shaper};
-use icu_properties::props::{EmojiModifier, EmojiPresentation, RegionalIndicator, Script};
-use icu_properties::{CodePointMapData, CodePointSetData};
+use icu_properties::CodePointMapData;
+use icu_properties::props::{
+    BinaryProperty, DefaultIgnorableCodePoint, EmojiModifier, EmojiPresentation, RegionalIndicator,
+    Script,
+};
 use icu_segmenter::LineSegmenter;
 use std::sync::OnceLock;
 use unicode_bidi::{BidiInfo, LTR_LEVEL, RTL_LEVEL};
@@ -99,12 +102,16 @@ impl TextDisplay {
 
         let mut start = 0;
         for (index, c) in text.char_indices() {
-            let index = to_u32(index);
+            if DefaultIgnorableCodePoint::for_char(c) {
+                continue;
+            }
+
             if let Some(new_face) = fonts
                 .face_for_char(font_id, Some(preferred_face), c)
                 .expect("invalid FontId")
                 && new_face != face
             {
+                let index = to_u32(index);
                 if index > start {
                     let sub_range = Range {
                         start: range.start + start,
@@ -486,10 +493,10 @@ impl EmojiState {
         let mut b = EmojiBreak::None;
         *self = match *self {
             EmojiState::None => {
-                if CodePointSetData::new::<RegionalIndicator>().contains(c) {
+                if RegionalIndicator::for_char(c) {
                     b = EmojiBreak::Start;
                     EmojiState::RI1
-                } else if CodePointSetData::new::<EmojiPresentation>().contains(c) {
+                } else if EmojiPresentation::for_char(c) {
                     b = EmojiBreak::Start;
                     EmojiState::Emoji
                 } else {
@@ -497,7 +504,7 @@ impl EmojiState {
                 }
             }
             EmojiState::RI1 => {
-                if CodePointSetData::new::<RegionalIndicator>().contains(c) {
+                if RegionalIndicator::for_char(c) {
                     b = EmojiBreak::Prohibit;
                     EmojiState::RI2
                 } else {
@@ -507,7 +514,7 @@ impl EmojiState {
             }
             EmojiState::RI2 => end_unless_ZWJ(c, &mut b),
             EmojiState::Emoji => {
-                if CodePointSetData::new::<EmojiModifier>().contains(c) {
+                if EmojiModifier::for_char(c) {
                     EmojiState::EMod
                 } else if c == '\u{FE0F}' {
                     EmojiState::VarSelector
@@ -540,9 +547,9 @@ impl EmojiState {
                 }
             }
             EmojiState::ZWJ => {
-                if CodePointSetData::new::<RegionalIndicator>().contains(c) {
+                if RegionalIndicator::for_char(c) {
                     EmojiState::RI1
-                } else if CodePointSetData::new::<EmojiPresentation>().contains(c) {
+                } else if EmojiPresentation::for_char(c) {
                     EmojiState::Emoji
                 } else {
                     b = EmojiBreak::Error;
@@ -551,10 +558,10 @@ impl EmojiState {
             }
         };
         if b == EmojiBreak::End {
-            *self = if CodePointSetData::new::<RegionalIndicator>().contains(c) {
+            *self = if RegionalIndicator::for_char(c) {
                 b = EmojiBreak::Restart;
                 EmojiState::RI1
-            } else if CodePointSetData::new::<EmojiPresentation>().contains(c) {
+            } else if EmojiPresentation::for_char(c) {
                 b = EmojiBreak::Restart;
                 EmojiState::Emoji
             } else {
@@ -759,18 +766,11 @@ mod test {
             Direction::Auto,
             &[
                 (
-                    0..39,
+                    0..42,
                     RunSpecial::NoBreak,
                     Level::rtl(),
                     Script::Arabic,
-                    &[1, 12, 21, 34],
-                ),
-                (
-                    39..42,
-                    RunSpecial::NoBreak,
-                    Level::rtl(),
-                    Script::Arabic,
-                    &[],
+                    &[1, 12, 21, 34, 39],
                 ),
                 (
                     42..54,
@@ -780,18 +780,11 @@ mod test {
                     &[],
                 ),
                 (
-                    54..55,
+                    54..58,
                     RunSpecial::NoBreak,
                     Level::new(2).unwrap(),
                     Script::Common,
-                    &[],
-                ),
-                (
-                    55..58,
-                    RunSpecial::NoBreak,
-                    Level::new(2).unwrap(),
-                    Script::Common,
-                    &[],
+                    &[55],
                 ),
                 (
                     58..196,
@@ -801,6 +794,8 @@ mod test {
                     &[62, 69, 82, 91, 107, 118, 127, 138, 153, 166, 179],
                 ),
                 (
+                    // Note that this break occurs due to font fallback where
+                    // the Arabic font doesn't contain a (round) bracket.
                     196..197,
                     RunSpecial::NoBreak,
                     Level::rtl(),
@@ -815,6 +810,8 @@ mod test {
                     &[205],
                 ),
                 (
+                    // Note that this break occurs due to font fallback where
+                    // the Arabic font doesn't contain a (round) bracket.
                     215..216,
                     RunSpecial::NoBreak,
                     Level::rtl(),
