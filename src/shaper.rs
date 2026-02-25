@@ -130,20 +130,23 @@ impl GlyphRun {
     /// Parts are identified in logical order with end index up to
     /// `self.num_parts()`.
     pub fn part_lengths(&self, range: std::ops::Range<usize>) -> PartMetrics {
-        // TODO: maybe we should adjust self.breaks to clean this up?
         assert!(range.start <= range.end);
 
         let mut part = PartMetrics::default();
+        if range.is_empty() {
+            return part;
+        }
+
         if self.level.is_ltr() {
-            if range.end > 0 {
-                part.len_no_space = self.no_space_end;
-                part.len = self.caret;
-                if range.end <= self.breaks.len() {
-                    let b = self.breaks[range.end - 1];
-                    part.len_no_space = b.no_space_end;
-                    if to_usize(b.gi) < self.glyphs.len() {
-                        part.len = self.glyphs[to_usize(b.gi)].position.0
-                    }
+            part.len_no_space = self.no_space_end;
+            part.len = self.caret;
+            if range.end <= self.breaks.len() {
+                let b = self.breaks[range.end - 1];
+                part.len_no_space = b.no_space_end;
+                if to_usize(b.gi) < self.glyphs.len() {
+                    part.len = self.glyphs[to_usize(b.gi)].position.0
+                } else {
+                    debug_assert!(false);
                 }
             }
 
@@ -154,33 +157,35 @@ impl GlyphRun {
                 part.len -= part.offset;
             }
         } else {
-            if range.start <= self.breaks.len() {
-                part.len = self.caret;
-                if range.start > 0 {
-                    let b = range.start - 1;
-                    let gi = to_usize(self.breaks[b].gi);
-                    if gi > 0 {
-                        part.len = self.glyphs[gi - 1].position.0;
-                    }
+            part.len = self.caret;
+            if range.start > 0 {
+                let gi = to_usize(self.breaks[range.start - 1].gi);
+                if gi > 0 {
+                    part.len = self.glyphs[gi - 1].position.0;
+                } else {
+                    debug_assert!(false);
                 }
-                part.len_no_space = part.len;
             }
+            part.len_no_space = part.len;
+
             if range.end <= self.breaks.len() {
                 part.offset = self.caret;
-                if range.end == 0 {
-                    part.len_no_space = 0.0;
+                debug_assert!(range.end > 0);
+                let b = self.breaks[range.end - 1];
+                part.len_no_space -= b.no_space_end;
+                if b.gi > 0 {
+                    part.offset = self.glyphs[to_usize(b.gi) - 1].position.0;
                 } else {
-                    let b = range.end - 1;
-                    let b = self.breaks[b];
-                    part.len_no_space -= b.no_space_end;
-                    if b.gi > 0 {
-                        part.offset = self.glyphs[to_usize(b.gi) - 1].position.0;
-                    }
+                    debug_assert!(false);
                 }
                 part.len -= part.offset;
             }
         }
 
+        debug_assert!(
+            part.len_no_space <= part.len,
+            "{part:?} for {range:?} in {self:?}"
+        );
         part
     }
 
@@ -243,14 +248,16 @@ pub(crate) fn shape(
     special: RunSpecial,
 ) -> GlyphRun {
     /*
-    print!("shape[{:?}]:\t", special);
+    eprint!("shape[{} breaks, {:?}]:\t", breaks.len(), special);
     let mut start = range.start();
     for b in &breaks {
-        print!("\"{}\" ", &text[start..(b.index as usize)]);
+        eprint!("\"{}\" ", &input.text[start..(b.index as usize)]);
         start = b.index as usize;
     }
-    println!("\"{}\"", &text[start..range.end()]);
+    eprintln!("\"{}\"", &input.text[start..range.end()]);
     */
+
+    debug_assert!(breaks.iter().all(|b| b.index > 0));
 
     if input.level.is_rtl() {
         // Breaks must be reversed for shaping; they are reversed again after
@@ -307,6 +314,7 @@ pub(crate) fn shape(
     }
 
     debug_assert!(glyphs.iter().is_sorted_by_key(|g| g.index));
+    debug_assert!(breaks.iter().all(|b| b.gi > 0));
 
     GlyphRun {
         range,
