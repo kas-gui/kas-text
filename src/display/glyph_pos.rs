@@ -159,6 +159,8 @@ impl<'a, E: Copy + Default> GlyphRun<'a, E> {
 
     /// Get an iterator over glyphs for this run
     ///
+    /// Glyphs are yielded in unspecified order.
+    ///
     /// This method ignores effects; if you want those call
     /// [`Self::glyphs_with_effects`] instead.
     pub fn glyphs(&self) -> impl Iterator<Item = Glyph> + '_ {
@@ -178,14 +180,13 @@ impl<'a, E: Copy + Default> GlyphRun<'a, E> {
     ///
     /// The callback `g` is called for sub-ranges of glyphs with parameters
     /// `(p, x2, effect)`; `p.0` and `x2` are the x-axis positions of the left
-    /// and right edges of this sub-range respectively while `x.1` is the
+    /// and right edges of this sub-range respectively while `p.1` is the
     /// vertical position of glyphs (the baseline). This may be combined with
     /// information from [`Self::scaled_face`] to draw underline, strike-through
     /// and background effects.
     ///
     /// Note: this is more computationally expensive than [`GlyphRun::glyphs`],
-    /// so you may prefer to call that. Optionally one may choose to cache the
-    /// result, though this is not really necessary.
+    /// so prefer the former method when callback `g` is not required.
     pub fn glyphs_with_effects<F, G>(&self, mut f: F, mut g: G)
     where
         F: FnMut(Glyph, E),
@@ -193,22 +194,17 @@ impl<'a, E: Copy + Default> GlyphRun<'a, E> {
     {
         let ltr = self.run.level.is_ltr();
 
-        let mut effect_cur = usize::MAX;
+        let mut effect = E::default();
         let mut effect_next = 0;
 
-        let range = self.range.to_std();
-        let i_left = if ltr { range.start } else { range.end - 1 };
-
-        // We iterate in left-to-right order regardless of text direction.
-        // Start by finding the effect applicable to the left-most glyph.
-        let left_index = self.run.glyphs[i_left].index;
+        let first_index = self.run.glyphs[self.range.start()].index;
         while self
             .effects
             .get(effect_next)
-            .map(|e| e.0 <= left_index)
+            .map(|e| e.0 <= first_index)
             .unwrap_or(false)
         {
-            effect_cur = effect_next;
+            effect = self.effects[effect_next].1;
             effect_next += 1;
         }
 
@@ -218,89 +214,62 @@ impl<'a, E: Copy + Default> GlyphRun<'a, E> {
             .map(|e| e.0)
             .unwrap_or(u32::MAX);
 
-        let mut fmt = self
-            .effects
-            .get(effect_cur)
-            .cloned()
-            .unwrap_or((0, E::default()));
+        let Vec2(mut a, mut y) = self.run.glyphs[self.range.start()].position + self.offset;
+        if !ltr {
+            a = if self.range.start > 0 {
+                self.run.glyphs[self.range.start() - 1].position.0
+            } else {
+                self.run.caret
+            } + self.offset.0;
+        }
+        let mut b = a;
 
-        // In case an effect applies to the left-most glyph, it starts from that
-        // glyph's x coordinate.
-        let mut range_start = self.run.glyphs[i_left].position + self.offset;
+        // Iterate over glyphs in logical order.
+        for mut glyph in self.run.glyphs[self.range.to_std()].iter().cloned() {
+            glyph.position += self.offset;
 
-        if ltr {
-            // Iterate over glyphs in left-to-right order.
-            for mut glyph in self.run.glyphs[range].iter().cloned() {
-                glyph.position += self.offset;
+            // Does the effect change?
+            if next_start <= glyph.index {
+                let (x1, x2) = if ltr { (a, glyph.position.0) } else { (b, a) };
+                g(Vec2(x1, y), x2, effect);
 
-                // Does the effect change?
-                if next_start <= glyph.index {
-                    let x2 = glyph.position.0;
-                    g(range_start, x2, fmt.1);
+                // Find the next active effect
+                effect = self
+                    .effects
+                    .get(effect_next)
+                    .map(|e| e.1)
+                    .unwrap_or(E::default());
+                effect_next += 1;
+                next_start = self
+                    .effects
+                    .get(effect_next)
+                    .map(|e| e.0)
+                    .inspect(|start| debug_assert!(*start > glyph.index))
+                    .unwrap_or(u32::MAX);
 
-                    // Find the next active effect
-                    effect_cur = effect_next;
-                    effect_next += 1;
-                    next_start = self
-                        .effects
-                        .get(effect_next)
-                        .map(|e| e.0)
-                        .inspect(|start| debug_assert!(*start > glyph.index))
-                        .unwrap_or(u32::MAX);
-
-                    fmt = self
-                        .effects
-                        .get(effect_cur)
-                        .cloned()
-                        .unwrap_or((0, E::default()));
-
-                    range_start = glyph.position;
-                }
-
-                f(glyph, fmt.1);
+                a = if ltr { glyph.position.0 } else { b };
+                y = glyph.position.1;
             }
-        } else {
-            // Also iterate in LTR order (TODO)
-            for mut glyph in self.run.glyphs[range].iter().cloned().rev() {
-                glyph.position += self.offset;
 
-                // Does the effect change?
-                if fmt.0 > glyph.index {
-                    let x2 = glyph.position.0;
-                    g(range_start, x2, fmt.1);
-
-                    // Find the previous active effect
-                    effect_cur = effect_cur.wrapping_sub(1);
-                    debug_assert!(
-                        self.effects.get(effect_cur).map(|e| e.0).unwrap_or(0) <= glyph.index
-                    );
-
-                    fmt = self
-                        .effects
-                        .get(effect_cur)
-                        .cloned()
-                        .unwrap_or((0, E::default()));
-
-                    range_start = glyph.position;
-                }
-
-                f(glyph, fmt.1);
-            }
+            f(glyph, effect);
+            b = glyph.position.0;
         }
 
         // Effects end at the following glyph's start (or end of this run part)
-        let range = self.range.to_std();
-        let i_right = if ltr {
-            range.end
+        let (x1, x2) = if ltr && self.range.end() < self.run.glyphs.len() {
+            (
+                a,
+                self.run.glyphs[self.range.end()].position.0 + self.offset.0,
+            )
+        } else if ltr {
+            (a, self.run.caret + self.offset.0)
         } else {
-            range.start.wrapping_sub(1)
+            (
+                self.run.glyphs[self.range.end() - 1].position.0 + self.offset.0,
+                a,
+            )
         };
-        let x2 = if i_right < self.run.glyphs.len() {
-            self.run.glyphs[i_right].position.0
-        } else {
-            self.run.caret
-        } + self.offset.0;
-        g(range_start, x2, fmt.1);
+        g(Vec2(x1, y), x2, effect);
     }
 }
 
