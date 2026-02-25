@@ -299,13 +299,18 @@ impl TextDisplay {
             let glyph_run = &self.runs[to_usize(run_part.glyph_run)];
             let rel_pos = x - run_part.offset.0;
 
-            let end_index;
             if glyph_run.level.is_ltr() {
                 for glyph in &glyph_run.glyphs[run_part.glyph_range.to_std()] {
                     let dist = (glyph.position.0 - rel_pos).abs();
                     try_best(dist, glyph.index);
                 }
-                end_index = run_part.text_end;
+
+                let end_pos = if run_part.glyph_range.end() < glyph_run.glyphs.len() {
+                    glyph_run.glyphs[run_part.glyph_range.end()].position.0
+                } else {
+                    glyph_run.caret
+                };
+                try_best((end_pos - rel_pos).abs(), run_part.text_end);
             } else {
                 let mut index = run_part.text_end;
                 for glyph in glyph_run.glyphs[run_part.glyph_range.to_std()].iter().rev() {
@@ -313,15 +318,16 @@ impl TextDisplay {
                     try_best(dist, index);
                     index = glyph.index
                 }
-                end_index = index;
-            }
 
-            let end_pos = if run_part.glyph_range.end() < glyph_run.glyphs.len() {
-                glyph_run.glyphs[run_part.glyph_range.end()].position.0
-            } else {
-                glyph_run.caret
-            };
-            try_best((end_pos - rel_pos).abs(), end_index);
+                let end_pos = if run_part.glyph_range.start() > 0 {
+                    glyph_run.glyphs[run_part.glyph_range.start() - 1]
+                        .position
+                        .0
+                } else {
+                    glyph_run.caret
+                };
+                try_best((end_pos - rel_pos).abs(), index);
+            }
         }
 
         Some(best)

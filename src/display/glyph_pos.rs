@@ -320,9 +320,11 @@ impl TextDisplay {
 
             // If index is at the end of a run, we potentially get two matches.
             if index == to_usize(run_part.text_end) {
-                let i = run_part.glyph_range.end();
-                let pos = if i < glyph_run.glyphs.len() {
-                    glyph_run.glyphs[i].position
+                let end = run_part.glyph_range.end();
+                let pos = if glyph_run.level.is_rtl() && end > 0 {
+                    glyph_run.glyphs[end - 1].position
+                } else if glyph_run.level.is_ltr() && end < glyph_run.glyphs.len() {
+                    glyph_run.glyphs[end].position
                 } else {
                     // NOTE: for RTL we only hit this case if glyphs.len() == 0
                     Vec2(glyph_run.caret, 0.0)
@@ -335,13 +337,24 @@ impl TextDisplay {
 
             // else: index < to_usize(run_part.text_end)
             let pos = 'b: {
-                for glyph in glyph_run.glyphs[run_part.glyph_range.to_std()].iter().rev() {
-                    if to_usize(glyph.index) <= index {
-                        let mut pos = glyph.position;
-                        if glyph_run.level.is_rtl() {
-                            pos.0 += sf.h_advance(glyph.id);
+                if glyph_run.level.is_ltr() {
+                    for glyph in glyph_run.glyphs[run_part.glyph_range.to_std()].iter() {
+                        if to_usize(glyph.index) >= index {
+                            break 'b glyph.position;
                         }
-                        break 'b pos;
+                    }
+                } else {
+                    let start = run_part.glyph_range.start();
+                    let mut x = if start > 0 {
+                        glyph_run.glyphs[start - 1].position.0
+                    } else {
+                        glyph_run.caret
+                    };
+                    for glyph in glyph_run.glyphs[run_part.glyph_range.to_std()].iter() {
+                        if to_usize(glyph.index) >= index {
+                            break 'b Vec2(x, glyph.position.1);
+                        }
+                        x = glyph.position.0;
                     }
                 }
                 break 'a;
