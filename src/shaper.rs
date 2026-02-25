@@ -159,9 +159,8 @@ impl GlyphRun {
                 if range.start > 0 {
                     let b = range.start - 1;
                     let gi = to_usize(self.breaks[b].gi);
-                    if gi < self.glyphs.len() {
-                        let len = self.glyphs.len();
-                        part.len = self.glyphs[len - gi - 1].position.0;
+                    if gi > 0 {
+                        part.len = self.glyphs[gi - 1].position.0;
                     }
                 }
                 part.len_no_space = part.len;
@@ -174,9 +173,8 @@ impl GlyphRun {
                     let b = range.end - 1;
                     let b = self.breaks[b];
                     part.len_no_space -= b.no_space_end;
-                    if to_usize(b.gi) < self.glyphs.len() {
-                        let len = self.glyphs.len();
-                        part.offset = self.glyphs[len - 1 - to_usize(b.gi)].position.0;
+                    if b.gi > 0 {
+                        part.offset = self.glyphs[to_usize(b.gi) - 1].position.0;
                     }
                 }
                 part.len -= part.offset;
@@ -208,7 +206,7 @@ impl GlyphRun {
                 if part == 0 {
                     0
                 } else if part <= self.breaks.len() {
-                    self.glyphs.len() - to_usize(self.breaks[part - 1].gi)
+                    to_usize(self.breaks[part - 1].gi)
                 } else {
                     debug_assert_eq!(part, self.breaks.len() + 1);
                     self.glyphs.len()
@@ -288,12 +286,10 @@ pub(crate) fn shape(
         let side_bearing = |id: Option<GlyphId>| id.map(|id| sf.h_side_bearing(id)).unwrap_or(0.0);
         glyphs.reverse();
         for (gi, glyph) in glyphs.iter().enumerate() {
-            let gi = glyphs.len() - gi - 1;
             if let Some(b) = breaks.get_mut(break_i)
-                && to_usize(b.gi) == gi
+                && to_usize(b.gi) == glyphs.len() - gi - 1
             {
-                assert!(gi < glyphs.len());
-                b.gi = to_u32(gi) + 1;
+                b.gi = to_u32(gi);
                 b.no_space_end = start_no_space - side_bearing(last_id);
                 break_i += 1;
             }
@@ -603,9 +599,10 @@ mod test {
             207, 209, 211, 213, 215, 217, 218, 220, 222, 224, 226, 227, 229, 231, 232, 234, 236,
             238, 240,
         ];
+        // Checked: using break_gi indices in glyphs yields the break indices from the text_runs test
         let break_gi = [
-            129, 126, 123, 119, 115, 109, 105, 99, 92, 86, 73, 68, 62, 55, 46, 40, 35, 29, 23, 19,
-            13, 8, 5,
+            5, 8, 11, 15, 19, 25, 29, 35, 42, 48, 61, 66, 72, 79, 88, 94, 99, 105, 111, 115, 121,
+            126, 129,
         ];
         test_shaping(
             sample,
@@ -641,11 +638,11 @@ mod test {
         ];
         #[cfg(not(feature = "shaping"))]
         let break_gi_2 = [
-            116, 111, 106, 100, 92, 84, 81, 73, 64, 60, 54, 48, 40, 33, 30, 24, 18, 12, 7,
+            1, 6, 11, 17, 25, 33, 36, 44, 53, 57, 63, 69, 77, 84, 87, 93, 99, 105, 110,
         ];
         #[cfg(feature = "shaping")]
         let break_gi_2 = [
-            144, 138, 132, 124, 116, 104, 100, 91, 80, 75, 68, 61, 51, 42, 37, 30, 22, 14, 9,
+            2, 8, 14, 22, 30, 42, 46, 55, 66, 71, 78, 85, 95, 104, 109, 116, 124, 132, 137,
         ];
         test_shaping(
             sample,
