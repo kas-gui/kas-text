@@ -294,7 +294,7 @@ pub(crate) fn shape(
         glyphs.reverse();
         for (gi, glyph) in glyphs.iter().enumerate() {
             if let Some(b) = breaks.get_mut(break_i)
-                && to_usize(b.gi) == glyphs.len() - gi - 1
+                && b.index == glyph.index
             {
                 b.gi = to_u32(gi);
                 b.no_space_end = start_no_space - side_bearing(last_id);
@@ -310,11 +310,18 @@ pub(crate) fn shape(
                 start_no_space = glyph.position.0;
             }
         }
+        debug_assert_eq!(break_i, breaks.len());
         no_space_end = start_no_space - side_bearing(last_id);
     }
 
-    debug_assert!(glyphs.iter().is_sorted_by_key(|g| g.index));
-    debug_assert!(breaks.iter().all(|b| b.gi > 0));
+    #[cfg(debug_assertions)]
+    {
+        debug_assert!(glyphs.iter().is_sorted_by_key(|g| g.index));
+        debug_assert!(breaks.iter().all(|b| b.gi > 0));
+        for b in &breaks {
+            assert_eq!(b.index, glyphs[to_usize(b.gi)].index);
+        }
+    }
 
     GlyphRun {
         range,
@@ -661,7 +668,7 @@ mod test {
         ];
         #[cfg(feature = "shaping")]
         let break_gi_2 = [
-            2, 8, 14, 22, 30, 42, 46, 55, 66, 71, 78, 85, 95, 104, 109, 116, 124, 132, 137,
+            1, 7, 14, 21, 30, 41, 46, 55, 66, 71, 78, 85, 95, 103, 108, 115, 123, 131, 137,
         ];
         test_shaping(
             sample,
