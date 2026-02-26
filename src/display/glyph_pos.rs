@@ -304,7 +304,7 @@ impl TextDisplay {
                 descent,
                 level,
             };
-            b += 1;
+            b = 1;
         };
 
         // We don't care too much about performance: use a naive search strategy
