@@ -14,6 +14,7 @@
 //! [`format`]: mod@format
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
+#![allow(text_direction_codepoint_in_literal)]
 
 mod env;
 pub use env::*;

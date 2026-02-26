@@ -103,7 +103,7 @@ pub(crate) struct GlyphRun {
 
     /// Sequence of all glyphs, in left-to-right order
     pub glyphs: Vec<Glyph>,
-    /// All soft-breaks within this run, in left-to-right order
+    /// All soft-breaks within this run, in logical order
     ///
     /// Note: it would be equivalent to use a separate `Run` for each sub-range
     /// in the text instead of tracking breaks via this field.
@@ -130,20 +130,23 @@ impl GlyphRun {
     /// Parts are identified in logical order with end index up to
     /// `self.num_parts()`.
     pub fn part_lengths(&self, range: std::ops::Range<usize>) -> PartMetrics {
-        // TODO: maybe we should adjust self.breaks to clean this up?
         assert!(range.start <= range.end);
 
         let mut part = PartMetrics::default();
+        if range.is_empty() {
+            return part;
+        }
+
         if self.level.is_ltr() {
-            if range.end > 0 {
-                part.len_no_space = self.no_space_end;
-                part.len = self.caret;
-                if range.end <= self.breaks.len() {
-                    let b = self.breaks[range.end - 1];
-                    part.len_no_space = b.no_space_end;
-                    if to_usize(b.gi) < self.glyphs.len() {
-                        part.len = self.glyphs[to_usize(b.gi)].position.0
-                    }
+            part.len_no_space = self.no_space_end;
+            part.len = self.caret;
+            if range.end <= self.breaks.len() {
+                let b = self.breaks[range.end - 1];
+                part.len_no_space = b.no_space_end;
+                if to_usize(b.gi) < self.glyphs.len() {
+                    part.len = self.glyphs[to_usize(b.gi)].position.0
+                } else {
+                    debug_assert!(false);
                 }
             }
 
@@ -154,67 +157,71 @@ impl GlyphRun {
                 part.len -= part.offset;
             }
         } else {
-            if range.start <= self.breaks.len() {
-                part.len = self.caret;
-                if range.start > 0 {
-                    let b = self.breaks.len() - range.start;
-                    let gi = to_usize(self.breaks[b].gi);
-                    if gi < self.glyphs.len() {
-                        part.len = self.glyphs[gi].position.0;
-                    }
+            part.len = self.caret;
+            if range.start > 0 {
+                let gi = to_usize(self.breaks[range.start - 1].gi);
+                if gi > 0 {
+                    part.len = self.glyphs[gi - 1].position.0;
+                } else {
+                    debug_assert!(false);
                 }
-                part.len_no_space = part.len;
             }
+            part.len_no_space = part.len;
+
             if range.end <= self.breaks.len() {
                 part.offset = self.caret;
-                if range.end == 0 {
-                    part.len_no_space = 0.0;
+                debug_assert!(range.end > 0);
+                let b = self.breaks[range.end - 1];
+                part.len_no_space -= b.no_space_end;
+                if b.gi > 0 {
+                    part.offset = self.glyphs[to_usize(b.gi) - 1].position.0;
                 } else {
-                    let b = self.breaks.len() - range.end;
-                    let b = self.breaks[b];
-                    part.len_no_space -= b.no_space_end;
-                    if to_usize(b.gi) < self.glyphs.len() {
-                        part.offset = self.glyphs[to_usize(b.gi)].position.0;
-                    }
+                    debug_assert!(false);
                 }
                 part.len -= part.offset;
             }
         }
 
+        debug_assert!(
+            part.len_no_space <= part.len,
+            "{part:?} for {range:?} in {self:?}"
+        );
         part
     }
 
     /// Get glyph index from part index
     pub fn to_glyph_range(&self, range: std::ops::Range<usize>) -> Range {
-        let mut start = range.start;
-        let mut end = range.end;
+        if self.level.is_ltr() {
+            let map = |part: usize| {
+                if part == 0 {
+                    0
+                } else if part <= self.breaks.len() {
+                    to_usize(self.breaks[part - 1].gi)
+                } else {
+                    debug_assert_eq!(part, self.breaks.len() + 1);
+                    self.glyphs.len()
+                }
+            };
 
-        let rtl = self.level.is_rtl();
-        if rtl {
-            let num_parts = self.num_parts();
-            start = num_parts - start;
-            end = num_parts - end;
+            let start = map(range.start);
+            let end = map(range.end);
+            Range::from(start..end)
+        } else {
+            let map = |part: usize| {
+                if part == 0 {
+                    0
+                } else if part <= self.breaks.len() {
+                    to_usize(self.breaks[part - 1].gi)
+                } else {
+                    debug_assert_eq!(part, self.breaks.len() + 1);
+                    self.glyphs.len()
+                }
+            };
+
+            let start = map(range.start);
+            let end = map(range.end);
+            Range::from(start..end)
         }
-
-        let map = |part: usize| {
-            if part == 0 {
-                0
-            } else if part <= self.breaks.len() {
-                to_usize(self.breaks[part - 1].gi)
-            } else {
-                debug_assert_eq!(part, self.breaks.len() + 1);
-                self.glyphs.len()
-            }
-        };
-
-        let mut start = map(start);
-        let mut end = map(end);
-
-        if rtl {
-            std::mem::swap(&mut start, &mut end);
-        }
-
-        Range::from(start..end)
     }
 }
 
@@ -241,16 +248,19 @@ pub(crate) fn shape(
     special: RunSpecial,
 ) -> GlyphRun {
     /*
-    print!("shape[{:?}]:\t", special);
+    eprint!("shape[{} breaks, {:?}]:\t", breaks.len(), special);
     let mut start = range.start();
     for b in &breaks {
-        print!("\"{}\" ", &text[start..(b.index as usize)]);
+        eprint!("\"{}\" ", &input.text[start..(b.index as usize)]);
         start = b.index as usize;
     }
-    println!("\"{}\"", &text[start..range.end()]);
+    eprintln!("\"{}\"", &input.text[start..range.end()]);
     */
 
+    debug_assert!(breaks.iter().all(|b| b.index > 0));
+
     if input.level.is_rtl() {
+        // Breaks must be reversed for shaping; they are reversed again after
         breaks.reverse();
     }
 
@@ -276,18 +286,19 @@ pub(crate) fn shape(
 
     if input.level.is_rtl() {
         // With RTL text, no_space_end means start_no_space; recalculate
-        let mut break_i = breaks.len().wrapping_sub(1);
+        breaks.reverse();
+        let mut break_i = 0;
         let mut start_no_space = caret;
         let mut last_id = None;
         let side_bearing = |id: Option<GlyphId>| id.map(|id| sf.h_side_bearing(id)).unwrap_or(0.0);
-        for (gi, glyph) in glyphs.iter().enumerate().rev() {
+        glyphs.reverse();
+        for (gi, glyph) in glyphs.iter().enumerate() {
             if let Some(b) = breaks.get_mut(break_i)
-                && to_usize(b.gi) == gi
+                && b.index == glyph.index
             {
-                assert!(gi < glyphs.len());
-                b.gi = to_u32(gi) + 1;
+                b.gi = to_u32(gi);
                 b.no_space_end = start_no_space - side_bearing(last_id);
-                break_i = break_i.wrapping_sub(1);
+                break_i += 1;
             }
             if !input.text[to_usize(glyph.index)..]
                 .chars()
@@ -299,7 +310,17 @@ pub(crate) fn shape(
                 start_no_space = glyph.position.0;
             }
         }
+        debug_assert_eq!(break_i, breaks.len());
         no_space_end = start_no_space - side_bearing(last_id);
+    }
+
+    #[cfg(debug_assertions)]
+    {
+        debug_assert!(glyphs.iter().is_sorted_by_key(|g| g.index));
+        debug_assert!(breaks.iter().all(|b| b.gi > 0));
+        for b in &breaks {
+            assert_eq!(b.index, glyphs[to_usize(b.gi)].index);
+        }
     }
 
     GlyphRun {
@@ -488,4 +509,180 @@ fn shape_simple(
     glyphs.shrink_to_fit();
 
     (glyphs, no_space_end, caret)
+}
+
+/// Warning: test results may depend on system fonts
+///
+/// Tests are extensions of those in `display/text_runs.rs`.
+#[cfg(test)]
+mod test {
+    use crate::{Direction, TextDisplay, format::FontToken};
+    use std::iter;
+    use std::ops::Range;
+
+    type Expected<'a> = &'a [(Range<usize>, &'a [u32], &'a [u32])];
+
+    fn test_shaping(text: &str, dir: Direction, expected: Expected) {
+        let fonts = iter::once(FontToken {
+            start: 0,
+            dpem: 16.0,
+            font: Default::default(),
+        });
+
+        let mut display = TextDisplay::default();
+        assert!(display.prepare_runs(text, dir, fonts).is_ok());
+
+        for (i, (run, expected)) in display.raw_runs().iter().zip(expected.iter()).enumerate() {
+            assert_eq!(
+                run.range.to_std(),
+                expected.0,
+                "text range for text \"{text}\", run {i}"
+            );
+            assert_eq!(
+                run.glyphs.iter().map(|g| g.index).collect::<Vec<_>>(),
+                expected.1,
+                "glyph indices for text \"{text}\", run {i}"
+            );
+            assert_eq!(
+                run.breaks.iter().map(|b| b.gi).collect::<Vec<_>>(),
+                expected.2,
+                "glyph break indices for text \"{text}\", run {i}"
+            );
+        }
+        assert_eq!(display.raw_runs().len(), expected.len(), "number of runs");
+    }
+
+    #[test]
+    fn test_shaping_simple() {
+        let sample = "Layout demo 123";
+        test_shaping(
+            sample,
+            Direction::Auto,
+            &[(
+                0..sample.len(),
+                &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14],
+                &[7, 12],
+            )],
+        );
+    }
+
+    #[test]
+    fn test_shaping_bidi() {
+        let sample = "one אחת שתיים two";
+        test_shaping(
+            sample,
+            Direction::Auto,
+            &[
+                (0..4, &[0, 1, 2, 3], &[]),
+                (4..21, &[4, 6, 8, 10, 11, 13, 15, 17, 19], &[4]),
+                (21..25, &[21, 22, 23, 24], &[1]),
+            ],
+        );
+
+        let sample = "אחת one two שתיים";
+        test_shaping(
+            sample,
+            Direction::Auto,
+            &[
+                (0..7, &[0, 2, 4, 6], &[]),
+                (7..14, &[7, 8, 9, 10, 11, 12, 13], &[4]),
+                (14..25, &[14, 15, 17, 19, 21, 23], &[1]),
+            ],
+        );
+    }
+
+    #[test]
+    fn test_shaping_weak_bidi() {
+        let sample = "123 (1-2)";
+
+        let expected_ltr: Expected = &[(0..9, &[0, 1, 2, 3, 4, 5, 6, 7, 8], &[4])];
+        test_shaping(sample, Direction::Auto, &expected_ltr[..]);
+        test_shaping(sample, Direction::Ltr, &expected_ltr[..]);
+
+        let expected_rtl: Expected = &[
+            (0..3, &[0, 1, 2], &[]),
+            (3..5, &[3, 4], &[1]),
+            (5..8, &[5, 6, 7], &[]),
+            (8..9, &[8], &[]),
+        ];
+        test_shaping(sample, Direction::AutoRtl, &expected_rtl[..]);
+        test_shaping(sample, Direction::Rtl, &expected_rtl[..]);
+    }
+
+    // Additional tests for right-to-left languages: Hebrew, Arabic.
+    // Samples are translations of the first article of the UDHR from https://r12a.github.io/
+    #[test]
+    fn test_shaping_hebrew() {
+        let sample = "סעיף א. כל בני אדם נולדו בני חורין ושווים בערכם ובזכויותיהם. כולם חוננו בתבונה ובמצפון, לפיכך חובה עליהם לנהוג איש ברעהו ברוח של אחוה.";
+        let glyphs = [
+            0, 2, 4, 6, 8, 9, 11, 12, 13, 15, 17, 18, 20, 22, 24, 25, 27, 29, 31, 32, 34, 36, 38,
+            40, 42, 43, 45, 47, 49, 50, 52, 54, 56, 58, 60, 61, 63, 65, 67, 69, 71, 73, 74, 76, 78,
+            80, 82, 84, 85, 87, 89, 91, 93, 95, 97, 99, 101, 103, 105, 107, 108, 109, 111, 113,
+            115, 117, 118, 120, 122, 124, 126, 128, 129, 131, 133, 135, 137, 139, 141, 142, 144,
+            146, 148, 150, 152, 154, 156, 157, 158, 160, 162, 164, 166, 168, 169, 171, 173, 175,
+            177, 178, 180, 182, 184, 186, 188, 189, 191, 193, 195, 197, 199, 200, 202, 204, 206,
+            207, 209, 211, 213, 215, 217, 218, 220, 222, 224, 226, 227, 229, 231, 232, 234, 236,
+            238, 240,
+        ];
+        // Checked: using break_gi indices in glyphs yields the break indices from the text_runs test
+        let break_gi = [
+            5, 8, 11, 15, 19, 25, 29, 35, 42, 48, 61, 66, 72, 79, 88, 94, 99, 105, 111, 115, 121,
+            126, 129,
+        ];
+        test_shaping(
+            sample,
+            Direction::Auto,
+            &[(0..sample.len(), &glyphs, &break_gi)],
+        );
+    }
+
+    // TODO: enable this test with shaping, maybe with a fixed (Arabic) font?
+    // Results are not portable using system fonts.
+    #[cfg(not(feature = "shaping"))]
+    #[test]
+    fn test_shaping_arabic() {
+        let sample = "المادة 1 يولد جميع الناس أحرارًا متساوين في الكرامة والحقوق. وقد وهبوا عقلاً وضميرًا وعليهم أن يعامل بعضهم بعضًا بروح الإخاء.";
+        #[cfg(not(feature = "shaping"))]
+        let glyphs_0 = [0, 2, 4, 6, 8, 10, 12];
+        #[cfg(feature = "shaping")]
+        let glyphs_0 = [0, 2, 4, 6, 8, 10, 10, 12];
+        #[cfg(not(feature = "shaping"))]
+        let glyphs_2 = [
+            14, 15, 17, 19, 21, 23, 24, 26, 28, 30, 32, 33, 35, 37, 39, 41, 43, 44, 46, 48, 50, 52,
+            54, 56, 58, 59, 61, 63, 65, 67, 69, 71, 73, 74, 76, 78, 79, 81, 83, 85, 87, 89, 91, 93,
+            94, 96, 98, 100, 102, 104, 106, 108, 109, 110, 112, 114, 116, 117, 119, 121, 123, 125,
+            127, 128, 130, 132, 134, 136, 138, 139, 141, 143, 145, 147, 149, 151, 153, 154, 156,
+            158, 160, 162, 164, 166, 167, 169, 171, 172, 174, 176, 178, 180, 182, 183, 185, 187,
+            189, 191, 193, 194, 196, 198, 200, 202, 204, 205, 207, 209, 211, 213, 214, 216, 218,
+            220, 222, 224, 226,
+        ];
+        #[cfg(feature = "shaping")]
+        let glyphs_2 = [
+            14, 15, 15, 17, 19, 21, 23, 24, 24, 26, 28, 28, 30, 32, 33, 35, 37, 37, 39, 41, 43, 44,
+            44, 46, 48, 50, 52, 52, 56, 58, 59, 61, 61, 63, 65, 67, 69, 69, 71, 71, 73, 74, 74, 76,
+            76, 78, 79, 81, 83, 85, 87, 89, 91, 91, 93, 94, 96, 98, 100, 102, 102, 104, 106, 106,
+            108, 109, 110, 112, 112, 114, 116, 117, 119, 121, 121, 123, 125, 127, 128, 130, 130,
+            132, 134, 134, 138, 139, 141, 141, 143, 145, 145, 147, 147, 151, 153, 154, 156, 158,
+            160, 160, 162, 164, 166, 167, 167, 169, 169, 171, 172, 172, 174, 176, 178, 180, 182,
+            183, 183, 185, 187, 187, 189, 191, 193, 194, 194, 196, 198, 198, 198, 202, 204, 205,
+            205, 207, 209, 211, 213, 214, 216, 218, 218, 220, 220, 222, 224, 226,
+        ];
+        #[cfg(not(feature = "shaping"))]
+        let break_gi_2 = [
+            1, 6, 11, 17, 25, 33, 36, 44, 53, 57, 63, 69, 77, 84, 87, 93, 99, 105, 110,
+        ];
+        #[cfg(feature = "shaping")]
+        let break_gi_2 = [
+            1, 7, 14, 21, 30, 41, 46, 55, 66, 71, 78, 85, 95, 103, 108, 115, 123, 131, 137,
+        ];
+        test_shaping(
+            sample,
+            Direction::Auto,
+            &[
+                (0..13, &glyphs_0, &[]),
+                (13..14, &[13], &[]),
+                (14..sample.len(), &glyphs_2, &break_gi_2),
+            ],
+        );
+    }
 }

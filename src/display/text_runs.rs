@@ -11,8 +11,11 @@ use crate::fonts::{self, FaceId, FontSelector, NoFontMatch};
 use crate::format::FontToken;
 use crate::util::ends_with_hard_break;
 use crate::{Direction, Range, shaper};
-use icu_properties::props::{EmojiModifier, EmojiPresentation, RegionalIndicator, Script};
-use icu_properties::{CodePointMapData, CodePointSetData};
+use icu_properties::CodePointMapData;
+use icu_properties::props::{
+    BinaryProperty, DefaultIgnorableCodePoint, EmojiModifier, EmojiPresentation, RegionalIndicator,
+    Script,
+};
 use icu_segmenter::LineSegmenter;
 use std::sync::OnceLock;
 use unicode_bidi::{BidiInfo, LTR_LEVEL, RTL_LEVEL};
@@ -60,9 +63,6 @@ impl TextDisplay {
             };
             let mut breaks = Default::default();
             std::mem::swap(&mut breaks, &mut run.breaks);
-            if run.level.is_rtl() {
-                breaks.reverse();
-            }
             *run = shaper::shape(input, run.range, run.face_id, breaks, run.special);
         }
     }
@@ -91,22 +91,27 @@ impl TextDisplay {
                 .expect("invalid FontId");
         }
 
-        let mut face = match face_id {
+        let preferred_face = match face_id {
             Some(id) => id,
             None => {
                 // We failed to find a font face for the run
                 fonts.first_face_for(font_id).expect("invalid FontId")
             }
         };
+        let mut face = preferred_face;
 
         let mut start = 0;
         for (index, c) in text.char_indices() {
-            let index = to_u32(index);
+            if DefaultIgnorableCodePoint::for_char(c) {
+                continue;
+            }
+
             if let Some(new_face) = fonts
-                .face_for_char(font_id, Some(face), c)
+                .face_for_char(font_id, Some(preferred_face), c)
                 .expect("invalid FontId")
                 && new_face != face
             {
+                let index = to_u32(index);
                 if index > start {
                     let sub_range = Range {
                         start: range.start + start,
@@ -118,7 +123,14 @@ impl TextDisplay {
                             j = i + 1;
                         }
                     }
-                    let rest = breaks.split_off(j);
+                    let mut rest = breaks.split_off(j);
+                    if rest
+                        .first()
+                        .map(|b| b.index == sub_range.end)
+                        .unwrap_or(false)
+                    {
+                        rest.remove(0);
+                    }
 
                     self.runs.push(shaper::shape(
                         input,
@@ -293,10 +305,8 @@ impl TextDisplay {
                 require_break = true;
             }
 
-            if is_real(script) {
-                if script != input.script {
-                    require_break |= is_real(input.script);
-                }
+            if is_real(script) && script != input.script {
+                require_break |= is_real(input.script);
             }
 
             if !prohibit_break && (hard_break || require_break) {
@@ -339,10 +349,8 @@ impl TextDisplay {
                 }
             }
 
-            if is_real(script) {
-                if first_real.is_none() {
-                    first_real = Some(c);
-                }
+            if is_real(script) && first_real.is_none() {
+                first_real = Some(c);
             }
 
             if let Some(token) = next_token.as_ref()
@@ -380,8 +388,13 @@ impl TextDisplay {
         for run in &self.runs {
             let slice = &text[run.range];
             print!(
-                "\t{:?}, text[{}..{}]: '{}', ",
-                run.level, run.range.start, run.range.end, slice
+                "\t{:?}, text[{}..{}], script {:?}, {} glyphs: '{}', ",
+                run.level,
+                run.range.start,
+                run.range.end,
+                run.script,
+                run.glyphs.len(),
+                slice
             );
             match run.special {
                 RunSpecial::None => (),
@@ -476,10 +489,10 @@ impl EmojiState {
         let mut b = EmojiBreak::None;
         *self = match *self {
             EmojiState::None => {
-                if CodePointSetData::new::<RegionalIndicator>().contains(c) {
+                if RegionalIndicator::for_char(c) {
                     b = EmojiBreak::Start;
                     EmojiState::RI1
-                } else if CodePointSetData::new::<EmojiPresentation>().contains(c) {
+                } else if EmojiPresentation::for_char(c) {
                     b = EmojiBreak::Start;
                     EmojiState::Emoji
                 } else {
@@ -487,7 +500,7 @@ impl EmojiState {
                 }
             }
             EmojiState::RI1 => {
-                if CodePointSetData::new::<RegionalIndicator>().contains(c) {
+                if RegionalIndicator::for_char(c) {
                     b = EmojiBreak::Prohibit;
                     EmojiState::RI2
                 } else {
@@ -497,7 +510,7 @@ impl EmojiState {
             }
             EmojiState::RI2 => end_unless_ZWJ(c, &mut b),
             EmojiState::Emoji => {
-                if CodePointSetData::new::<EmojiModifier>().contains(c) {
+                if EmojiModifier::for_char(c) {
                     EmojiState::EMod
                 } else if c == '\u{FE0F}' {
                     EmojiState::VarSelector
@@ -530,9 +543,9 @@ impl EmojiState {
                 }
             }
             EmojiState::ZWJ => {
-                if CodePointSetData::new::<RegionalIndicator>().contains(c) {
+                if RegionalIndicator::for_char(c) {
                     EmojiState::RI1
-                } else if CodePointSetData::new::<EmojiPresentation>().contains(c) {
+                } else if EmojiPresentation::for_char(c) {
                     EmojiState::Emoji
                 } else {
                     b = EmojiBreak::Error;
@@ -541,10 +554,10 @@ impl EmojiState {
             }
         };
         if b == EmojiBreak::End {
-            *self = if CodePointSetData::new::<RegionalIndicator>().contains(c) {
+            *self = if RegionalIndicator::for_char(c) {
                 b = EmojiBreak::Restart;
                 EmojiState::RI1
-            } else if CodePointSetData::new::<EmojiPresentation>().contains(c) {
+            } else if EmojiPresentation::for_char(c) {
                 b = EmojiBreak::Restart;
                 EmojiState::Emoji
             } else {
@@ -614,20 +627,43 @@ mod test {
 
     #[test]
     fn test_breaking_bidi() {
-        let sample = "abc אבג def";
+        let sample = "one אחת שתיים two";
         test_breaking(
             sample,
             Direction::Auto,
             &[
                 (0..4, RunSpecial::None, Level::ltr(), Script::Latin, &[]),
                 (
-                    4..10,
+                    4..21,
                     RunSpecial::NoBreak,
                     Level::rtl(),
                     Script::Hebrew,
-                    &[],
+                    &[11],
                 ),
-                (10..14, RunSpecial::None, Level::ltr(), Script::Latin, &[11]),
+                (21..25, RunSpecial::None, Level::ltr(), Script::Latin, &[22]),
+            ],
+        );
+
+        let sample = "אחת one two שתיים";
+        test_breaking(
+            sample,
+            Direction::Auto,
+            &[
+                (0..7, RunSpecial::None, Level::rtl(), Script::Hebrew, &[]),
+                (
+                    7..14,
+                    RunSpecial::NoBreak,
+                    Level::new(2).unwrap(),
+                    Script::Latin,
+                    &[11],
+                ),
+                (
+                    14..25,
+                    RunSpecial::None,
+                    Level::rtl(),
+                    Script::Hebrew,
+                    &[15],
+                ),
             ],
         );
     }
@@ -667,5 +703,174 @@ mod test {
         ];
         test_breaking(sample, Direction::AutoRtl, &expected_rtl[..]);
         test_breaking(sample, Direction::Rtl, &expected_rtl[..]);
+    }
+
+    #[test]
+    fn test_breaking_rtl() {
+        // Additional tests for right-to-left languages: Hebrew, Arabic.
+        // Samples are translations of the first article of the UDHR from https://r12a.github.io/
+
+        let sample = "סעיף א. כל בני אדם נולדו בני חורין ושווים בערכם ובזכויותיהם. כולם חוננו בתבונה ובמצפון, לפיכך חובה עליהם לנהוג איש ברעהו ברוח של אחוה.";
+        test_breaking(
+            sample,
+            Direction::Auto,
+            &[(
+                0..sample.len(),
+                RunSpecial::None,
+                Level::rtl(),
+                Script::Hebrew,
+                &[
+                    9, 13, 18, 25, 32, 43, 50, 61, 74, 85, 109, 118, 129, 142, 158, 169, 178, 189,
+                    200, 207, 218, 227, 232,
+                ],
+            )],
+        );
+
+        let sample = "المادة 1 يولد جميع الناس أحرارًا متساوين في الكرامة والحقوق. وقد وهبوا عقلاً وضميرًا وعليهم أن يعامل بعضهم بعضًا بروح الإخاء.";
+        test_breaking(
+            sample,
+            Direction::Auto,
+            &[
+                (0..13, RunSpecial::None, Level::rtl(), Script::Arabic, &[]),
+                (
+                    13..14,
+                    RunSpecial::NoBreak,
+                    Level::new(2).unwrap(),
+                    Script::Common,
+                    &[],
+                ),
+                (
+                    14..sample.len(),
+                    RunSpecial::None,
+                    Level::rtl(),
+                    Script::Arabic,
+                    &[
+                        15, 24, 33, 44, 59, 74, 79, 94, 110, 117, 128, 139, 154, 167, 172, 183,
+                        194, 205, 214,
+                    ],
+                ),
+            ],
+        );
+    }
+
+    // TODO: find a way to enable this test which is permissive of font
+    // variability (namely whether or not font fallbacks cause extra breaks).
+    #[cfg(false)]
+    #[test]
+    fn test_breaking_complex_arabic() {
+        // Another, more complex, Arabic sample. Source: https://r12a.github.io/scripts/tutorial/summaries/arabic
+        let sample = " عندما يريد العالم أن ‪يتكلّم ‬ ، فهو يتحدّث بلغة يونيكود. تسجّل الآن لحضور المؤتمر الدولي العاشر ليونيكود (Unicode Conference)، الذي سيعقد في 10-12 آذار 1997 بمدينة مَايِنْتْس، ألمانيا. و سيجمع المؤتمر بين خبراء من كافة قطاعات الصناعة على الشبكة العالمية انترنيت ويونيكود، حيث ستتم، على الصعيدين الدولي والمحلي على حد سواء مناقشة سبل استخدام يونكود في النظم القائمة وفيما يخص التطبيقات الحاسوبية، الخطوط، تصميم النصوص والحوسبة متعددة اللغات.";
+        test_breaking(
+            sample,
+            Direction::Auto,
+            &[
+                (
+                    0..42,
+                    RunSpecial::NoBreak,
+                    Level::rtl(),
+                    Script::Arabic,
+                    &[1, 12, 21, 34, 39],
+                ),
+                (
+                    42..54,
+                    RunSpecial::NoBreak,
+                    Level::new(3).unwrap(),
+                    Script::Arabic,
+                    &[],
+                ),
+                (
+                    54..58,
+                    RunSpecial::NoBreak,
+                    Level::new(2).unwrap(),
+                    Script::Common,
+                    &[55],
+                ),
+                (
+                    58..196,
+                    RunSpecial::NoBreak,
+                    Level::rtl(),
+                    Script::Arabic,
+                    &[62, 69, 82, 91, 107, 118, 127, 138, 153, 166, 179],
+                ),
+                (
+                    // Note that this break occurs due to font fallback where
+                    // the Arabic font doesn't contain a (round) bracket.
+                    196..197,
+                    RunSpecial::NoBreak,
+                    Level::rtl(),
+                    Script::Arabic,
+                    &[],
+                ),
+                (
+                    197..215,
+                    RunSpecial::NoBreak,
+                    Level::new(2).unwrap(),
+                    Script::Latin,
+                    &[205],
+                ),
+                (
+                    // Note that this break occurs due to font fallback where
+                    // the Arabic font doesn't contain a (round) bracket.
+                    215..216,
+                    RunSpecial::NoBreak,
+                    Level::rtl(),
+                    Script::Arabic,
+                    &[],
+                ),
+                (
+                    216..244,
+                    RunSpecial::None,
+                    Level::rtl(),
+                    Script::Arabic,
+                    &[219, 228, 239],
+                ),
+                (
+                    244..246,
+                    RunSpecial::NoBreak,
+                    Level::new(2).unwrap(),
+                    Script::Common,
+                    &[],
+                ),
+                (
+                    246..247,
+                    RunSpecial::NoBreak,
+                    Level::rtl(),
+                    Script::Common,
+                    &[],
+                ),
+                (
+                    247..249,
+                    RunSpecial::NoBreak,
+                    Level::new(2).unwrap(),
+                    Script::Common,
+                    &[],
+                ),
+                (
+                    249..259,
+                    RunSpecial::None,
+                    Level::rtl(),
+                    Script::Arabic,
+                    &[250],
+                ),
+                (
+                    259..263,
+                    RunSpecial::NoBreak,
+                    Level::new(2).unwrap(),
+                    Script::Common,
+                    &[],
+                ),
+                (
+                    263..sample.len(),
+                    RunSpecial::None,
+                    Level::rtl(),
+                    Script::Arabic,
+                    &[
+                        264, 277, 300, 316, 319, 330, 345, 352, 363, 368, 377, 390, 405, 412, 425,
+                        442, 457, 476, 483, 494, 501, 518, 531, 546, 553, 558, 567, 580, 587, 602,
+                        615, 620, 631, 646, 657, 664, 683, 704, 719, 730, 743, 760, 773,
+                    ],
+                ),
+            ],
+        );
     }
 }

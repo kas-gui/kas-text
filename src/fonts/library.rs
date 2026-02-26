@@ -250,7 +250,7 @@ impl FontList {
     fn face_for_char(
         &mut self,
         font_id: FontId,
-        last_face_id: Option<FaceId>,
+        preferred_face: Option<FaceId>,
         c: char,
     ) -> Result<Option<FaceId>, InvalidFontId> {
         // TODO: `face.glyph_index` is a bit slow to use like this where several
@@ -265,7 +265,7 @@ impl FontList {
             .find(|item| item.0 == font_id)
             .ok_or(InvalidFontId)?;
 
-        if let Some(face_id) = last_face_id
+        if let Some(face_id) = preferred_face
             && font.1.contains(&face_id)
         {
             let face = &faces[face_id.get()];
@@ -329,21 +329,19 @@ impl FontLibrary {
 
     /// Resolve the font face for a character
     ///
-    /// If `last_face_id` is a face used by `font_id` and this face covers `c`,
-    /// then return `last_face_id`. (This is to avoid changing the font face
-    /// unnecessarily, such as when encountering a space amid Arabic text.)
-    ///
-    /// Otherwise, return the first face of `font_id` which covers `c`.
+    /// If `preferred_face` is a face used by `font_id` and this face covers
+    /// `c`, then return `preferred_face`.
+    /// Otherwise, return the first face of `font_id` which covers `c`, if any.
     pub(crate) fn face_for_char(
         &self,
         font_id: FontId,
-        last_face_id: Option<FaceId>,
+        preferred_face: Option<FaceId>,
         c: char,
     ) -> Result<Option<FaceId>, InvalidFontId> {
         self.fonts
             .lock()
             .unwrap()
-            .face_for_char(font_id, last_face_id, c)
+            .face_for_char(font_id, preferred_face, c)
     }
 
     /// Select a font

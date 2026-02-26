@@ -5,7 +5,7 @@
 
 //! Methods using positioned glyphs
 
-use super::{Line, TextDisplay};
+use super::TextDisplay;
 use crate::conv::to_usize;
 use crate::fonts::{self, FaceId, ScaledFaceRef};
 use crate::{Glyph, Range, Vec2, shaper};
@@ -159,6 +159,8 @@ impl<'a, E: Copy + Default> GlyphRun<'a, E> {
 
     /// Get an iterator over glyphs for this run
     ///
+    /// Glyphs are yielded in unspecified order.
+    ///
     /// This method ignores effects; if you want those call
     /// [`Self::glyphs_with_effects`] instead.
     pub fn glyphs(&self) -> impl Iterator<Item = Glyph> + '_ {
@@ -178,14 +180,13 @@ impl<'a, E: Copy + Default> GlyphRun<'a, E> {
     ///
     /// The callback `g` is called for sub-ranges of glyphs with parameters
     /// `(p, x2, effect)`; `p.0` and `x2` are the x-axis positions of the left
-    /// and right edges of this sub-range respectively while `x.1` is the
+    /// and right edges of this sub-range respectively while `p.1` is the
     /// vertical position of glyphs (the baseline). This may be combined with
     /// information from [`Self::scaled_face`] to draw underline, strike-through
     /// and background effects.
     ///
     /// Note: this is more computationally expensive than [`GlyphRun::glyphs`],
-    /// so you may prefer to call that. Optionally one may choose to cache the
-    /// result, though this is not really necessary.
+    /// so prefer the former method when callback `g` is not required.
     pub fn glyphs_with_effects<F, G>(&self, mut f: F, mut g: G)
     where
         F: FnMut(Glyph, E),
@@ -193,19 +194,17 @@ impl<'a, E: Copy + Default> GlyphRun<'a, E> {
     {
         let ltr = self.run.level.is_ltr();
 
-        let mut effect_cur = usize::MAX;
+        let mut effect = E::default();
         let mut effect_next = 0;
 
-        // We iterate in left-to-right order regardless of text direction.
-        // Start by finding the effect applicable to the left-most glyph.
-        let left_index = self.run.glyphs[self.range.start()].index;
+        let first_index = self.run.glyphs[self.range.start()].index;
         while self
             .effects
             .get(effect_next)
-            .map(|e| e.0 <= left_index)
+            .map(|e| e.0 <= first_index)
             .unwrap_or(false)
         {
-            effect_cur = effect_next;
+            effect = self.effects[effect_next].1;
             effect_next += 1;
         }
 
@@ -215,61 +214,62 @@ impl<'a, E: Copy + Default> GlyphRun<'a, E> {
             .map(|e| e.0)
             .unwrap_or(u32::MAX);
 
-        let mut fmt = self
-            .effects
-            .get(effect_cur)
-            .cloned()
-            .unwrap_or((0, E::default()));
+        let Vec2(mut a, mut y) = self.run.glyphs[self.range.start()].position + self.offset;
+        if !ltr {
+            a = if self.range.start > 0 {
+                self.run.glyphs[self.range.start() - 1].position.0
+            } else {
+                self.run.caret
+            } + self.offset.0;
+        }
+        let mut b = a;
 
-        // In case an effect applies to the left-most glyph, it starts from that
-        // glyph's x coordinate.
-        let mut range_start = self.run.glyphs[self.range.start()].position + self.offset;
-
-        // Iterate over glyphs in left-to-right order.
+        // Iterate over glyphs in logical order.
         for mut glyph in self.run.glyphs[self.range.to_std()].iter().cloned() {
             glyph.position += self.offset;
 
             // Does the effect change?
-            if (ltr && next_start <= glyph.index) || (!ltr && fmt.0 > glyph.index) {
-                let x2 = glyph.position.0;
-                g(range_start, x2, fmt.1);
+            if next_start <= glyph.index {
+                let (x1, x2) = if ltr { (a, glyph.position.0) } else { (b, a) };
+                g(Vec2(x1, y), x2, effect);
 
-                if ltr {
-                    // Find the next active effect
-                    effect_cur = effect_next;
-                    effect_next += 1;
-                    next_start = self
-                        .effects
-                        .get(effect_next)
-                        .map(|e| e.0)
-                        .inspect(|start| debug_assert!(*start > glyph.index))
-                        .unwrap_or(u32::MAX);
-                } else {
-                    // Find the previous active effect
-                    effect_cur = effect_cur.wrapping_sub(1);
-                    debug_assert!(
-                        self.effects.get(effect_cur).map(|e| e.0).unwrap_or(0) <= glyph.index
-                    );
-                }
-                fmt = self
+                // Find the next active effect
+                effect = self
                     .effects
-                    .get(effect_cur)
-                    .cloned()
-                    .unwrap_or((0, E::default()));
+                    .get(effect_next)
+                    .map(|e| e.1)
+                    .unwrap_or(E::default());
+                effect_next += 1;
+                next_start = self
+                    .effects
+                    .get(effect_next)
+                    .map(|e| e.0)
+                    .inspect(|start| debug_assert!(*start > glyph.index))
+                    .unwrap_or(u32::MAX);
 
-                range_start = glyph.position;
+                a = if ltr { glyph.position.0 } else { b };
+                y = glyph.position.1;
             }
 
-            f(glyph, fmt.1);
+            f(glyph, effect);
+            b = glyph.position.0;
         }
 
         // Effects end at the following glyph's start (or end of this run part)
-        let x2 = if self.range.end() < self.run.glyphs.len() {
-            self.run.glyphs[self.range.end()].position.0
+        let (x1, x2) = if ltr && self.range.end() < self.run.glyphs.len() {
+            (
+                a,
+                self.run.glyphs[self.range.end()].position.0 + self.offset.0,
+            )
+        } else if ltr {
+            (a, self.run.caret + self.offset.0)
         } else {
-            self.run.caret
-        } + self.offset.0;
-        g(range_start, x2, fmt.1);
+            (
+                self.run.glyphs[self.range.end() - 1].position.0 + self.offset.0,
+                a,
+            )
+        };
+        g(Vec2(x1, y), x2, effect);
     }
 }
 
@@ -304,7 +304,7 @@ impl TextDisplay {
                 descent,
                 level,
             };
-            b += 1;
+            b = 1;
         };
 
         // We don't care too much about performance: use a naive search strategy
@@ -320,13 +320,11 @@ impl TextDisplay {
 
             // If index is at the end of a run, we potentially get two matches.
             if index == to_usize(run_part.text_end) {
-                let i = if glyph_run.level.is_ltr() {
-                    run_part.glyph_range.end()
-                } else {
-                    run_part.glyph_range.start()
-                };
-                let pos = if i < glyph_run.glyphs.len() {
-                    glyph_run.glyphs[i].position
+                let end = run_part.glyph_range.end();
+                let pos = if glyph_run.level.is_rtl() && end > 0 {
+                    glyph_run.glyphs[end - 1].position
+                } else if glyph_run.level.is_ltr() && end < glyph_run.glyphs.len() {
+                    glyph_run.glyphs[end].position
                 } else {
                     // NOTE: for RTL we only hit this case if glyphs.len() == 0
                     Vec2(glyph_run.caret, 0.0)
@@ -340,18 +338,23 @@ impl TextDisplay {
             // else: index < to_usize(run_part.text_end)
             let pos = 'b: {
                 if glyph_run.level.is_ltr() {
-                    for glyph in glyph_run.glyphs[run_part.glyph_range.to_std()].iter().rev() {
-                        if to_usize(glyph.index) <= index {
+                    for glyph in glyph_run.glyphs[run_part.glyph_range.to_std()].iter() {
+                        if to_usize(glyph.index) >= index {
                             break 'b glyph.position;
                         }
                     }
                 } else {
+                    let start = run_part.glyph_range.start();
+                    let mut x = if start > 0 {
+                        glyph_run.glyphs[start - 1].position.0
+                    } else {
+                        glyph_run.caret
+                    };
                     for glyph in glyph_run.glyphs[run_part.glyph_range.to_std()].iter() {
-                        if to_usize(glyph.index) <= index {
-                            let mut pos = glyph.position;
-                            pos.0 += sf.h_advance(glyph.id);
-                            break 'b pos;
+                        if to_usize(glyph.index) >= index {
+                            break 'b Vec2(x, glyph.position.1);
                         }
+                        x = glyph.position.0;
                     }
                 }
                 break 'a;
@@ -412,6 +415,7 @@ impl TextDisplay {
                 while part.text_end > line.text_range.end {
                     line = line_iter.next().unwrap();
                 }
+
                 GlyphRun {
                     run: &self.runs[to_usize(part.glyph_run)],
                     range: part.glyph_range,
@@ -421,169 +425,5 @@ impl TextDisplay {
                     effects,
                 }
             })
-    }
-
-    /// Yield a sequence of rectangles to highlight a given text range
-    ///
-    /// [Requires status][Self#status-of-preparation]:
-    /// text is fully prepared for display.
-    ///
-    /// Calls `f(top_left, bottom_right)` for each highlighting rectangle.
-    #[deprecated(
-        since = "0.10.0",
-        note = "Since the same result may be achieved using text background colors this will likely be removed in the future."
-    )]
-    pub fn highlight_range(&self, range: std::ops::Range<usize>, f: &mut dyn FnMut(Vec2, Vec2)) {
-        for line in &self.lines {
-            let line_range = line.text_range();
-            if line_range.end <= range.start {
-                continue;
-            } else if range.end <= line_range.start {
-                break;
-            } else if range.start <= line_range.start && line_range.end <= range.end {
-                let tl = Vec2(self.l_bound, line.top);
-                let br = Vec2(self.r_bound, line.bottom);
-                f(tl, br);
-            } else {
-                #[allow(deprecated)]
-                self.highlight_line(line.clone(), range.clone(), f);
-            }
-        }
-    }
-
-    /// Produce highlighting rectangles within a range of runs
-    ///
-    /// [Requires status][Self#status-of-preparation]:
-    /// text is fully prepared for display.
-    ///
-    /// Warning: runs are in logical order which does not correspond to display
-    /// order. As a result, the order of results (on a line) is not known.
-    #[deprecated(
-        since = "0.10.0",
-        note = "Since the same result may be achieved using text background colors this will likely be removed in the future."
-    )]
-    fn highlight_line(
-        &self,
-        line: Line,
-        range: std::ops::Range<usize>,
-        f: &mut dyn FnMut(Vec2, Vec2),
-    ) {
-        let fonts = fonts::library();
-
-        let mut a;
-
-        let mut i = line.run_range.start();
-        let line_range_end = line.run_range.end();
-        'b: loop {
-            if i >= line_range_end {
-                return;
-            }
-            let run_part = &self.wrapped_runs[i];
-            if range.start >= to_usize(run_part.text_end) {
-                i += 1;
-                continue;
-            }
-
-            let glyph_run = &self.runs[to_usize(run_part.glyph_run)];
-
-            if glyph_run.level.is_ltr() {
-                for glyph in glyph_run.glyphs[run_part.glyph_range.to_std()].iter().rev() {
-                    if to_usize(glyph.index) <= range.start {
-                        a = glyph.position.0;
-                        break 'b;
-                    }
-                }
-                a = 0.0;
-            } else {
-                let sf = fonts
-                    .get_face(glyph_run.face_id)
-                    .scale_by_dpu(glyph_run.dpu);
-                for glyph in glyph_run.glyphs[run_part.glyph_range.to_std()].iter() {
-                    if to_usize(glyph.index) <= range.start {
-                        a = glyph.position.0;
-                        a += sf.h_advance(glyph.id);
-                        break 'b;
-                    }
-                }
-                a = glyph_run.caret;
-            }
-            break 'b;
-        }
-
-        let mut first = true;
-        'a: while i < line_range_end {
-            let run_part = &self.wrapped_runs[i];
-            let offset = run_part.offset.0;
-            let glyph_run = &self.runs[to_usize(run_part.glyph_run)];
-
-            if !first {
-                a = if glyph_run.level.is_ltr() {
-                    if run_part.glyph_range.start() < glyph_run.glyphs.len() {
-                        glyph_run.glyphs[run_part.glyph_range.start()].position.0
-                    } else {
-                        0.0
-                    }
-                } else {
-                    if run_part.glyph_range.end() < glyph_run.glyphs.len() {
-                        glyph_run.glyphs[run_part.glyph_range.end()].position.0
-                    } else {
-                        glyph_run.caret
-                    }
-                };
-            }
-            first = false;
-
-            if range.end >= to_usize(run_part.text_end) {
-                let b;
-                if glyph_run.level.is_ltr() {
-                    if run_part.glyph_range.end() < glyph_run.glyphs.len() {
-                        b = glyph_run.glyphs[run_part.glyph_range.end()].position.0;
-                    } else {
-                        b = glyph_run.caret;
-                    }
-                } else {
-                    let p = if run_part.glyph_range.start() < glyph_run.glyphs.len() {
-                        glyph_run.glyphs[run_part.glyph_range.start()].position.0
-                    } else {
-                        // NOTE: for RTL we only hit this case if glyphs.len() == 0
-                        glyph_run.caret
-                    };
-                    b = a;
-                    a = p;
-                };
-
-                f(Vec2(a + offset, line.top), Vec2(b + offset, line.bottom));
-                i += 1;
-                continue;
-            }
-
-            let sf = fonts
-                .get_face(glyph_run.face_id)
-                .scale_by_dpu(glyph_run.dpu);
-
-            let b;
-            'c: {
-                if glyph_run.level.is_ltr() {
-                    for glyph in glyph_run.glyphs[run_part.glyph_range.to_std()].iter().rev() {
-                        if to_usize(glyph.index) <= range.end {
-                            b = glyph.position.0;
-                            break 'c;
-                        }
-                    }
-                } else {
-                    for glyph in glyph_run.glyphs[run_part.glyph_range.to_std()].iter() {
-                        if to_usize(glyph.index) <= range.end {
-                            b = a;
-                            a = glyph.position.0 + sf.h_advance(glyph.id);
-                            break 'c;
-                        }
-                    }
-                }
-                break 'a;
-            }
-
-            f(Vec2(a + offset, line.top), Vec2(b + offset, line.bottom));
-            break;
-        }
     }
 }
