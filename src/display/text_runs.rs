@@ -305,10 +305,8 @@ impl TextDisplay {
                 require_break = true;
             }
 
-            if is_real(script) {
-                if script != input.script {
-                    require_break |= is_real(input.script);
-                }
+            if is_real(script) && script != input.script {
+                require_break |= is_real(input.script);
             }
 
             if !prohibit_break && (hard_break || require_break) {
@@ -351,10 +349,8 @@ impl TextDisplay {
                 }
             }
 
-            if is_real(script) {
-                if first_real.is_none() {
-                    first_real = Some(c);
-                }
+            if is_real(script) && first_real.is_none() {
+                first_real = Some(c);
             }
 
             if let Some(token) = next_token.as_ref()
