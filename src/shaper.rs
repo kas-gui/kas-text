@@ -609,11 +609,10 @@ mod test {
         test_shaping(sample, Direction::Rtl, &expected_rtl[..]);
     }
 
+    // Additional tests for right-to-left languages: Hebrew, Arabic.
+    // Samples are translations of the first article of the UDHR from https://r12a.github.io/
     #[test]
-    fn test_shaping_rtl() {
-        // Additional tests for right-to-left languages: Hebrew, Arabic.
-        // Samples are translations of the first article of the UDHR from https://r12a.github.io/
-
+    fn test_shaping_hebrew() {
         let sample = "סעיף א. כל בני אדם נולדו בני חורין ושווים בערכם ובזכויותיהם. כולם חוננו בתבונה ובמצפון, לפיכך חובה עליהם לנהוג איש ברעהו ברוח של אחוה.";
         let glyphs = [
             0, 2, 4, 6, 8, 9, 11, 12, 13, 15, 17, 18, 20, 22, 24, 25, 27, 29, 31, 32, 34, 36, 38,
@@ -635,7 +634,13 @@ mod test {
             Direction::Auto,
             &[(0..sample.len(), &glyphs, &break_gi)],
         );
+    }
 
+    // TODO: enable this test with shaping, maybe with a fixed (Arabic) font?
+    // Results are not portable using system fonts.
+    #[cfg(not(feature = "shaping"))]
+    #[test]
+    fn test_shaping_arabic() {
         let sample = "المادة 1 يولد جميع الناس أحرارًا متساوين في الكرامة والحقوق. وقد وهبوا عقلاً وضميرًا وعليهم أن يعامل بعضهم بعضًا بروح الإخاء.";
         #[cfg(not(feature = "shaping"))]
         let glyphs_0 = [0, 2, 4, 6, 8, 10, 12];

@@ -753,6 +753,9 @@ mod test {
         );
     }
 
+    // TODO: find a way to enable this test which is permissive of font
+    // variability (namely whether or not font fallbacks cause extra breaks).
+    #[cfg(false)]
     #[test]
     fn test_breaking_complex_arabic() {
         // Another, more complex, Arabic sample. Source: https://r12a.github.io/scripts/tutorial/summaries/arabic
