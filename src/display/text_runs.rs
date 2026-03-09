@@ -709,11 +709,10 @@ mod test {
         test_breaking(sample, Direction::Rtl, &expected_rtl[..]);
     }
 
+    // Additional tests for right-to-left languages: Hebrew, Arabic.
+    // Samples are translations of the first article of the UDHR from https://r12a.github.io/
     #[test]
-    fn test_breaking_rtl() {
-        // Additional tests for right-to-left languages: Hebrew, Arabic.
-        // Samples are translations of the first article of the UDHR from https://r12a.github.io/
-
+    fn test_breaking_hebrew() {
         let sample = "סעיף א. כל בני אדם נולדו בני חורין ושווים בערכם ובזכויותיהם. כולם חוננו בתבונה ובמצפון, לפיכך חובה עליהם לנהוג איש ברעהו ברוח של אחוה.";
         test_breaking(
             sample,
@@ -729,7 +728,10 @@ mod test {
                 ],
             )],
         );
+    }
 
+    #[test]
+    fn test_breaking_arabic() {
         let sample = "المادة 1 يولد جميع الناس أحرارًا متساوين في الكرامة والحقوق. وقد وهبوا عقلاً وضميرًا وعليهم أن يعامل بعضهم بعضًا بروح الإخاء.";
         test_breaking(
             sample,
@@ -757,9 +759,6 @@ mod test {
         );
     }
 
-    // TODO: find a way to enable this test which is permissive of font
-    // variability (namely whether or not font fallbacks cause extra breaks).
-    #[cfg(false)]
     #[test]
     fn test_breaking_complex_arabic() {
         // Another, more complex, Arabic sample. Source: https://r12a.github.io/scripts/tutorial/summaries/arabic
@@ -790,20 +789,11 @@ mod test {
                     &[55],
                 ),
                 (
-                    58..196,
+                    58..197,
                     RunSpecial::NoBreak,
                     Level::rtl(),
                     Script::Arabic,
-                    &[62, 69, 82, 91, 107, 118, 127, 138, 153, 166, 179],
-                ),
-                (
-                    // Note that this break occurs due to font fallback where
-                    // the Arabic font doesn't contain a (round) bracket.
-                    196..197,
-                    RunSpecial::NoBreak,
-                    Level::rtl(),
-                    Script::Arabic,
-                    &[],
+                    &[62, 69, 82, 91, 107, 118, 127, 138, 153, 166, 179, 196],
                 ),
                 (
                     197..215,
@@ -813,16 +803,7 @@ mod test {
                     &[205],
                 ),
                 (
-                    // Note that this break occurs due to font fallback where
-                    // the Arabic font doesn't contain a (round) bracket.
-                    215..216,
-                    RunSpecial::NoBreak,
-                    Level::rtl(),
-                    Script::Arabic,
-                    &[],
-                ),
-                (
-                    216..244,
+                    215..244,
                     RunSpecial::None,
                     Level::rtl(),
                     Script::Arabic,
