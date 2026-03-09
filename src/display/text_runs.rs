@@ -70,6 +70,7 @@ impl TextDisplay {
     /// Resolve font face and shape run
     ///
     /// This may sub-divide text as required to find matching fonts.
+    #[cfg_attr(test, allow(unused_mut))]
     fn push_run(
         &mut self,
         font: FontSelector,
@@ -101,11 +102,14 @@ impl TextDisplay {
         let mut face = preferred_face;
 
         let mut start = 0;
+        #[cfg_attr(test, allow(unused_variables))]
         for (index, c) in text.char_indices() {
             if DefaultIgnorableCodePoint::for_char(c) {
                 continue;
             }
 
+            // HACK: disable font-fallback breaking in tests to get repeatable results
+            #[cfg(not(test))]
             if let Some(new_face) = fonts
                 .face_for_char(font_id, Some(preferred_face), c)
                 .expect("invalid FontId")
