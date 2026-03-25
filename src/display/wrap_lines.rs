@@ -186,32 +186,33 @@ impl TextDisplay {
     /// This does text layout, including wrapping and horizontal alignment but
     /// excluding vertical alignment.
     ///
-    /// `wrap_width` causes line wrapping at the given width. Use
+    /// Lines longer than `wrap_width` will be wrapped at this width. Use
     /// `f32::INFINITY` to disable wrapping.
     ///
-    /// Text will be aligned within `0..width_bound` (see below); as such
-    /// `width_bound` must be finite. When `wrap_width` is finite it will often
-    /// make sense to use the same value; when not it might make sense to use
-    /// `width_bound = 0` then offset the result using [`Self::apply_offset`].
-    /// If `width_bound` is too small, text will escape `0..width_bound`
-    /// according to alignment.
+    /// Text will be aligned to the horizontal interval `0..align_width`, thus
+    /// `align_width` must be finite. It usually makes sense to use
+    /// `wrap_width = align_width` if the latter is finite or `wrap_width = 0`
+    /// then post-align if not. In some cases it makes sense to fix horizontal
+    /// alignment after this method using [`Self::apply_offset`] or
+    /// [`Self::ensure_non_negative_alignment`].
     ///
     /// Alignment is applied according to `h_align`:
     ///
     /// -   [`Align::Default`]: LTR text is left-aligned, RTL text is right-aligned
-    /// -   [`Align::TL`]: text is left-aligned (left at `0`)
-    /// -   [`Align::BR`]: text is right-aligned (right at `width_bound`)
-    /// -   [`Align::Center`]: text is center-aligned (center at `width_bound / 2`)
+    /// -   [`Align::TL`]: text is left-aligned (the left edge is fixed to `0`)
+    /// -   [`Align::BR`]: text is right-aligned (the right edge is fixed to `align_width`)
+    /// -   [`Align::Center`]: text is center-aligned (the center is positioned
+    ///     at `align_width / 2`)
     /// -   [`Align::Stretch`]: this is the most complex mode. For lines which
-    ///     wrap and where the line length does not exceed `width_bound`, the
-    ///     text is aligned to `0` *and* `width_bound` (if possible) by
+    ///     wrap and where the line length does not exceed `align_width`, the
+    ///     text is aligned to `0` *and* `align_width` (if possible) by
     ///     stretching spaces within the text. Other lines are aligned in the
     ///     same way as [`Align::Default`].
     ///
     /// Returns the required height.
-    pub fn prepare_lines(&mut self, wrap_width: f32, width_bound: f32, h_align: Align) -> f32 {
-        debug_assert!(width_bound.is_finite());
-        let mut adder = LineAdder::new(width_bound, h_align);
+    pub fn prepare_lines(&mut self, wrap_width: f32, align_width: f32, h_align: Align) -> f32 {
+        debug_assert!(align_width.is_finite());
+        let mut adder = LineAdder::new(align_width, h_align);
 
         self.wrap_lines(&mut adder, wrap_width, 0);
 
@@ -337,6 +338,26 @@ impl TextDisplay {
         self.r_bound += offset.0;
     }
 
+    /// Adjust horizontal alignment to avoid left-overhangs
+    ///
+    /// This may be called after [`Self::prepare_lines`] to ensure that the
+    /// [`Self::bounding_box`] is non-negative (this only affects the
+    /// horizontal axis since [`Self::prepare_lines`] never gives content
+    /// negative vertical positions).
+    ///
+    /// Intended usage is to allow content to be aligned within `0..align_width`
+    /// while ensuring that any overhangs are to the right of this interval,
+    /// thus simplifying horizontal scrolling.
+    pub fn ensure_non_negative_alignment(&mut self) {
+        if self.l_bound < 0.0 {
+            for run in &mut self.wrapped_runs {
+                run.offset.0 -= self.l_bound;
+            }
+            self.l_bound = 0.0;
+            self.r_bound -= self.l_bound;
+        }
+    }
+
     /// Vertically align lines
     ///
     /// [Requires status][Self#status-of-preparation]: lines have been wrapped.
@@ -400,15 +421,15 @@ struct LineAdder {
     r_bound: f32,
     vcaret: f32,
     h_align: Align,
-    width_bound: f32,
+    align_width: f32,
 }
 impl LineAdder {
-    fn new(width_bound: f32, h_align: Align) -> Self {
+    fn new(align_width: f32, h_align: Align) -> Self {
         LineAdder {
             parts: Vec::with_capacity(16),
-            l_bound: width_bound,
+            l_bound: align_width,
             h_align,
-            width_bound,
+            align_width,
             ..Default::default()
         }
     }
@@ -588,7 +609,7 @@ impl PartAccumulator for LineAdder {
             }
         }
 
-        let spare = self.width_bound - line_len;
+        let spare = self.align_width - line_len;
         let mut is_gap = SmallVec::<[bool; 16]>::new();
         let mut per_gap = 0.0;
         let mut caret = match self.h_align {
