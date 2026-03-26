@@ -6,7 +6,7 @@
 //! Text prepared for display
 
 #[allow(unused)]
-use crate::Text;
+use crate::{Status, Text};
 use crate::conv::to_usize;
 use crate::{Direction, Vec2, shaper};
 use smallvec::SmallVec;
@@ -37,33 +37,24 @@ pub struct NotReady;
 ///
 /// ### Status of preparation
 ///
-/// Stages of preparation are as follows:
+/// This struct does not track the state-of-preparation internally. It is
+/// recommended to use [`Text`] or a custom wrapper to do this. The [`Status`]
+/// enum may be helpful here.
 ///
-/// 1.  Ensure all required [fonts](crate::fonts) are loaded.
-/// 2.  Call [`Self::prepare_runs`] to break text into level runs, then shape
-///     these runs into glyph runs (unwrapped but with weak break points).
+/// Methods note the expected status-of-preparation. Violating this expectation
+/// is memory-safe but may cause a panic or an unexpected result.
 ///
-///     This method must be called again if the `text`, text `direction` or
-///     `font_id` change. If only the text size (`dpem`) changes, it is
-///     sufficient to instead call [`Self::resize_runs`].
-/// 3.  Optionally, [`Self::measure_width`] and [`Self::measure_height`] may be
-///     used at this point to determine size requirements.
-/// 4.  Call [`Self::prepare_lines`] to wrap text and perform re-ordering (where
-///     lines are bi-directional) and horizontal alignment.
+/// Steps of preparation are as follows:
 ///
-///     This must be called again if any of `wrap_width`, `width_bound` or
-///     `h_align` change.
-/// 5.  Call [`Self::vertically_align`] to set or adjust vertical alignment.
-///     (Not technically required if alignment is always top.)
-///
-/// All methods are idempotent (that is, they may be called multiple times
-/// without affecting the result). Later stages of preparation do not affect
-/// earlier stages, but if an earlier stage is repeated to account for adjusted
-/// configuration then later stages must also be repeated.
-///
-/// This struct does not track the state of preparation. It is recommended to
-/// use [`Text`] or a custom wrapper for that purpose. Failure to observe the
-/// correct sequence is memory-safe but may cause panic or an unexpected result.
+/// 1.  Run-breaking: call [`Self::prepare_runs`] to break text into runs,
+///     resolve fonts and apply shaping. (This is the most expensive step,
+///     especially when shaping is enabled.)
+/// 2.  (Optional) Measure size requirements using [`Self::measure_width`] and
+///     [`Self::measure_height`].
+/// 3.  Line-wrapping: call [`Self::prepare_lines`] to perform line-wrapping at
+///     the given wrap-width. This also re-orders segments (where lines are
+///     bi-directional) and performs horizontal alignment.
+/// 4.  (Optional) Tweak alignment (e.g. to vertically center text).
 ///
 /// ### Text navigation
 ///

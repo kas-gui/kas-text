@@ -55,8 +55,7 @@ impl Line {
 impl TextDisplay {
     /// Measure required width, up to some `max_width`
     ///
-    /// [Requires status][Self#status-of-preparation]: level runs have been
-    /// prepared.
+    /// [Requires status][Self#status-of-preparation]: run-breaking is complete.
     ///
     /// This method allows calculation of the width requirement of a text object
     /// without full wrapping and glyph placement. Whenever the requirement
@@ -94,8 +93,7 @@ impl TextDisplay {
     ///
     /// Stops after `max_lines`, if provided.
     ///
-    /// [Requires status][Self#status-of-preparation]: level runs have been
-    /// prepared.
+    /// [Requires status][Self#status-of-preparation]: run-breaking is complete.
     pub fn measure_height(&self, wrap_width: f32, max_lines: Option<NonZeroUsize>) -> f32 {
         #[derive(Default)]
         struct MeasureAdder {
@@ -180,8 +178,7 @@ impl TextDisplay {
 
     /// Prepare lines ("wrap")
     ///
-    /// [Requires status][Self#status-of-preparation]: level runs have been
-    /// prepared.
+    /// [Requires status][Self#status-of-preparation]: run-breaking is complete.
     ///
     /// This does text layout, including wrapping and horizontal alignment but
     /// excluding vertical alignment.

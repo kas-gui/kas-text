@@ -34,8 +34,8 @@ pub(crate) enum RunSpecial {
 impl TextDisplay {
     /// Update font size
     ///
-    /// [Requires status][Self#status-of-preparation]: level runs have been
-    /// prepared and are valid in all ways except size (`dpem`).
+    /// [Requires status][Self#status-of-preparation]: run-breaking is complete
+    /// excepting that size (`dpem`) alterations may be required.
     ///
     /// Parameters must match those passed to [`Self::prepare_runs`] for the
     /// result to be valid.
