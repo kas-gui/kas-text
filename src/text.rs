@@ -308,25 +308,16 @@ impl<T: FormattableText + ?Sized> Text<T> {
         }
     }
 
-    /// Get the base directionality of the text
+    /// Get the base directionality of the first paragraph
     ///
     /// This does not require that the text is prepared.
+    #[inline]
     pub fn text_is_rtl(&self) -> bool {
-        let cached_is_rtl = match self.line_is_rtl(0) {
-            Ok(None) => Some(self.direction == Direction::Rtl),
-            Ok(Some(is_rtl)) => Some(is_rtl),
-            Err(NotReady) => None,
-        };
-        #[cfg(not(debug_assertions))]
-        if let Some(cached) = cached_is_rtl {
-            return cached;
+        if self.status >= Status::ResizeLevelRuns {
+            return self.display.text_is_rtl();
         }
 
-        let is_rtl = self.display.text_is_rtl(self.as_str(), self.direction);
-        if let Some(cached) = cached_is_rtl {
-            debug_assert_eq!(cached, is_rtl);
-        }
-        is_rtl
+        self.direction.text_is_rtl(self.text.as_str())
     }
 
     /// Return the sequence of effect tokens

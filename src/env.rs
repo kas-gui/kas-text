@@ -5,6 +5,8 @@
 
 //! KAS Rich-Text library — text-display environment
 
+use unicode_bidi::Level;
+
 /// Alignment of contents
 ///
 /// Note that alignment information is often passed as a `(horiz, vert)` pair.
@@ -80,6 +82,14 @@ impl Direction {
     #[inline]
     pub fn is_rtl(self) -> bool {
         matches!(self, Direction::AutoRtl | Direction::Rtl)
+    }
+
+    #[inline]
+    pub(crate) fn level(self) -> Level {
+        match self {
+            Direction::Auto | Direction::Ltr => Level::ltr(),
+            Direction::AutoRtl | Direction::Rtl => Level::rtl(),
+        }
     }
 
     /// Get the base directionality of `text`

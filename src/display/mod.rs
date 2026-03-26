@@ -5,10 +5,10 @@
 
 //! Text prepared for display
 
-#[allow(unused)]
-use crate::{Status, Text};
 use crate::conv::to_usize;
-use crate::{Direction, Vec2, shaper};
+#[allow(unused)]
+use crate::{Direction, Status, Text};
+use crate::{Vec2, shaper};
 use smallvec::SmallVec;
 use tinyvec::TinyVec;
 
@@ -76,12 +76,8 @@ pub struct NotReady;
 /// which provides a
 /// [`GraphemeCursor`](https://unicode-rs.github.io/unicode-segmentation/unicode_segmentation/struct.GraphemeCursor.html)
 /// to step back or forward one "grapheme", in logical text order.
-/// Optionally, the direction may
-/// be reversed for right-to-left lines [`TextDisplay::line_is_rtl`], but note
-/// that the result may be confusing since not all text on the line follows the
-/// line's base direction and adjacent lines may have different directions.
-///
-/// Navigating glyphs left or right in display-order is not currently supported.
+/// The direction of navigation may be reversed for [right-to-left text](Self::text_is_rtl)
+/// (i.e. reversed logical-order navigation).
 ///
 /// To navigate "up" and "down" lines, use [`TextDisplay::text_glyph_pos`] to
 /// get the position of the cursor, [`TextDisplay::find_line`] to get the line
@@ -114,10 +110,10 @@ pub struct TextDisplay {
 fn size_of_elts() {
     use std::mem::size_of;
     assert_eq!(size_of::<TinyVec<[u8; 0]>>(), 24);
-    assert_eq!(size_of::<shaper::GlyphRun>(), 112);
+    assert_eq!(size_of::<shaper::GlyphRun>(), 120);
     assert_eq!(size_of::<RunPart>(), 24);
     assert_eq!(size_of::<Line>(), 24);
-    assert_eq!(size_of::<TextDisplay>(), 200);
+    assert_eq!(size_of::<TextDisplay>(), 208);
 }
 
 impl Default for TextDisplay {
@@ -199,26 +195,18 @@ impl TextDisplay {
         first
     }
 
-    /// Get the base directionality of the text
+    /// Get the base directionality of the first paragraph
     ///
-    /// [Requires status][Self#status-of-preparation]: none.
-    pub fn text_is_rtl(&self, text: &str, direction: Direction) -> bool {
-        let (is_auto, mut is_rtl) = match direction {
-            Direction::Ltr => (false, false),
-            Direction::Rtl => (false, true),
-            Direction::Auto => (true, false),
-            Direction::AutoRtl => (true, true),
-        };
-
-        if is_auto {
-            match unicode_bidi::get_base_direction(text) {
-                unicode_bidi::Direction::Ltr => is_rtl = false,
-                unicode_bidi::Direction::Rtl => is_rtl = true,
-                unicode_bidi::Direction::Mixed => (),
-            }
-        }
-
-        is_rtl
+    /// [Requires status][Self#status-of-preparation]: run-breaking is complete.
+    ///
+    /// This returns the direction inferred from the `text` and [`Direction`]
+    /// used during run-breaking. See also [`Direction::text_is_rtl`].
+    #[inline]
+    pub fn text_is_rtl(&self) -> bool {
+        self.runs
+            .first()
+            .map(|r| r.base_level.is_rtl())
+            .unwrap_or_default()
     }
 
     /// Get the directionality of the current line
@@ -227,16 +215,16 @@ impl TextDisplay {
     ///
     /// Returns:
     ///
-    /// - `None` if text is empty
+    /// - `None` if the line is not found
     /// - `Some(line_is_right_to_left)` otherwise
     ///
     /// Note: indeterminate lines (e.g. empty lines) have their direction
-    /// determined from the passed environment, by default left-to-right.
+    /// determined from the passed [`Direction`].
     pub fn line_is_rtl(&self, line: usize) -> Option<bool> {
         if let Some(line) = self.lines.get(line) {
             let first_run = line.run_range.start();
             let glyph_run = to_usize(self.wrapped_runs[first_run].glyph_run);
-            Some(self.runs[glyph_run].level.is_rtl())
+            Some(self.runs[glyph_run].base_level.is_rtl())
         } else {
             None
         }
