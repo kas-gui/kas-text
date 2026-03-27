@@ -34,8 +34,8 @@ pub(crate) enum RunSpecial {
 impl TextDisplay {
     /// Update font size
     ///
-    /// [Requires status][Self#status-of-preparation]: level runs have been
-    /// prepared and are valid in all ways except size (`dpem`).
+    /// [Requires status][Self#status-of-preparation]: run-breaking is complete
+    /// excepting that size (`dpem`) alterations may be required.
     ///
     /// Parameters must match those passed to [`Self::prepare_runs`] for the
     /// result to be valid.
@@ -58,6 +58,7 @@ impl TextDisplay {
             let input = shaper::Input {
                 text,
                 dpem,
+                base_level: run.base_level,
                 level: run.level,
                 script: run.script,
             };
@@ -213,15 +214,22 @@ impl TextDisplay {
             Direction::Rtl => Some(RTL_LEVEL),
         };
         let info = BidiInfo::new(text, default_para_level);
+        let default_level = direction.level();
         let levels = info.levels;
         assert_eq!(text.len(), levels.len());
 
         let mut input = shaper::Input {
             text,
             dpem,
-            level: levels.first().cloned().unwrap_or(LTR_LEVEL),
+            base_level: info
+                .paragraphs
+                .first()
+                .map(|p| p.level)
+                .unwrap_or(default_level),
+            level: levels.first().cloned().unwrap_or(default_level),
             script: Script::Unknown,
         };
+        let mut next_para_i = 1;
 
         let mut start = 0;
         let mut breaks = Default::default();
@@ -336,6 +344,12 @@ impl TextDisplay {
 
                 start = index;
                 non_control_end = index;
+                while let Some(para) = info.paragraphs.get(next_para_i)
+                    && para.range.start <= index
+                {
+                    input.base_level = para.level;
+                    next_para_i += 1;
+                }
                 if let Some(level) = levels.get(index) {
                     input.level = *level;
                 }
@@ -580,7 +594,7 @@ mod test {
     use std::ops::Range;
     use unicode_bidi::Level;
 
-    type Expected<'a> = &'a [(Range<usize>, RunSpecial, Level, Script, &'a [u32])];
+    type Expected<'a> = &'a [(Range<usize>, RunSpecial, Level, Level, Script, &'a [u32])];
 
     fn test_breaking(text: &str, dir: Direction, expected: Expected) {
         let fonts = iter::once(FontToken {
@@ -602,15 +616,70 @@ mod test {
                 run.special, expected.1,
                 "RunSpecial for text \"{text}\", run {i}"
             );
-            assert_eq!(run.level, expected.2, "for text \"{text}\", run {i}");
-            assert_eq!(run.script, expected.3, "for text \"{text}\", run {i}");
+            assert_eq!(run.base_level, expected.2, "for text \"{text}\", run {i}");
+            assert_eq!(run.level, expected.3, "for text \"{text}\", run {i}");
+            assert_eq!(run.script, expected.4, "for text \"{text}\", run {i}");
             assert_eq!(
                 run.breaks.iter().map(|b| b.index).collect::<Vec<_>>(),
-                expected.4,
+                expected.5,
                 "wrap-points for text \"{text}\", run {i}"
             );
         }
         assert_eq!(display.runs.len(), expected.len(), "number of runs");
+    }
+
+    #[test]
+    fn test_breaking_empty() {
+        let sample = "";
+
+        test_breaking(
+            sample,
+            Direction::Auto,
+            &[(
+                0..0,
+                RunSpecial::None,
+                Level::ltr(),
+                Level::ltr(),
+                Script::Unknown,
+                &[],
+            )],
+        );
+        test_breaking(
+            sample,
+            Direction::Ltr,
+            &[(
+                0..0,
+                RunSpecial::None,
+                Level::ltr(),
+                Level::ltr(),
+                Script::Unknown,
+                &[],
+            )],
+        );
+        test_breaking(
+            sample,
+            Direction::AutoRtl,
+            &[(
+                0..0,
+                RunSpecial::None,
+                Level::rtl(),
+                Level::rtl(),
+                Script::Unknown,
+                &[],
+            )],
+        );
+        test_breaking(
+            sample,
+            Direction::Rtl,
+            &[(
+                0..0,
+                RunSpecial::None,
+                Level::rtl(),
+                Level::rtl(),
+                Script::Unknown,
+                &[],
+            )],
+        );
     }
 
     #[test]
@@ -622,6 +691,7 @@ mod test {
             &[(
                 0..sample.len(),
                 RunSpecial::None,
+                Level::ltr(),
                 Level::ltr(),
                 Script::Latin,
                 &[7, 12],
@@ -636,15 +706,30 @@ mod test {
             sample,
             Direction::Auto,
             &[
-                (0..4, RunSpecial::None, Level::ltr(), Script::Latin, &[]),
+                (
+                    0..4,
+                    RunSpecial::None,
+                    Level::ltr(),
+                    Level::ltr(),
+                    Script::Latin,
+                    &[],
+                ),
                 (
                     4..21,
                     RunSpecial::NoBreak,
+                    Level::ltr(),
                     Level::rtl(),
                     Script::Hebrew,
                     &[11],
                 ),
-                (21..25, RunSpecial::None, Level::ltr(), Script::Latin, &[22]),
+                (
+                    21..25,
+                    RunSpecial::None,
+                    Level::ltr(),
+                    Level::ltr(),
+                    Script::Latin,
+                    &[22],
+                ),
             ],
         );
 
@@ -653,10 +738,18 @@ mod test {
             sample,
             Direction::Auto,
             &[
-                (0..7, RunSpecial::None, Level::rtl(), Script::Hebrew, &[]),
+                (
+                    0..7,
+                    RunSpecial::None,
+                    Level::rtl(),
+                    Level::rtl(),
+                    Script::Hebrew,
+                    &[],
+                ),
                 (
                     7..14,
                     RunSpecial::NoBreak,
+                    Level::rtl(),
                     Level::new(2).unwrap(),
                     Script::Latin,
                     &[11],
@@ -664,6 +757,7 @@ mod test {
                 (
                     14..25,
                     RunSpecial::None,
+                    Level::rtl(),
                     Level::rtl(),
                     Script::Hebrew,
                     &[15],
@@ -676,8 +770,14 @@ mod test {
     fn test_breaking_weak_bidi() {
         let sample = "123 (1-2)";
 
-        let expected_ltr: Expected =
-            &[(0..9, RunSpecial::None, Level::ltr(), Script::Common, &[4])];
+        let expected_ltr: Expected = &[(
+            0..9,
+            RunSpecial::None,
+            Level::ltr(),
+            Level::ltr(),
+            Script::Common,
+            &[4],
+        )];
         test_breaking(sample, Direction::Auto, &expected_ltr[..]);
         test_breaking(sample, Direction::Ltr, &expected_ltr[..]);
 
@@ -685,6 +785,7 @@ mod test {
             (
                 0..3,
                 RunSpecial::NoBreak,
+                Level::rtl(),
                 Level::new(2).unwrap(),
                 Script::Common,
                 &[],
@@ -693,17 +794,26 @@ mod test {
                 3..5,
                 RunSpecial::NoBreak,
                 Level::rtl(),
+                Level::rtl(),
                 Script::Common,
                 &[4],
             ),
             (
                 5..8,
                 RunSpecial::NoBreak,
+                Level::rtl(),
                 Level::new(2).unwrap(),
                 Script::Common,
                 &[],
             ),
-            (8..9, RunSpecial::None, Level::rtl(), Script::Common, &[]),
+            (
+                8..9,
+                RunSpecial::None,
+                Level::rtl(),
+                Level::rtl(),
+                Script::Common,
+                &[],
+            ),
         ];
         test_breaking(sample, Direction::AutoRtl, &expected_rtl[..]);
         test_breaking(sample, Direction::Rtl, &expected_rtl[..]);
@@ -721,6 +831,7 @@ mod test {
                 0..sample.len(),
                 RunSpecial::None,
                 Level::rtl(),
+                Level::rtl(),
                 Script::Hebrew,
                 &[
                     9, 13, 18, 25, 32, 43, 50, 61, 74, 85, 109, 118, 129, 142, 158, 169, 178, 189,
@@ -737,10 +848,18 @@ mod test {
             sample,
             Direction::Auto,
             &[
-                (0..13, RunSpecial::None, Level::rtl(), Script::Arabic, &[]),
+                (
+                    0..13,
+                    RunSpecial::None,
+                    Level::rtl(),
+                    Level::rtl(),
+                    Script::Arabic,
+                    &[],
+                ),
                 (
                     13..14,
                     RunSpecial::NoBreak,
+                    Level::rtl(),
                     Level::new(2).unwrap(),
                     Script::Common,
                     &[],
@@ -748,6 +867,7 @@ mod test {
                 (
                     14..sample.len(),
                     RunSpecial::None,
+                    Level::rtl(),
                     Level::rtl(),
                     Script::Arabic,
                     &[
@@ -771,12 +891,14 @@ mod test {
                     0..42,
                     RunSpecial::NoBreak,
                     Level::rtl(),
+                    Level::rtl(),
                     Script::Arabic,
                     &[1, 12, 21, 34, 39],
                 ),
                 (
                     42..54,
                     RunSpecial::NoBreak,
+                    Level::rtl(),
                     Level::new(3).unwrap(),
                     Script::Arabic,
                     &[],
@@ -784,6 +906,7 @@ mod test {
                 (
                     54..58,
                     RunSpecial::NoBreak,
+                    Level::rtl(),
                     Level::new(2).unwrap(),
                     Script::Common,
                     &[55],
@@ -792,12 +915,14 @@ mod test {
                     58..197,
                     RunSpecial::NoBreak,
                     Level::rtl(),
+                    Level::rtl(),
                     Script::Arabic,
                     &[62, 69, 82, 91, 107, 118, 127, 138, 153, 166, 179, 196],
                 ),
                 (
                     197..215,
                     RunSpecial::NoBreak,
+                    Level::rtl(),
                     Level::new(2).unwrap(),
                     Script::Latin,
                     &[205],
@@ -806,12 +931,14 @@ mod test {
                     215..244,
                     RunSpecial::None,
                     Level::rtl(),
+                    Level::rtl(),
                     Script::Arabic,
                     &[219, 228, 239],
                 ),
                 (
                     244..246,
                     RunSpecial::NoBreak,
+                    Level::rtl(),
                     Level::new(2).unwrap(),
                     Script::Common,
                     &[],
@@ -820,12 +947,14 @@ mod test {
                     246..247,
                     RunSpecial::NoBreak,
                     Level::rtl(),
+                    Level::rtl(),
                     Script::Common,
                     &[],
                 ),
                 (
                     247..249,
                     RunSpecial::NoBreak,
+                    Level::rtl(),
                     Level::new(2).unwrap(),
                     Script::Common,
                     &[],
@@ -834,12 +963,14 @@ mod test {
                     249..259,
                     RunSpecial::None,
                     Level::rtl(),
+                    Level::rtl(),
                     Script::Arabic,
                     &[250],
                 ),
                 (
                     259..263,
                     RunSpecial::NoBreak,
+                    Level::rtl(),
                     Level::new(2).unwrap(),
                     Script::Common,
                     &[],
@@ -847,6 +978,7 @@ mod test {
                 (
                     263..sample.len(),
                     RunSpecial::None,
+                    Level::rtl(),
                     Level::rtl(),
                     Script::Arabic,
                     &[

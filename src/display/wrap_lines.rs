@@ -10,6 +10,7 @@ use crate::conv::{to_u32, to_usize};
 use crate::fonts::{self, FontLibrary};
 use crate::shaper::{GlyphRun, PartMetrics};
 use crate::{Align, Range, Vec2};
+use core::f32;
 use smallvec::SmallVec;
 use std::num::NonZeroUsize;
 use tinyvec::TinyVec;
@@ -55,8 +56,7 @@ impl Line {
 impl TextDisplay {
     /// Measure required width, up to some `max_width`
     ///
-    /// [Requires status][Self#status-of-preparation]: level runs have been
-    /// prepared.
+    /// [Requires status][Self#status-of-preparation]: run-breaking is complete.
     ///
     /// This method allows calculation of the width requirement of a text object
     /// without full wrapping and glyph placement. Whenever the requirement
@@ -94,8 +94,7 @@ impl TextDisplay {
     ///
     /// Stops after `max_lines`, if provided.
     ///
-    /// [Requires status][Self#status-of-preparation]: level runs have been
-    /// prepared.
+    /// [Requires status][Self#status-of-preparation]: run-breaking is complete.
     pub fn measure_height(&self, wrap_width: f32, max_lines: Option<NonZeroUsize>) -> f32 {
         #[derive(Default)]
         struct MeasureAdder {
@@ -180,8 +179,7 @@ impl TextDisplay {
 
     /// Prepare lines ("wrap")
     ///
-    /// [Requires status][Self#status-of-preparation]: level runs have been
-    /// prepared.
+    /// [Requires status][Self#status-of-preparation]: run-breaking is complete.
     ///
     /// This does text layout, including wrapping and horizontal alignment but
     /// excluding vertical alignment.
@@ -411,7 +409,6 @@ struct PartInfo {
     end_space: bool,
 }
 
-#[derive(Default)]
 struct LineAdder {
     wrapped_runs: TinyVec<[RunPart; 1]>,
     parts: Vec<PartInfo>,
@@ -426,11 +423,15 @@ struct LineAdder {
 impl LineAdder {
     fn new(align_width: f32, h_align: Align) -> Self {
         LineAdder {
+            wrapped_runs: Default::default(),
             parts: Vec::with_capacity(16),
+            lines: Default::default(),
+            line_gap: 0.0,
             l_bound: align_width,
+            r_bound: 0.0,
+            vcaret: 0.0,
             h_align,
             align_width,
-            ..Default::default()
         }
     }
 }
@@ -502,9 +503,9 @@ impl PartAccumulator for LineAdder {
         // Iterate runs to determine max ascent, level, etc.
         let mut last_run = u32::MAX;
         let (mut ascent, mut descent, mut line_gap) = (0f32, 0f32, 0f32);
-        let mut line_level = Level::new(Level::max_implicit_depth()).unwrap();
+        let mut base_level = LTR_LEVEL;
         let mut max_level = LTR_LEVEL;
-        for part in parts.iter() {
+        for (i, part) in parts.iter().enumerate() {
             if last_run == part.run {
                 continue;
             }
@@ -516,10 +517,13 @@ impl PartAccumulator for LineAdder {
             descent = descent.min(scale_font.descent());
             line_gap = line_gap.max(scale_font.line_gap());
 
-            line_level = line_level.min(run.level);
+            if i > 0 {
+                // All runs on a line should have the same base (paragraph) level
+                debug_assert_eq!(base_level, run.base_level);
+            }
+            base_level = run.base_level;
             max_level = max_level.max(run.level);
         }
-        let line_is_rtl = line_level.is_rtl();
 
         if !self.lines.is_empty() {
             self.vcaret += line_gap.max(self.line_gap);
@@ -609,6 +613,7 @@ impl PartAccumulator for LineAdder {
             }
         }
 
+        let line_is_rtl = base_level.is_rtl();
         let spare = self.align_width - line_len;
         let mut is_gap = SmallVec::<[bool; 16]>::new();
         let mut per_gap = 0.0;
@@ -637,19 +642,19 @@ impl PartAccumulator for LineAdder {
                 for i in 1..len {
                     let new_level = runs[to_usize(parts[i].run)].level;
                     if level != new_level {
-                        if level > line_level {
+                        if level > base_level {
                             is_gap[start..i].reverse();
                         }
                         start = i;
                         level = new_level;
                     }
                 }
-                if level > line_level {
+                if level > base_level {
                     is_gap[start..len - 1].reverse();
                 }
 
                 // Shift left 1 part for RTL lines
-                if line_level.is_rtl() {
+                if line_is_rtl {
                     is_gap.copy_within(1..len, 0);
                 }
 

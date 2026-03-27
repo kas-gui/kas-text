@@ -96,9 +96,16 @@ pub(crate) struct GlyphRun {
     pub face_id: FaceId,
     /// Tab or no-break property
     pub special: RunSpecial,
-    /// BIDI level
+    /// Base BiDi level of the paragraph
+    ///
+    /// We store this here because we don't have anywhere else for per-paragraph
+    /// data (and it is small).
+    pub base_level: Level,
+    /// BiDi level of this run
     pub level: Level,
     /// Script
+    ///
+    /// We store this only to support `resize_runs`.
     pub script: Script,
 
     /// Sequence of all glyphs, in left-to-right order
@@ -230,6 +237,7 @@ pub(crate) struct Input<'a> {
     /// Contiguous text
     pub text: &'a str,
     pub dpem: f32,
+    pub base_level: Level,
     pub level: Level,
     pub script: Script,
 }
@@ -329,6 +337,7 @@ pub(crate) fn shape(
         dpu,
         face_id,
         special,
+        base_level: input.base_level,
         level: input.level,
         script: input.script,
 
@@ -352,6 +361,7 @@ fn shape_rustybuzz(
         dpem,
         level,
         script,
+        ..
     } = input;
 
     let fonts = fonts::library();
