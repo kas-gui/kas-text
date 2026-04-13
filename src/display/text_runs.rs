@@ -161,34 +161,34 @@ impl TextDisplay {
         Ok(())
     }
 
-    /// Break text into level runs
+    /// Break `text` into runs, replacing existing content
     ///
-    /// [Requires status][Self#status-of-preparation]: none.
+    /// The `text` is split into a sequence of runs according to the text
+    /// direction, script, font parameters and required font fallbacks (results
+    /// may thus depend on available fonts). These runs are then
+    /// [shaped](https://en.wikipedia.org/wiki/Text_shaping) into glyph
+    /// sequences. [Line wrapping](Self::prepare_lines) should be performed
+    /// after this.
     ///
-    /// The `font_tokens` iterator must not be empty and the first token yielded
+    /// The `font_tokens` iterator controls font selection using
+    /// [`FontToken::start`] indices relative to `text` (byte indices).
+    /// This iterator must not be empty and the first token yielded
     /// must have [`FontToken::start`] == 0. (Failure to do so will result in an
     /// error on debug builds and usage of default values on release builds.)
+    ///
+    /// # Preparation status
+    ///
+    /// [Requires status][Self#status-of-preparation]: none.
     ///
     /// Must be called again if any of `text`, `direction` or `font_tokens`
     /// change.
     /// If only `dpem` changes, [`Self::resize_runs`] may be called instead.
-    ///
-    /// The text is broken into a set of contiguous "level runs". These runs are
-    /// maximal slices of the `text` which do not contain explicit line breaks
-    /// and have a single text direction according to the
-    /// [Unicode Bidirectional Algorithm](http://www.unicode.org/reports/tr9/).
     pub fn prepare_runs(
         &mut self,
         text: &str,
         direction: Direction,
         mut font_tokens: impl Iterator<Item = FontToken>,
     ) -> Result<(), NoFontMatch> {
-        // This method constructs a list of "hard lines" (the initial line and any
-        // caused by a hard break), each composed of a list of "level runs" (the
-        // result of splitting and reversing according to Unicode TR9 aka
-        // Bidirectional algorithm), plus a list of "soft break" positions
-        // (where wrapping may introduce new lines depending on available space).
-
         self.runs.clear();
 
         let (mut dpem, mut font) = read_initial_token(&mut font_tokens);
