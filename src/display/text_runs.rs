@@ -17,6 +17,7 @@ use icu_properties::props::{
     Script,
 };
 use icu_segmenter::LineSegmenter;
+use std::ops::{Bound, RangeBounds};
 use std::sync::OnceLock;
 use unicode_bidi::{BidiInfo, LTR_LEVEL, RTL_LEVEL};
 
@@ -43,21 +44,42 @@ impl TextDisplay {
         self.r_bound = 0.0;
     }
 
-    /// Update font size
+    /// Get the number of text runs
+    #[inline]
+    pub fn runs_len(&self) -> usize {
+        self.runs.len()
+    }
+
+    /// Update font size for existing text runs
     ///
-    /// [Requires status][Self#status-of-preparation]: run-breaking is complete
-    /// excepting that size (`dpem`) alterations may be required.
+    /// [Requires status][Self#status-of-preparation]: run-breaking is complete.
     ///
-    /// Parameters must match those passed to [`Self::prepare_runs`] for the
-    /// result to be valid.
-    ///
-    /// This updates the result of [`TextDisplay::prepare_runs`] due to change
-    /// in font size.
-    pub fn resize_runs(&mut self, text: &str, mut font_tokens: impl Iterator<Item = FontToken>) {
+    /// This is a fast way to resize text. Parameters (aside from
+    /// [`FontToken::dpem`] values) must match those passed to
+    /// [`Self::prepare_runs`]. The passed `range` may be `..` (to update
+    /// everything) or a sub-range (TODO).
+    /// In case a sub-range is used, the `font_tokens` passed may optionally be
+    /// the full set used to construct the text or a sub-set covering the
+    /// text `range` resized here.
+    pub fn resize_runs<R, FT>(&mut self, range: R, text: &str, mut font_tokens: FT)
+    where
+        R: RangeBounds<usize>,
+        FT: Iterator<Item = FontToken>,
+    {
         let (mut dpem, _) = read_initial_token(&mut font_tokens);
         let mut next_token = font_tokens.next();
 
-        for run in &mut self.runs {
+        let start = match range.start_bound() {
+            Bound::Included(start) => *start,
+            Bound::Excluded(start) => start + 1,
+            Bound::Unbounded => 0,
+        };
+        let end = match range.end_bound() {
+            Bound::Included(end) => end - 1,
+            Bound::Excluded(end) => *end,
+            Bound::Unbounded => self.runs.len(),
+        };
+        for run in &mut self.runs[start..end] {
             while let Some(token) = next_token.as_ref() {
                 if token.start > run.range.start {
                     break;

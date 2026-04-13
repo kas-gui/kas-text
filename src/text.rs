@@ -387,6 +387,7 @@ impl<T: FormattableText + ?Sized> Text<T> {
                 self.text.font_tokens(self.dpem, self.font),
             )?,
             Status::ResizeLevelRuns => self.display.resize_runs(
+                ..,
                 self.text.as_str(),
                 self.text.font_tokens(self.dpem, self.font),
             ),
