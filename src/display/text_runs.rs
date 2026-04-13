@@ -32,6 +32,17 @@ pub(crate) enum RunSpecial {
 }
 
 impl TextDisplay {
+    /// Reset the `TextDisplay`
+    ///
+    /// This removes all text runs, resetting the display.
+    pub fn clear(&mut self) {
+        self.runs.clear();
+        self.wrapped_runs.clear();
+        self.lines.clear();
+        self.l_bound = 0.0;
+        self.r_bound = 0.0;
+    }
+
     /// Update font size
     ///
     /// [Requires status][Self#status-of-preparation]: run-breaking is complete
@@ -189,7 +200,7 @@ impl TextDisplay {
         direction: Direction,
         mut font_tokens: impl Iterator<Item = FontToken>,
     ) -> Result<(), NoFontMatch> {
-        self.runs.clear();
+        self.clear();
 
         let (dpem, mut font) = read_initial_token(&mut font_tokens);
         let mut next_token = font_tokens.next();
