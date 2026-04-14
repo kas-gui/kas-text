@@ -219,14 +219,39 @@ impl TextDisplay {
         &mut self,
         text: &str,
         direction: Direction,
-        mut font_tokens: impl Iterator<Item = FontToken>,
+        font_tokens: impl Iterator<Item = FontToken>,
     ) -> Result<(), NoFontMatch> {
         self.clear();
+        let text = AnalyzedText::new(text, direction);
+        self.push_text(&text, font_tokens, true)?;
+        Ok(())
+    }
 
+    /// Break `text` into runs, appending to existing content
+    ///
+    /// Unlike [`Self::prepare_runs`] this method appends to existing text runs
+    /// instead of replacing them. This may thus be used to add a text in
+    /// multiple parts (see [`AnalyzedText`] docs for limitations).
+    ///
+    /// If `imply_empty_final_line` and `text` ends with a mandatory line-break
+    /// then an empty text run will be added to represent the final line. This
+    /// should not be used when another text part will be appended after this
+    /// but should be used for the final text part of a multi-line text editor.
+    ///
+    /// # Preparation status
+    ///
+    /// [Requires status][Self#status-of-preparation]: none.
+    ///
+    /// Optionally call [`Self::clear`] before this method to remove old
+    /// content.
+    pub fn push_text(
+        &mut self,
+        text: &AnalyzedText<'_>,
+        mut font_tokens: impl Iterator<Item = FontToken>,
+        imply_empty_final_line: bool,
+    ) -> Result<(), NoFontMatch> {
         let (dpem, mut font) = read_initial_token(&mut font_tokens);
         let mut next_token = font_tokens.next();
-
-        let text = AnalyzedText::new(text, direction);
 
         let mut input = shaper::Input {
             text: &text,
@@ -399,10 +424,8 @@ impl TextDisplay {
             emoji_start = new_emoji_start;
         }
 
-        let hard_break = ends_with_hard_break(&text);
-
         // Following a hard break we have an implied empty line.
-        if hard_break {
+        if imply_empty_final_line && ends_with_hard_break(&text) {
             let range = (text.len()..text.len()).into();
             input.level = text.default_level();
             breaks = Default::default();

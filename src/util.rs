@@ -38,7 +38,8 @@ impl Status {
 
 /// Analyzer for text direction
 ///
-/// This is typically not stored but computed on use.
+/// This is typically not stored but computed on use for one or multiple
+/// paragraphs of text (see [`Self::new`] docs).
 pub struct AnalyzedText<'a> {
     text: &'a str,
     default_level: Level,
