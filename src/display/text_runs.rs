@@ -9,7 +9,7 @@ use super::TextDisplay;
 use crate::conv::{to_u32, to_usize};
 use crate::fonts::{self, FaceId, FontSelector, NoFontMatch};
 use crate::format::FontToken;
-use crate::util::ends_with_hard_break;
+use crate::util::{AnalyzedText, ends_with_hard_break};
 use crate::{Direction, Range, shaper};
 use icu_properties::CodePointMapData;
 use icu_properties::props::{
@@ -19,7 +19,6 @@ use icu_properties::props::{
 use icu_segmenter::LineSegmenter;
 use std::ops::{Bound, RangeBounds};
 use std::sync::OnceLock;
-use unicode_bidi::{BidiInfo, LTR_LEVEL, RTL_LEVEL};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum RunSpecial {
@@ -227,32 +226,16 @@ impl TextDisplay {
         let (dpem, mut font) = read_initial_token(&mut font_tokens);
         let mut next_token = font_tokens.next();
 
-        let default_para_level = match direction {
-            Direction::Auto => None,
-            Direction::AutoRtl => {
-                use unicode_bidi::Direction::*;
-                match unicode_bidi::get_base_direction(text) {
-                    Ltr | Rtl => None,
-                    Mixed => Some(RTL_LEVEL),
-                }
-            }
-            Direction::Ltr => Some(LTR_LEVEL),
-            Direction::Rtl => Some(RTL_LEVEL),
-        };
-        let info = BidiInfo::new(text, default_para_level);
-        let default_level = direction.level();
-        let levels = info.levels;
-        assert_eq!(text.len(), levels.len());
+        let text = AnalyzedText::new(text, direction);
 
         let mut input = shaper::Input {
-            text,
+            text: &text,
             dpem,
-            base_level: info
-                .paragraphs
-                .first()
+            base_level: text
+                .paragraph(0)
                 .map(|p| p.level)
-                .unwrap_or(default_level),
-            level: levels.first().cloned().unwrap_or(default_level),
+                .unwrap_or(text.default_level()),
+            level: text.level(0).unwrap_or(text.default_level()),
             script: Script::Unknown,
         };
         let mut next_para_i = 1;
@@ -262,7 +245,7 @@ impl TextDisplay {
 
         // TODO: allow segmenter configuration
         let segmenter = LineSegmenter::new_auto(Default::default());
-        let mut break_iter = segmenter.segment_str(text);
+        let mut break_iter = segmenter.segment_str(&text);
         let mut next_break = break_iter.next();
 
         let mut first_real = None;
@@ -332,9 +315,9 @@ impl TextDisplay {
             };
 
             // Force end of current run?
-            require_break |= levels
-                .get(index)
-                .map(|level| *level != input.level)
+            require_break |= text
+                .level(index)
+                .map(|level| level != input.level)
                 .unwrap_or(true);
 
             if let Some(token) = next_token.as_ref()
@@ -370,14 +353,14 @@ impl TextDisplay {
 
                 start = index;
                 non_control_end = index;
-                while let Some(para) = info.paragraphs.get(next_para_i)
+                while let Some(para) = text.paragraph(next_para_i)
                     && para.range.start <= index
                 {
                     input.base_level = para.level;
                     next_para_i += 1;
                 }
-                if let Some(level) = levels.get(index) {
-                    input.level = *level;
+                if let Some(level) = text.level(index) {
+                    input.level = level;
                 }
                 input.script = script;
                 breaks = Default::default();
@@ -416,12 +399,12 @@ impl TextDisplay {
             emoji_start = new_emoji_start;
         }
 
-        let hard_break = ends_with_hard_break(text);
+        let hard_break = ends_with_hard_break(&text);
 
         // Following a hard break we have an implied empty line.
         if hard_break {
             let range = (text.len()..text.len()).into();
-            input.level = default_level;
+            input.level = text.default_level();
             breaks = Default::default();
             self.push_run(font, input, range, breaks, RunSpecial::None, None)?;
         }

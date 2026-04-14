@@ -36,7 +36,7 @@ mod text;
 pub use text::*;
 
 mod util;
-pub use util::{LineIterator, Status};
+pub use util::{AnalyzedText, LineIterator, Status};
 
 pub(crate) mod shaper;
 pub use shaper::{Glyph, GlyphId};
