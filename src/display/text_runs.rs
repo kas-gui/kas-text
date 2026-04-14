@@ -421,7 +421,7 @@ impl TextDisplay {
         // Following a hard break we have an implied empty line.
         if hard_break {
             let range = (text.len()..text.len()).into();
-            input.level = default_para_level.unwrap_or(LTR_LEVEL);
+            input.level = default_level;
             breaks = Default::default();
             self.push_run(font, input, range, breaks, RunSpecial::None, None)?;
         }
