@@ -191,15 +191,8 @@ impl TextDisplay {
     ) -> Result<(), NoFontMatch> {
         self.runs.clear();
 
-        let (mut dpem, mut font) = read_initial_token(&mut font_tokens);
+        let (dpem, mut font) = read_initial_token(&mut font_tokens);
         let mut next_token = font_tokens.next();
-        if let Some(token) = next_token.as_ref()
-            && token.start == 0
-        {
-            font = token.font;
-            dpem = token.dpem;
-            next_token = font_tokens.next();
-        }
 
         let default_para_level = match direction {
             Direction::Auto => None,
