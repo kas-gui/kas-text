@@ -104,6 +104,17 @@ impl<'a> AnalyzedText<'a> {
     pub(crate) fn paragraph(&self, index: usize) -> Option<&ParagraphInfo> {
         self.paragraphs.get(index)
     }
+
+    /// Find the index of the paragraph containing the given text `index`
+    pub(crate) fn find_paragraph(&self, index: usize) -> usize {
+        match self
+            .paragraphs
+            .binary_search_by_key(&index, |para| para.range.start)
+        {
+            Ok(i) => i,
+            Err(i) => i.saturating_sub(1),
+        }
+    }
 }
 
 /// Returns `true` when `text` ends with a mandatory break

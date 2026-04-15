@@ -56,7 +56,8 @@ impl TextDisplay {
     /// This is a fast way to resize text. Parameters (aside from
     /// [`FontToken::dpem`] values) must match those passed to
     /// [`Self::prepare_runs`]. The passed `range` may be `..` (to update
-    /// everything) or a sub-range (TODO).
+    /// everything) or a sub-range (see [`Self::push_text`] and
+    /// [`AnalyzedText`] docs for limitations on text splitting).
     /// In case a sub-range is used, the `font_tokens` passed may optionally be
     /// the full set used to construct the text or a sub-set covering the
     /// text `range` resized here.
@@ -250,27 +251,71 @@ impl TextDisplay {
         mut font_tokens: impl Iterator<Item = FontToken>,
         imply_empty_final_line: bool,
     ) -> Result<(), NoFontMatch> {
-        let (dpem, mut font) = read_initial_token(&mut font_tokens);
-        let mut next_token = font_tokens.next();
-
-        let mut input = shaper::Input {
-            text: &text,
-            dpem,
-            base_level: text
-                .paragraph(0)
-                .map(|p| p.level)
-                .unwrap_or(text.default_level()),
-            level: text.level(0).unwrap_or(text.default_level()),
-            script: Script::Unknown,
-        };
-        let mut next_para_i = 1;
+        let (mut dpem, mut font) = read_initial_token(&mut font_tokens);
 
         let mut start = 0;
+        for token in font_tokens {
+            let end = to_usize(token.start);
+            self.push_text_range(text, start..end, font, dpem)?;
+
+            start = end;
+            dpem = token.dpem;
+            font = token.font;
+        }
+
+        let len = text.len();
+        if start < len || len == 0 {
+            self.push_text_range(text, start..len, font, dpem)?;
+        }
+
+        // Following a hard break we have an implied empty line.
+        if imply_empty_final_line && ends_with_hard_break(&text) {
+            let input = shaper::Input {
+                text: "",
+                dpem,
+                base_level: text.default_level(),
+                level: text.default_level(),
+                script: Script::Unknown,
+            };
+            let range = (text.len()..text.len()).into();
+            let breaks = Default::default();
+            self.push_run(font, input, range, breaks, RunSpecial::None, None)?;
+        }
+
+        Ok(())
+    }
+
+    /// Break `&text[range]` into runs, appending to existing content
+    ///
+    /// Unlike [`Self::push_text`] this method appends runs built using a single
+    /// set of font settings.
+    pub fn push_text_range(
+        &mut self,
+        text: &AnalyzedText<'_>,
+        range: std::ops::Range<usize>,
+        font: FontSelector,
+        dpem: f32,
+    ) -> Result<(), NoFontMatch> {
+        let starting_para_i = text.find_paragraph(range.start);
+
+        let mut input = shaper::Input {
+            text: &text[range.clone()],
+            dpem,
+            base_level: text
+                .paragraph(starting_para_i)
+                .map(|p| p.level)
+                .unwrap_or(text.default_level()),
+            level: text.level(range.start).unwrap_or(text.default_level()),
+            script: Script::Unknown,
+        };
+        let mut next_para_i = starting_para_i + 1;
+
         let mut breaks = Default::default();
+        let mut start = range.start;
 
         // TODO: allow segmenter configuration
         let segmenter = LineSegmenter::new_auto(Default::default());
-        let mut break_iter = segmenter.segment_str(&text);
+        let mut break_iter = segmenter.segment_str(input.text);
         let mut next_break = break_iter.next();
 
         let mut first_real = None;
@@ -282,10 +327,13 @@ impl TextDisplay {
         let mut last_is_htab = false;
         let mut non_control_end = 0;
 
-        for (index, c) in text
+        for (index, c) in input
+            .text
             .char_indices()
-            .chain(std::iter::once((text.len(), '\0')))
+            .chain(std::iter::once((input.text.len(), '\0')))
         {
+            let index = index + range.start;
+
             // Handling for control chars
             if !last_is_control {
                 non_control_end = index;
@@ -345,12 +393,6 @@ impl TextDisplay {
                 .map(|level| level != input.level)
                 .unwrap_or(true);
 
-            if let Some(token) = next_token.as_ref()
-                && to_usize(token.start) == index
-            {
-                require_break = true;
-            }
-
             if is_real(script) && script != input.script {
                 require_break |= is_real(input.script);
             }
@@ -405,31 +447,9 @@ impl TextDisplay {
                 first_real = Some(c);
             }
 
-            if let Some(token) = next_token.as_ref()
-                && to_usize(token.start) == index
-            {
-                font = token.font;
-                input.dpem = token.dpem;
-                next_token = font_tokens.next();
-                debug_assert!(
-                    next_token
-                        .as_ref()
-                        .map(|token| to_usize(token.start) > index)
-                        .unwrap_or(true)
-                );
-            }
-
             last_is_control = is_control;
             last_is_htab = is_htab;
             emoji_start = new_emoji_start;
-        }
-
-        // Following a hard break we have an implied empty line.
-        if imply_empty_final_line && ends_with_hard_break(&text) {
-            let range = (text.len()..text.len()).into();
-            input.level = text.default_level();
-            breaks = Default::default();
-            self.push_run(font, input, range, breaks, RunSpecial::None, None)?;
         }
 
         /*
