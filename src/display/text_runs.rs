@@ -140,8 +140,42 @@ impl TextDisplay {
     /// This is a low-level alternative to [`Self::prepare_runs`] to support
     /// appending new lines/paragraphs of text.
     /// Optionally call [`Self::clear`] first.
+    ///
+    /// Note: to get the range of runs appended, call [`Self::runs_len`] before
+    /// and after this method.
     pub fn append_runs(&mut self) -> RunAppender<'_> {
         RunAppender { display: self }
+    }
+
+    /// Prepare to replace a `range` of existing text runs
+    ///
+    /// This is a utility designed to allow performant replacements of lines in
+    /// longer text object. If replacing all runs, it is preferable to call
+    /// [`Self::clear`] then use [`Self::append_runs`].
+    ///
+    /// Note: the start of the range of runs appended by this method is
+    /// `range.start` (also the initial value of [`RunReplacer::index`]).
+    /// The end of the range of runs appended by this method is the final
+    /// value of [`RunReplacer::index`].
+    pub fn replace_runs<R>(&mut self, range: R) -> RunReplacer<'_>
+    where
+        R: RangeBounds<usize>,
+    {
+        let index = match range.start_bound() {
+            Bound::Included(start) => *start,
+            Bound::Excluded(start) => start + 1,
+            Bound::Unbounded => 0,
+        };
+        let end = match range.end_bound() {
+            Bound::Included(end) => end - 1,
+            Bound::Excluded(end) => *end,
+            Bound::Unbounded => self.runs.len(),
+        };
+        RunReplacer {
+            display: self,
+            index,
+            end,
+        }
     }
 }
 
@@ -190,6 +224,73 @@ impl<'a> RunAppender<'a> {
         dpem: f32,
     ) -> Result<(), NoFontMatch> {
         PushRun::push_text_range(self, text, range, font, dpem)
+    }
+}
+
+/// A shim for replacing existing text runs
+///
+/// See [`TextDisplay::replace_runs`].
+///
+/// Note: leaking this type (e.g. using [`std::mem::forget`]) may result in
+/// incorrect behaviour.
+pub struct RunReplacer<'a> {
+    display: &'a mut TextDisplay,
+    index: usize,
+    end: usize,
+}
+
+impl<'a> RunReplacer<'a> {
+    /// This is the index at which the next text run will be inserted
+    #[inline]
+    pub fn index(&self) -> usize {
+        self.index
+    }
+
+    /// Break `text` into runs, appending to existing content
+    ///
+    /// Unlike [`TextDisplay::prepare_runs`] this method appends to existing
+    /// text runs instead of replacing them. This may thus be used to add a text
+    /// in multiple parts (see [`AnalyzedText`] docs for limitations).
+    ///
+    /// If `imply_empty_final_line` and `text` ends with a mandatory line-break
+    /// then an empty text run will be added to represent the final line. This
+    /// should not be used when another text part will be appended after this
+    /// but should be used for the final text part of a multi-line text editor.
+    ///
+    /// # Preparation status
+    ///
+    /// [Requires status][Self#status-of-preparation]: none.
+    #[inline(never)]
+    pub fn push_text(
+        &mut self,
+        text: &AnalyzedText<'_>,
+        font_tokens: impl Iterator<Item = FontToken>,
+        imply_empty_final_line: bool,
+    ) -> Result<(), NoFontMatch> {
+        PushRun::push_text(self, text, font_tokens, imply_empty_final_line)
+    }
+
+    /// Break `&text[range]` into runs, appending to existing content
+    ///
+    /// Unlike [`Self::push_text`] this method appends runs built using a single
+    /// set of font settings.
+    #[inline(never)]
+    pub fn push_text_range(
+        &mut self,
+        text: &AnalyzedText<'_>,
+        range: std::ops::Range<usize>,
+        font: FontSelector,
+        dpem: f32,
+    ) -> Result<(), NoFontMatch> {
+        PushRun::push_text_range(self, text, range, font, dpem)
+    }
+}
+
+impl<'a> Drop for RunReplacer<'a> {
+    fn drop(&mut self) {
+        if self.index < self.end {
+            self.display.runs.drain(self.index..self.end);
+        }
     }
 }
 
@@ -542,6 +643,21 @@ impl<'a> PushRun for RunAppender<'a> {
     #[inline]
     fn push_run(&mut self, run: GlyphRun) {
         self.display.runs.push(run);
+    }
+}
+
+impl<'a> PushRun for RunReplacer<'a> {
+    fn push_run(&mut self, run: GlyphRun) {
+        debug_assert!(self.index <= self.display.runs.len());
+        if self.index < self.end {
+            self.display.runs[self.index] = run;
+        } else if self.index == self.display.runs.len() {
+            self.display.runs.push(run);
+        } else {
+            // TODO(opt): push to a temporary buffer then insert on Drop?
+            self.display.runs.insert(self.index, run);
+        }
+        self.index += 1;
     }
 }
 
