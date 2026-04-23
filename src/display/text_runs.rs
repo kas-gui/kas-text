@@ -10,7 +10,7 @@ use crate::conv::{to_u32, to_usize};
 use crate::fonts::{self, FaceId, FontSelector, NoFontMatch};
 use crate::format::FontToken;
 use crate::util::{AnalyzedText, ends_with_hard_break};
-use crate::{Direction, Range, shaper};
+use crate::{Direction, Range, shaper, shaper::GlyphRun};
 use icu_properties::CodePointMapData;
 use icu_properties::props::{
     BinaryProperty, DefaultIgnorableCodePoint, EmojiModifier, EmojiPresentation, RegionalIndicator,
@@ -56,7 +56,7 @@ impl TextDisplay {
     /// This is a fast way to resize text. Parameters (aside from
     /// [`FontToken::dpem`] values) must match those passed to
     /// [`Self::prepare_runs`]. The passed `range` may be `..` (to update
-    /// everything) or a sub-range (see [`Self::push_text`] and
+    /// everything) or a sub-range (see [`RunAppender::push_text`] and
     /// [`AnalyzedText`] docs for limitations on text splitting).
     /// In case a sub-range is used, the `font_tokens` passed may optionally be
     /// the full set used to construct the text or a sub-set covering the
@@ -101,11 +101,106 @@ impl TextDisplay {
         }
     }
 
+    /// Break `text` into runs, replacing existing content
+    ///
+    /// The `text` is split into a sequence of runs according to the text
+    /// direction, script, font parameters and required font fallbacks (results
+    /// may thus depend on available fonts). These runs are then
+    /// [shaped](https://en.wikipedia.org/wiki/Text_shaping) into glyph
+    /// sequences. [Line wrapping](Self::prepare_lines) should be performed
+    /// after this.
+    ///
+    /// The `font_tokens` iterator controls font selection using
+    /// [`FontToken::start`] indices relative to `text` (byte indices).
+    /// This iterator must not be empty and the first token yielded
+    /// must have [`FontToken::start`] == 0. (Failure to do so will result in an
+    /// error on debug builds and usage of default values on release builds.)
+    ///
+    /// # Preparation status
+    ///
+    /// [Requires status][Self#status-of-preparation]: none.
+    ///
+    /// Must be called again if any of `text`, `direction` or `font_tokens`
+    /// change.
+    /// If only `dpem` changes, [`Self::resize_runs`] may be called instead.
+    pub fn prepare_runs(
+        &mut self,
+        text: &str,
+        direction: Direction,
+        font_tokens: impl Iterator<Item = FontToken>,
+    ) -> Result<(), NoFontMatch> {
+        self.clear();
+        let text = AnalyzedText::new(text, direction);
+        self.append_runs().push_text(&text, font_tokens, true)?;
+        Ok(())
+    }
+
+    /// Prepare to append text runs
+    ///
+    /// This is a low-level alternative to [`Self::prepare_runs`] to support
+    /// appending new lines/paragraphs of text.
+    /// Optionally call [`Self::clear`] first.
+    pub fn append_runs(&mut self) -> RunAppender<'_> {
+        RunAppender { display: self }
+    }
+}
+
+/// A shim for appending text runs
+///
+/// See [`TextDisplay::append_runs`].
+pub struct RunAppender<'a> {
+    display: &'a mut TextDisplay,
+}
+
+impl<'a> RunAppender<'a> {
+    /// Break `text` into runs, appending to existing content
+    ///
+    /// Unlike [`TextDisplay::prepare_runs`] this method appends to existing
+    /// text runs instead of replacing them. This may thus be used to add a text
+    /// in multiple parts (see [`AnalyzedText`] docs for limitations).
+    ///
+    /// If `imply_empty_final_line` and `text` ends with a mandatory line-break
+    /// then an empty text run will be added to represent the final line. This
+    /// should not be used when another text part will be appended after this
+    /// but should be used for the final text part of a multi-line text editor.
+    ///
+    /// # Preparation status
+    ///
+    /// [Requires status][Self#status-of-preparation]: none.
+    #[inline(never)]
+    pub fn push_text(
+        &mut self,
+        text: &AnalyzedText<'_>,
+        font_tokens: impl Iterator<Item = FontToken>,
+        imply_empty_final_line: bool,
+    ) -> Result<(), NoFontMatch> {
+        PushRun::push_text(self, text, font_tokens, imply_empty_final_line)
+    }
+
+    /// Break `&text[range]` into runs, appending to existing content
+    ///
+    /// Unlike [`Self::push_text`] this method appends runs built using a single
+    /// set of font settings.
+    #[inline(never)]
+    pub fn push_text_range(
+        &mut self,
+        text: &AnalyzedText<'_>,
+        range: std::ops::Range<usize>,
+        font: FontSelector,
+        dpem: f32,
+    ) -> Result<(), NoFontMatch> {
+        PushRun::push_text_range(self, text, range, font, dpem)
+    }
+}
+
+trait PushRun {
+    fn push_run(&mut self, run: GlyphRun);
+
     /// Resolve font face and shape run
     ///
     /// This may sub-divide text as required to find matching fonts.
     #[cfg_attr(test, allow(unused_mut))]
-    fn push_run(
+    fn select_font_and_push_run(
         &mut self,
         font: FontSelector,
         input: shaper::Input,
@@ -170,7 +265,7 @@ impl TextDisplay {
                         rest.remove(0);
                     }
 
-                    self.runs.push(shaper::shape(
+                    self.push_run(shaper::shape(
                         input,
                         sub_range,
                         face,
@@ -189,63 +284,18 @@ impl TextDisplay {
             start: range.start + start,
             end: range.end,
         };
-        self.runs
-            .push(shaper::shape(input, sub_range, face, breaks, special));
+        self.push_run(shaper::shape(input, sub_range, face, breaks, special));
         Ok(())
     }
 
-    /// Break `text` into runs, replacing existing content
-    ///
-    /// The `text` is split into a sequence of runs according to the text
-    /// direction, script, font parameters and required font fallbacks (results
-    /// may thus depend on available fonts). These runs are then
-    /// [shaped](https://en.wikipedia.org/wiki/Text_shaping) into glyph
-    /// sequences. [Line wrapping](Self::prepare_lines) should be performed
-    /// after this.
-    ///
-    /// The `font_tokens` iterator controls font selection using
-    /// [`FontToken::start`] indices relative to `text` (byte indices).
-    /// This iterator must not be empty and the first token yielded
-    /// must have [`FontToken::start`] == 0. (Failure to do so will result in an
-    /// error on debug builds and usage of default values on release builds.)
-    ///
-    /// # Preparation status
-    ///
-    /// [Requires status][Self#status-of-preparation]: none.
-    ///
-    /// Must be called again if any of `text`, `direction` or `font_tokens`
-    /// change.
-    /// If only `dpem` changes, [`Self::resize_runs`] may be called instead.
-    pub fn prepare_runs(
-        &mut self,
-        text: &str,
-        direction: Direction,
-        font_tokens: impl Iterator<Item = FontToken>,
-    ) -> Result<(), NoFontMatch> {
-        self.clear();
-        let text = AnalyzedText::new(text, direction);
-        self.push_text(&text, font_tokens, true)?;
-        Ok(())
-    }
-
-    /// Break `text` into runs, appending to existing content
-    ///
-    /// Unlike [`Self::prepare_runs`] this method appends to existing text runs
-    /// instead of replacing them. This may thus be used to add a text in
-    /// multiple parts (see [`AnalyzedText`] docs for limitations).
+    /// Break `text` into runs and push
     ///
     /// If `imply_empty_final_line` and `text` ends with a mandatory line-break
     /// then an empty text run will be added to represent the final line. This
     /// should not be used when another text part will be appended after this
     /// but should be used for the final text part of a multi-line text editor.
-    ///
-    /// # Preparation status
-    ///
-    /// [Requires status][Self#status-of-preparation]: none.
-    ///
-    /// Optionally call [`Self::clear`] before this method to remove old
-    /// content.
-    pub fn push_text(
+    #[inline(always)]
+    fn push_text(
         &mut self,
         text: &AnalyzedText<'_>,
         mut font_tokens: impl Iterator<Item = FontToken>,
@@ -279,17 +329,15 @@ impl TextDisplay {
             };
             let range = (text.len()..text.len()).into();
             let breaks = Default::default();
-            self.push_run(font, input, range, breaks, RunSpecial::None, None)?;
+            self.select_font_and_push_run(font, input, range, breaks, RunSpecial::None, None)?;
         }
 
         Ok(())
     }
 
-    /// Break `&text[range]` into runs, appending to existing content
-    ///
-    /// Unlike [`Self::push_text`] this method appends runs built using a single
-    /// set of font settings.
-    pub fn push_text_range(
+    /// Break `&text[range]` into runs and push
+    #[inline(always)]
+    fn push_text_range(
         &mut self,
         text: &AnalyzedText<'_>,
         range: std::ops::Range<usize>,
@@ -408,13 +456,12 @@ impl TextDisplay {
                 if is_emoji {
                     let range = (emoji_start..emoji_end).into();
                     let face = emoji_face_id()?;
-                    self.runs
-                        .push(shaper::shape(input, range, face, breaks, special));
+                    self.push_run(shaper::shape(input, range, face, breaks, special));
                 } else {
                     // NOTE: the range may be empty; we need it anyway (unless
                     // we modify the last run's special property).
                     let range = (start..non_control_end).into();
-                    self.push_run(font, input, range, breaks, special, first_real)?;
+                    self.select_font_and_push_run(font, input, range, breaks, special, first_real)?;
                 };
                 first_real = None;
 
@@ -488,6 +535,13 @@ impl TextDisplay {
         }
         */
         Ok(())
+    }
+}
+
+impl<'a> PushRun for RunAppender<'a> {
+    #[inline]
+    fn push_run(&mut self, run: GlyphRun) {
+        self.display.runs.push(run);
     }
 }
 
