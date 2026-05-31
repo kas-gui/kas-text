@@ -115,6 +115,9 @@ impl<F: FormattableText + ?Sized> FormattableText for &F {
 pub struct FontToken {
     /// Index in text at which formatting becomes active
     ///
+    /// Expected: `start <= text.len()`. (Note: text ending with a mandatory
+    /// break implies a following new-line, at least in some cases.)
+    ///
     /// (Note that we use `u32` not `usize` since it can be assumed text length
     /// will never exceed `u32::MAX`.)
     pub start: u32,

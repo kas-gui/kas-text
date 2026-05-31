@@ -8,6 +8,9 @@
 use icu_properties::{CodePointMapData, props::LineBreak};
 use icu_segmenter::{LineSegmenter, iterators::LineBreakIterator, scaffold::Utf8};
 use std::ops::Range;
+use unicode_bidi::{BidiInfo, LTR_LEVEL, Level, ParagraphInfo, RTL_LEVEL};
+
+use crate::Direction;
 
 /// Describes the state-of-preparation of a [`TextDisplay`][crate::TextDisplay]
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Ord, PartialOrd, Hash)]
@@ -33,11 +36,90 @@ impl Status {
     }
 }
 
-/// Returns `true` when `text` ends with a hard break, assuming that it ends
-/// with a valid line break.
+/// Analyzer for text direction
 ///
-/// This filter is copied from icu_segmenter docs.
+/// This is typically not stored but computed on use for one or multiple
+/// paragraphs of text (see [`Self::new`] docs).
+pub struct AnalyzedText<'a> {
+    text: &'a str,
+    default_level: Level,
+    levels: Vec<Level>,
+    paragraphs: Vec<ParagraphInfo>,
+}
+
+impl<'a> std::ops::Deref for AnalyzedText<'a> {
+    type Target = str;
+    fn deref(&self) -> &Self::Target {
+        self.text
+    }
+}
+
+impl<'a> AnalyzedText<'a> {
+    /// Analyze a `text`
+    ///
+    /// For correct analysis, `text` should be one or more whole paragraphs
+    /// (i.e. up to and optionally including a mandatory line break).
+    /// It is valid to analyze a multi-paragraph text as a whole or to split
+    /// the text into sub-ranges as yielded by [`LineIterator`] and analyze
+    /// each sub-range separately.
+    pub fn new(text: &'a str, direction: Direction) -> Self {
+        let default_para_level = match direction {
+            Direction::Auto => None,
+            Direction::AutoRtl => {
+                use unicode_bidi::Direction::*;
+                match unicode_bidi::get_base_direction(text) {
+                    Ltr | Rtl => None,
+                    Mixed => Some(RTL_LEVEL),
+                }
+            }
+            Direction::Ltr => Some(LTR_LEVEL),
+            Direction::Rtl => Some(RTL_LEVEL),
+        };
+
+        let info = BidiInfo::new(text, default_para_level);
+        assert_eq!(text.len(), info.levels.len());
+
+        AnalyzedText {
+            text,
+            default_level: direction.level(),
+            levels: info.levels,
+            paragraphs: info.paragraphs,
+        }
+    }
+
+    /// Get the default [`Level`]
+    #[inline]
+    pub(crate) fn default_level(&self) -> Level {
+        self.default_level
+    }
+
+    /// Get the [`Level`] at the given text index
+    #[inline]
+    pub(crate) fn level(&self, index: usize) -> Option<Level> {
+        self.levels.get(index).copied()
+    }
+
+    /// Get paragraph info for the given paragraph index
+    #[inline]
+    pub(crate) fn paragraph(&self, index: usize) -> Option<&ParagraphInfo> {
+        self.paragraphs.get(index)
+    }
+
+    /// Find the index of the paragraph containing the given text `index`
+    pub(crate) fn find_paragraph(&self, index: usize) -> usize {
+        match self
+            .paragraphs
+            .binary_search_by_key(&index, |para| para.range.start)
+        {
+            Ok(i) => i,
+            Err(i) => i.saturating_sub(1),
+        }
+    }
+}
+
+/// Returns `true` when `text` ends with a mandatory break
 pub(crate) fn ends_with_hard_break(text: &str) -> bool {
+    // This filter is copied from icu_segmenter docs.
     text.chars().next_back().is_some_and(|c| {
         matches!(
             CodePointMapData::<LineBreak>::new().get(c),

@@ -17,6 +17,7 @@ mod text_runs;
 mod wrap_lines;
 pub use glyph_pos::{GlyphRun, MarkerPos, MarkerPosIter};
 pub(crate) use text_runs::RunSpecial;
+pub use text_runs::{RunAppender, RunReplacer};
 pub use wrap_lines::Line;
 use wrap_lines::RunPart;
 
