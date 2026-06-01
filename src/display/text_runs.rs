@@ -422,7 +422,7 @@ trait PushRun {
         // Following a hard break we have an implied empty line.
         if imply_empty_final_line && ends_with_hard_break(&text) {
             let input = shaper::Input {
-                text: "",
+                text: text,
                 dpem,
                 base_level: text.default_level(),
                 level: text.default_level(),
@@ -448,7 +448,7 @@ trait PushRun {
         let starting_para_i = text.find_paragraph(range.start);
 
         let mut input = shaper::Input {
-            text: &text[range.clone()],
+            text: text,
             dpem,
             base_level: text
                 .paragraph(starting_para_i)
@@ -464,7 +464,7 @@ trait PushRun {
 
         // TODO: allow segmenter configuration
         let segmenter = LineSegmenter::new_auto(Default::default());
-        let mut break_iter = segmenter.segment_str(input.text);
+        let mut break_iter = segmenter.segment_str(&input.text[range.clone()]);
         let mut next_break = break_iter.next();
 
         let mut first_real = None;
@@ -476,10 +476,9 @@ trait PushRun {
         let mut last_is_htab = false;
         let mut non_control_end = 0;
 
-        for (index, c) in input
-            .text
+        for (index, c) in input.text[range.clone()]
             .char_indices()
-            .chain(std::iter::once((input.text.len(), '\0')))
+            .chain(std::iter::once((range.len(), '\0')))
         {
             let index = index + range.start;
 
