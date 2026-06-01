@@ -100,74 +100,81 @@ impl TextDisplay {
     /// Must be called again if any of `text`, `direction` or `font_tokens`
     /// change.
     /// If only `dpem` changes, [`Self::resize_runs`] may be called instead.
+    #[deprecated(since = "0.10.0", note = "use Self::set_text instead")]
+    #[inline]
     pub fn prepare_runs(
         &mut self,
         text: &str,
         direction: Direction,
         font_tokens: impl Iterator<Item = FontToken>,
     ) -> Result<(), NoFontMatch> {
-        self.clear();
-        let text = AnalyzedText::new(text, direction);
-        self.append_runs().push_text(&text, font_tokens, true)?;
+        self.set_text(text, direction)
+            .with_tokens(font_tokens, true)?;
         Ok(())
     }
 
-    /// Prepare to append text runs
+    /// Replace prior content and typeset
     ///
-    /// This is a low-level alternative to [`Self::prepare_runs`] to support
-    /// appending new lines/paragraphs of text.
-    /// Optionally call [`Self::clear`] first.
-    pub fn append_runs(&mut self) -> RunAppender<'_> {
-        RunAppender { display: self }
+    /// This method performs most demanding typesetting steps: run-breaking,
+    /// font matching and [shaping](https://en.wikipedia.org/wiki/Text_shaping).
+    ///
+    /// This method may be called from any
+    /// [state of preparation]([Self#status-of-preparation]) but
+    /// [`Self::prepare_lines`] should be called afterwards.
+    ///
+    /// By itself this method does nothing; see the methods on [`Appender`].
+    //
+    // Note: the only real difficulty in adding `fn push_text(..)` (to support
+    // using multiple disjoint pieces of text) is that text indices get used in
+    // various places; such a method would need to offset all text indices used
+    // in GlyphRun to make them distinct and correctly ordered.
+    #[must_use = "set_text(..) has no effect without also calling a method on the return value"]
+    pub fn set_text<'a>(&'a mut self, text: &'a str, direction: Direction) -> Appender<'a> {
+        self.clear();
+        Appender {
+            display: self,
+            text: AnalyzedText::new(text, direction),
+        }
     }
 }
 
 /// A shim for appending text runs
 ///
-/// See [`TextDisplay::append_runs`].
-pub struct RunAppender<'a> {
+/// See [`TextDisplay::set_text`].
+#[must_use]
+pub struct Appender<'a> {
     display: &'a mut TextDisplay,
+    text: AnalyzedText<'a>,
 }
 
-impl<'a> RunAppender<'a> {
-    /// Break `text` into runs, appending to existing content
-    ///
-    /// Unlike [`TextDisplay::prepare_runs`] this method appends to existing
-    /// text runs instead of replacing them. This may thus be used to add a text
-    /// in multiple parts (see [`AnalyzedText`] docs for limitations).
+impl<'a> Appender<'a> {
+    /// Append the entire `text` using fonts inferred from `tokens`
     ///
     /// If `imply_empty_final_line` and `text` ends with a mandatory line-break
     /// then an empty text run will be added to represent the final line. This
     /// should not be used when another text part will be appended after this
     /// but should be used for the final text part of a multi-line text editor.
-    ///
-    /// # Preparation status
-    ///
-    /// [Requires status][Self#status-of-preparation]: none.
     #[inline(never)]
-    pub fn push_text(
-        &mut self,
-        text: &AnalyzedText<'_>,
+    pub fn with_tokens(
+        self,
         font_tokens: impl Iterator<Item = FontToken>,
         imply_empty_final_line: bool,
     ) -> Result<(), NoFontMatch> {
         self.display
-            .push_text(text, font_tokens, imply_empty_final_line)
+            .push_text(&self.text, font_tokens, imply_empty_final_line)
     }
 
-    /// Break `&text[range]` into runs, appending to existing content
-    ///
-    /// Unlike [`Self::push_text`] this method appends runs built using a single
-    /// set of font settings.
+    /// Append `&text[range]` using a single font
     #[inline(never)]
-    pub fn push_text_range(
+    pub fn with_font(
         &mut self,
-        text: &AnalyzedText<'_>,
         range: std::ops::Range<usize>,
         font: FontSelector,
         dpem: f32,
-    ) -> Result<(), NoFontMatch> {
-        self.display.push_text_range(text, range, font, dpem)
+    ) -> Result<&mut Self, NoFontMatch> {
+        self.display
+            .push_text_range(&self.text, range, font, dpem)?;
+        Ok(self)
     }
 }
 
@@ -683,7 +690,12 @@ mod test {
         });
 
         let mut display = TextDisplay::default();
-        assert!(display.prepare_runs(text, dir, fonts).is_ok());
+        assert!(
+            display
+                .set_text(text, dir)
+                .with_tokens(fonts, false)
+                .is_ok()
+        );
 
         for (i, (run, expected)) in display.runs.iter().zip(expected.iter()).enumerate() {
             assert_eq!(

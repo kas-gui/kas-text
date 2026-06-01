@@ -540,7 +540,12 @@ mod test {
         });
 
         let mut display = TextDisplay::default();
-        assert!(display.prepare_runs(text, dir, fonts).is_ok());
+        assert!(
+            display
+                .set_text(text, dir)
+                .with_tokens(fonts, false)
+                .is_ok()
+        );
 
         for (i, (run, expected)) in display.raw_runs().iter().zip(expected.iter()).enumerate() {
             assert_eq!(
