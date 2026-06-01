@@ -17,7 +17,6 @@ use icu_properties::props::{
     Script,
 };
 use icu_segmenter::LineSegmenter;
-use std::ops::{Bound, RangeBounds};
 use std::sync::OnceLock;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -43,43 +42,21 @@ impl TextDisplay {
         self.r_bound = 0.0;
     }
 
-    /// Get the number of text runs
-    #[inline]
-    pub fn runs_len(&self) -> usize {
-        self.runs.len()
-    }
-
     /// Update font size for existing text runs
     ///
     /// [Requires status][Self#status-of-preparation]: run-breaking is complete.
     ///
     /// This is a fast way to resize text. Parameters (aside from
     /// [`FontToken::dpem`] values) must match those passed to
-    /// [`Self::prepare_runs`]. The passed `range` may be `..` (to update
-    /// everything) or a sub-range (see [`RunAppender::push_text`] and
-    /// [`AnalyzedText`] docs for limitations on text splitting).
-    /// In case a sub-range is used, the `font_tokens` passed may optionally be
-    /// the full set used to construct the text or a sub-set covering the
-    /// text `range` resized here.
-    pub fn resize_runs<R, FT>(&mut self, range: R, text: &str, mut font_tokens: FT)
+    /// [`Self::prepare_runs`].
+    pub fn resize_runs<FT>(&mut self, text: &str, mut font_tokens: FT)
     where
-        R: RangeBounds<usize>,
         FT: Iterator<Item = FontToken>,
     {
         let (mut dpem, _) = read_initial_token(&mut font_tokens);
         let mut next_token = font_tokens.next();
 
-        let start = match range.start_bound() {
-            Bound::Included(start) => *start,
-            Bound::Excluded(start) => start + 1,
-            Bound::Unbounded => 0,
-        };
-        let end = match range.end_bound() {
-            Bound::Included(end) => end - 1,
-            Bound::Excluded(end) => *end,
-            Bound::Unbounded => self.runs.len(),
-        };
-        for run in &mut self.runs[start..end] {
+        for run in &mut self.runs {
             while let Some(token) = next_token.as_ref() {
                 if token.start > run.range.start {
                     break;
@@ -140,9 +117,6 @@ impl TextDisplay {
     /// This is a low-level alternative to [`Self::prepare_runs`] to support
     /// appending new lines/paragraphs of text.
     /// Optionally call [`Self::clear`] first.
-    ///
-    /// Note: to get the range of runs appended, call [`Self::runs_len`] before
-    /// and after this method.
     pub fn append_runs(&mut self) -> RunAppender<'_> {
         RunAppender { display: self }
     }
