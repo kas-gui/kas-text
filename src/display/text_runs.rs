@@ -151,7 +151,8 @@ impl<'a> RunAppender<'a> {
         font_tokens: impl Iterator<Item = FontToken>,
         imply_empty_final_line: bool,
     ) -> Result<(), NoFontMatch> {
-        PushRun::push_text(self, text, font_tokens, imply_empty_final_line)
+        self.display
+            .push_text(text, font_tokens, imply_empty_final_line)
     }
 
     /// Break `&text[range]` into runs, appending to existing content
@@ -166,13 +167,11 @@ impl<'a> RunAppender<'a> {
         font: FontSelector,
         dpem: f32,
     ) -> Result<(), NoFontMatch> {
-        PushRun::push_text_range(self, text, range, font, dpem)
+        self.display.push_text_range(text, range, font, dpem)
     }
 }
 
-trait PushRun {
-    fn push_run(&mut self, run: GlyphRun);
-
+impl TextDisplay {
     /// Resolve font face and shape run
     ///
     /// This may sub-divide text as required to find matching fonts.
@@ -512,12 +511,10 @@ trait PushRun {
         */
         Ok(())
     }
-}
 
-impl<'a> PushRun for RunAppender<'a> {
     #[inline]
     fn push_run(&mut self, run: GlyphRun) {
-        self.display.runs.push(run);
+        self.runs.push(run);
     }
 }
 
