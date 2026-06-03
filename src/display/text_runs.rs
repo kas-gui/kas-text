@@ -153,9 +153,9 @@ impl<'a> Appender<'a> {
     /// then an empty text run will be added to represent the final line. This
     /// should not be used when another text part will be appended after this
     /// but should be used for the final text part of a multi-line text editor.
-    #[inline(never)]
+    #[inline]
     pub fn with_tokens(
-        self,
+        &mut self,
         font_tokens: impl Iterator<Item = FontToken>,
         imply_empty_final_line: bool,
     ) -> Result<(), NoFontMatch> {
@@ -164,7 +164,7 @@ impl<'a> Appender<'a> {
     }
 
     /// Append `&text[range]` using a single font
-    #[inline(never)]
+    #[inline]
     pub fn with_font(
         &mut self,
         range: std::ops::Range<usize>,
@@ -276,7 +276,6 @@ impl TextDisplay {
     /// then an empty text run will be added to represent the final line. This
     /// should not be used when another text part will be appended after this
     /// but should be used for the final text part of a multi-line text editor.
-    #[inline(always)]
     fn push_text(
         &mut self,
         text: &AnalyzedText<'_>,
@@ -354,7 +353,6 @@ impl TextDisplay {
     }
 
     /// Break `&text[range]` into runs and push
-    #[inline(always)]
     fn push_text_range(
         &mut self,
         text: &AnalyzedText<'_>,
