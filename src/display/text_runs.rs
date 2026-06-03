@@ -315,6 +315,42 @@ impl TextDisplay {
             self.select_font_and_push_run(font, input, range, breaks, RunSpecial::None, None)?;
         }
 
+        /*
+        println!("text: {}", &text[..]);
+        let fonts = fonts::library();
+        for run in &self.runs {
+            let slice = &text[run.range];
+            print!(
+                "\t{:?}, text[{}..{}], script {:?}, {} glyphs: '{}', ",
+                run.level,
+                run.range.start,
+                run.range.end,
+                run.script,
+                run.glyphs.len(),
+                slice
+            );
+            match run.special {
+                RunSpecial::None => (),
+                RunSpecial::HardBreak => print!("HardBreak, "),
+                RunSpecial::NoBreak => print!("NoBreak, "),
+                RunSpecial::HTab => print!("HTab, "),
+            }
+            print!("breaks=[");
+            let mut iter = run.breaks.iter();
+            if let Some(b) = iter.next() {
+                print!("{}", b.index);
+            }
+            for b in iter {
+                print!(", {}", b.index);
+            }
+            print!("]");
+            if let Some(name) = fonts.get_face_store(run.face_id).name_full() {
+                print!(", {name}");
+            }
+            println!();
+        }
+        */
+
         Ok(())
     }
 
@@ -481,41 +517,6 @@ impl TextDisplay {
             emoji_start = new_emoji_start;
         }
 
-        /*
-        println!("text: {}", text);
-        let fonts = fonts::library();
-        for run in &self.runs {
-            let slice = &text[run.range];
-            print!(
-                "\t{:?}, text[{}..{}], script {:?}, {} glyphs: '{}', ",
-                run.level,
-                run.range.start,
-                run.range.end,
-                run.script,
-                run.glyphs.len(),
-                slice
-            );
-            match run.special {
-                RunSpecial::None => (),
-                RunSpecial::HardBreak => print!("HardBreak, "),
-                RunSpecial::NoBreak => print!("NoBreak, "),
-                RunSpecial::HTab => print!("HTab, "),
-            }
-            print!("breaks=[");
-            let mut iter = run.breaks.iter();
-            if let Some(b) = iter.next() {
-                print!("{}", b.index);
-            }
-            for b in iter {
-                print!(", {}", b.index);
-            }
-            print!("]");
-            if let Some(name) = fonts.get_face_store(run.face_id).name_full() {
-                print!(", {name}");
-            }
-            println!();
-        }
-        */
         Ok(())
     }
 
