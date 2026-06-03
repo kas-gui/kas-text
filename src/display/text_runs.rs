@@ -302,9 +302,9 @@ impl TextDisplay {
         }
 
         // Following a hard break we have an implied empty line.
-        if imply_empty_final_line && ends_with_hard_break(&text) {
+        if imply_empty_final_line && ends_with_hard_break(text) {
             let input = shaper::Input {
-                text: text,
+                text,
                 dpem,
                 base_level: text.default_level(),
                 level: text.default_level(),
@@ -366,7 +366,7 @@ impl TextDisplay {
         let starting_para_i = text.find_paragraph(range.start);
 
         let mut input = shaper::Input {
-            text: text,
+            text,
             dpem,
             base_level: text
                 .paragraph(starting_para_i)

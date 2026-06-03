@@ -252,14 +252,14 @@ impl FontSelector {
         if let Some(gf) = self.family.as_generic() {
             debug!(
                 "select: Script::{:?}, GenericFamily::{:?}, {:?}, {:?}, {:?}",
-                &script, gf, &self.weight, &self.width, &self.style
+                script, gf, self.weight, self.width, self.style
             );
 
             query.set_families([gf]);
         } else if let Some(set) = resolver.families.get(&self.family) {
             debug!(
                 "select: Script::{:?}, {:?}, {:?}, {:?}, {:?}",
-                &script, set, &self.weight, &self.width, &self.style
+                script, set, self.weight, self.width, self.style
             );
 
             query.set_families(set.0.iter());
