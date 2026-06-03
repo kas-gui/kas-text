@@ -394,23 +394,23 @@ impl TextDisplay {
         let mut last_is_htab = false;
         let mut non_control_end = 0;
 
-        for (index, c) in input.text[range.clone()]
+        for (sub_index, c) in input.text[range.clone()]
             .char_indices()
             .chain(std::iter::once((range.len(), '\0')))
         {
-            let index = index + range.start;
+            let text_index = sub_index + range.start;
 
             // Handling for control chars
             if !last_is_control {
-                non_control_end = index;
+                non_control_end = text_index;
             }
             let is_htab = c == '\t';
             let mut require_break = last_is_htab;
             let is_control = c.is_control();
 
             // Is wrapping allowed at this position?
-            let is_break = next_break == Some(index);
-            let hard_break = is_break && ends_with_hard_break(&text[..index]);
+            let is_break = next_break == Some(sub_index);
+            let hard_break = is_break && sub_index > 0 && ends_with_hard_break(&text[..text_index]);
             if is_break {
                 next_break = break_iter.next();
             }
@@ -424,24 +424,24 @@ impl TextDisplay {
                 EmojiBreak::None => false,
                 EmojiBreak::Start => {
                     require_break = true;
-                    new_emoji_start = index;
+                    new_emoji_start = text_index;
                     false
                 }
                 EmojiBreak::Prohibit => {
-                    emoji_end = index;
+                    emoji_end = text_index;
                     true
                 }
                 EmojiBreak::End => {
                     require_break = true;
-                    emoji_end = index;
+                    emoji_end = text_index;
                     debug_assert!(emoji_end > emoji_start);
                     is_emoji = true;
                     false
                 }
                 EmojiBreak::Restart => {
                     require_break = true;
-                    emoji_end = index;
-                    new_emoji_start = index;
+                    emoji_end = text_index;
+                    new_emoji_start = text_index;
                     debug_assert!(emoji_end > emoji_start);
                     is_emoji = true;
                     false
@@ -455,7 +455,7 @@ impl TextDisplay {
 
             // Force end of current run?
             require_break |= text
-                .level(index)
+                .level(text_index)
                 .map(|level| level != input.level)
                 .unwrap_or(true);
 
@@ -463,7 +463,8 @@ impl TextDisplay {
                 require_break |= is_real(input.script);
             }
 
-            if !prohibit_break && (hard_break || require_break) {
+            let is_end = text_index == range.end;
+            if is_end || !prohibit_break && (hard_break || require_break) {
                 let special = match () {
                     _ if hard_break => RunSpecial::HardBreak,
                     _ if last_is_htab => RunSpecial::HTab,
@@ -483,22 +484,22 @@ impl TextDisplay {
                 };
                 first_real = None;
 
-                start = index;
-                non_control_end = index;
+                start = text_index;
+                non_control_end = text_index;
                 while let Some(para) = text.paragraph(next_para_i)
-                    && para.range.start <= index
+                    && para.range.start <= text_index
                 {
                     input.base_level = para.level;
                     next_para_i += 1;
                 }
-                if let Some(level) = text.level(index) {
+                if let Some(level) = text.level(text_index) {
                     input.level = level;
                 }
                 input.script = script;
                 breaks = Default::default();
             } else {
-                if is_break && !is_control && index > start {
-                    breaks.push(shaper::GlyphBreak::new(to_u32(index)));
+                if is_break && !is_control && text_index > start {
+                    breaks.push(shaper::GlyphBreak::new(to_u32(text_index)));
                 }
 
                 if input.script == Script::Unknown
