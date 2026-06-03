@@ -16,6 +16,7 @@ use icu_properties::props::{
     Script,
 };
 use icu_segmenter::LineSegmenter;
+use icu_segmenter::options::{LineBreakStrictness, LineBreakWordOption};
 use std::sync::OnceLock;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -147,6 +148,24 @@ pub struct Appender<'a> {
 }
 
 impl<'a> Appender<'a> {
+    /// Use a custom line-break strictness
+    ///
+    /// This only affects subsequent calls to [`Self::with_tokens`] and [`Self::with_font`].
+    #[inline]
+    pub fn with_line_break_strictness(&mut self, strictness: LineBreakStrictness) -> &mut Self {
+        self.text.lb_opts.strictness = Some(strictness);
+        self
+    }
+
+    /// Use a custom line-break word option
+    ///
+    /// This only affects subsequent calls to [`Self::with_tokens`] and [`Self::with_font`].
+    #[inline]
+    pub fn with_word_break_option(&mut self, word_option: LineBreakWordOption) -> &mut Self {
+        self.text.lb_opts.word_option = Some(word_option);
+        self
+    }
+
     /// Append the entire `text` using fonts inferred from `tokens`
     ///
     /// If `imply_empty_final_line` and `text` ends with a mandatory line-break
@@ -377,8 +396,7 @@ impl TextDisplay {
         let mut breaks = Default::default();
         let mut start = range.start;
 
-        // TODO: allow segmenter configuration
-        let segmenter = LineSegmenter::new_auto(Default::default());
+        let segmenter = LineSegmenter::new_auto(text.lb_opts);
         let mut break_iter = segmenter.segment_str(&input.text[range.clone()]);
         let mut next_break = break_iter.next();
 
