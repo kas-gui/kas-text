@@ -381,13 +381,11 @@ impl<T: FormattableText + ?Sized> Text<T> {
     #[inline]
     fn prepare_runs(&mut self) -> Result<(), NoFontMatch> {
         match self.status {
-            Status::New => self.display.prepare_runs(
-                self.text.as_str(),
-                self.direction,
-                self.text.font_tokens(self.dpem, self.font),
-            )?,
+            Status::New => self
+                .display
+                .set_text(self.text.as_str(), self.direction)
+                .with_tokens(self.text.font_tokens(self.dpem, self.font), true)?,
             Status::ResizeLevelRuns => self.display.resize_runs(
-                ..,
                 self.text.as_str(),
                 self.text.font_tokens(self.dpem, self.font),
             ),

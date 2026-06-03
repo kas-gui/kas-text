@@ -17,7 +17,6 @@ use icu_properties::props::{
     Script,
 };
 use icu_segmenter::LineSegmenter;
-use std::ops::{Bound, RangeBounds};
 use std::sync::OnceLock;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -43,43 +42,21 @@ impl TextDisplay {
         self.r_bound = 0.0;
     }
 
-    /// Get the number of text runs
-    #[inline]
-    pub fn runs_len(&self) -> usize {
-        self.runs.len()
-    }
-
     /// Update font size for existing text runs
     ///
     /// [Requires status][Self#status-of-preparation]: run-breaking is complete.
     ///
     /// This is a fast way to resize text. Parameters (aside from
     /// [`FontToken::dpem`] values) must match those passed to
-    /// [`Self::prepare_runs`]. The passed `range` may be `..` (to update
-    /// everything) or a sub-range (see [`RunAppender::push_text`] and
-    /// [`AnalyzedText`] docs for limitations on text splitting).
-    /// In case a sub-range is used, the `font_tokens` passed may optionally be
-    /// the full set used to construct the text or a sub-set covering the
-    /// text `range` resized here.
-    pub fn resize_runs<R, FT>(&mut self, range: R, text: &str, mut font_tokens: FT)
+    /// [`Self::prepare_runs`].
+    pub fn resize_runs<FT>(&mut self, text: &str, mut font_tokens: FT)
     where
-        R: RangeBounds<usize>,
         FT: Iterator<Item = FontToken>,
     {
         let (mut dpem, _) = read_initial_token(&mut font_tokens);
         let mut next_token = font_tokens.next();
 
-        let start = match range.start_bound() {
-            Bound::Included(start) => *start,
-            Bound::Excluded(start) => start + 1,
-            Bound::Unbounded => 0,
-        };
-        let end = match range.end_bound() {
-            Bound::Included(end) => end - 1,
-            Bound::Excluded(end) => *end,
-            Bound::Unbounded => self.runs.len(),
-        };
-        for run in &mut self.runs[start..end] {
+        for run in &mut self.runs {
             while let Some(token) = next_token.as_ref() {
                 if token.start > run.range.start {
                     break;
@@ -123,180 +100,85 @@ impl TextDisplay {
     /// Must be called again if any of `text`, `direction` or `font_tokens`
     /// change.
     /// If only `dpem` changes, [`Self::resize_runs`] may be called instead.
+    #[deprecated(since = "0.10.0", note = "use Self::set_text instead")]
+    #[inline]
     pub fn prepare_runs(
         &mut self,
         text: &str,
         direction: Direction,
         font_tokens: impl Iterator<Item = FontToken>,
     ) -> Result<(), NoFontMatch> {
-        self.clear();
-        let text = AnalyzedText::new(text, direction);
-        self.append_runs().push_text(&text, font_tokens, true)?;
+        self.set_text(text, direction)
+            .with_tokens(font_tokens, true)?;
         Ok(())
     }
 
-    /// Prepare to append text runs
+    /// Replace prior content and typeset
     ///
-    /// This is a low-level alternative to [`Self::prepare_runs`] to support
-    /// appending new lines/paragraphs of text.
-    /// Optionally call [`Self::clear`] first.
+    /// This method performs most demanding typesetting steps: run-breaking,
+    /// font matching and [shaping](https://en.wikipedia.org/wiki/Text_shaping).
     ///
-    /// Note: to get the range of runs appended, call [`Self::runs_len`] before
-    /// and after this method.
-    pub fn append_runs(&mut self) -> RunAppender<'_> {
-        RunAppender { display: self }
-    }
-
-    /// Prepare to replace a `range` of existing text runs
+    /// This method may be called from any
+    /// [state of preparation]([Self#status-of-preparation]) but
+    /// [`Self::prepare_lines`] should be called afterwards.
     ///
-    /// This is a utility designed to allow performant replacements of lines in
-    /// longer text object. If replacing all runs, it is preferable to call
-    /// [`Self::clear`] then use [`Self::append_runs`].
-    ///
-    /// Note: the start of the range of runs appended by this method is
-    /// `range.start` (also the initial value of [`RunReplacer::index`]).
-    /// The end of the range of runs appended by this method is the final
-    /// value of [`RunReplacer::index`].
-    pub fn replace_runs<R>(&mut self, range: R) -> RunReplacer<'_>
-    where
-        R: RangeBounds<usize>,
-    {
-        let index = match range.start_bound() {
-            Bound::Included(start) => *start,
-            Bound::Excluded(start) => start + 1,
-            Bound::Unbounded => 0,
-        };
-        let end = match range.end_bound() {
-            Bound::Included(end) => end - 1,
-            Bound::Excluded(end) => *end,
-            Bound::Unbounded => self.runs.len(),
-        };
-        RunReplacer {
+    /// By itself this method does nothing; see the methods on [`Appender`].
+    //
+    // Note: the only real difficulty in adding `fn push_text(..)` (to support
+    // using multiple disjoint pieces of text) is that text indices get used in
+    // various places; such a method would need to offset all text indices used
+    // in GlyphRun to make them distinct and correctly ordered.
+    #[must_use = "set_text(..) has no effect without also calling a method on the return value"]
+    pub fn set_text<'a>(&'a mut self, text: &'a str, direction: Direction) -> Appender<'a> {
+        self.clear();
+        Appender {
             display: self,
-            index,
-            end,
+            text: AnalyzedText::new(text, direction),
         }
     }
 }
 
 /// A shim for appending text runs
 ///
-/// See [`TextDisplay::append_runs`].
-pub struct RunAppender<'a> {
+/// See [`TextDisplay::set_text`].
+#[must_use]
+pub struct Appender<'a> {
     display: &'a mut TextDisplay,
+    text: AnalyzedText<'a>,
 }
 
-impl<'a> RunAppender<'a> {
-    /// Break `text` into runs, appending to existing content
-    ///
-    /// Unlike [`TextDisplay::prepare_runs`] this method appends to existing
-    /// text runs instead of replacing them. This may thus be used to add a text
-    /// in multiple parts (see [`AnalyzedText`] docs for limitations).
+impl<'a> Appender<'a> {
+    /// Append the entire `text` using fonts inferred from `tokens`
     ///
     /// If `imply_empty_final_line` and `text` ends with a mandatory line-break
     /// then an empty text run will be added to represent the final line. This
     /// should not be used when another text part will be appended after this
     /// but should be used for the final text part of a multi-line text editor.
-    ///
-    /// # Preparation status
-    ///
-    /// [Requires status][Self#status-of-preparation]: none.
     #[inline(never)]
-    pub fn push_text(
-        &mut self,
-        text: &AnalyzedText<'_>,
+    pub fn with_tokens(
+        self,
         font_tokens: impl Iterator<Item = FontToken>,
         imply_empty_final_line: bool,
     ) -> Result<(), NoFontMatch> {
-        PushRun::push_text(self, text, font_tokens, imply_empty_final_line)
+        self.display
+            .push_text(&self.text, font_tokens, imply_empty_final_line)
     }
 
-    /// Break `&text[range]` into runs, appending to existing content
-    ///
-    /// Unlike [`Self::push_text`] this method appends runs built using a single
-    /// set of font settings.
+    /// Append `&text[range]` using a single font
     #[inline(never)]
-    pub fn push_text_range(
+    pub fn with_font(
         &mut self,
-        text: &AnalyzedText<'_>,
         range: std::ops::Range<usize>,
         font: FontSelector,
         dpem: f32,
-    ) -> Result<(), NoFontMatch> {
-        PushRun::push_text_range(self, text, range, font, dpem)
+    ) -> Result<&mut Self, NoFontMatch> {
+        self.display
+            .push_text_range(&self.text, range, font, dpem)?;
+        Ok(self)
     }
 }
 
-/// A shim for replacing existing text runs
-///
-/// See [`TextDisplay::replace_runs`].
-///
-/// Note: leaking this type (e.g. using [`std::mem::forget`]) may result in
-/// incorrect behaviour.
-pub struct RunReplacer<'a> {
-    display: &'a mut TextDisplay,
-    index: usize,
-    end: usize,
-}
-
-impl<'a> RunReplacer<'a> {
-    /// This is the index at which the next text run will be inserted
-    #[inline]
-    pub fn index(&self) -> usize {
-        self.index
-    }
-
-    /// Break `text` into runs, appending to existing content
-    ///
-    /// Unlike [`TextDisplay::prepare_runs`] this method appends to existing
-    /// text runs instead of replacing them. This may thus be used to add a text
-    /// in multiple parts (see [`AnalyzedText`] docs for limitations).
-    ///
-    /// If `imply_empty_final_line` and `text` ends with a mandatory line-break
-    /// then an empty text run will be added to represent the final line. This
-    /// should not be used when another text part will be appended after this
-    /// but should be used for the final text part of a multi-line text editor.
-    ///
-    /// # Preparation status
-    ///
-    /// [Requires status][Self#status-of-preparation]: none.
-    #[inline(never)]
-    pub fn push_text(
-        &mut self,
-        text: &AnalyzedText<'_>,
-        font_tokens: impl Iterator<Item = FontToken>,
-        imply_empty_final_line: bool,
-    ) -> Result<(), NoFontMatch> {
-        PushRun::push_text(self, text, font_tokens, imply_empty_final_line)
-    }
-
-    /// Break `&text[range]` into runs, appending to existing content
-    ///
-    /// Unlike [`Self::push_text`] this method appends runs built using a single
-    /// set of font settings.
-    #[inline(never)]
-    pub fn push_text_range(
-        &mut self,
-        text: &AnalyzedText<'_>,
-        range: std::ops::Range<usize>,
-        font: FontSelector,
-        dpem: f32,
-    ) -> Result<(), NoFontMatch> {
-        PushRun::push_text_range(self, text, range, font, dpem)
-    }
-}
-
-impl<'a> Drop for RunReplacer<'a> {
-    fn drop(&mut self) {
-        if self.index < self.end {
-            self.display.runs.drain(self.index..self.end);
-        }
-    }
-}
-
-trait PushRun {
-    fn push_run(&mut self, run: GlyphRun);
-
+impl TextDisplay {
     /// Resolve font face and shape run
     ///
     /// This may sub-divide text as required to find matching fonts.
@@ -420,9 +302,9 @@ trait PushRun {
         }
 
         // Following a hard break we have an implied empty line.
-        if imply_empty_final_line && ends_with_hard_break(&text) {
+        if imply_empty_final_line && ends_with_hard_break(text) {
             let input = shaper::Input {
-                text: "",
+                text,
                 dpem,
                 base_level: text.default_level(),
                 level: text.default_level(),
@@ -433,175 +315,8 @@ trait PushRun {
             self.select_font_and_push_run(font, input, range, breaks, RunSpecial::None, None)?;
         }
 
-        Ok(())
-    }
-
-    /// Break `&text[range]` into runs and push
-    #[inline(always)]
-    fn push_text_range(
-        &mut self,
-        text: &AnalyzedText<'_>,
-        range: std::ops::Range<usize>,
-        font: FontSelector,
-        dpem: f32,
-    ) -> Result<(), NoFontMatch> {
-        let starting_para_i = text.find_paragraph(range.start);
-
-        let mut input = shaper::Input {
-            text: &text[range.clone()],
-            dpem,
-            base_level: text
-                .paragraph(starting_para_i)
-                .map(|p| p.level)
-                .unwrap_or(text.default_level()),
-            level: text.level(range.start).unwrap_or(text.default_level()),
-            script: Script::Unknown,
-        };
-        let mut next_para_i = starting_para_i + 1;
-
-        let mut breaks = Default::default();
-        let mut start = range.start;
-
-        // TODO: allow segmenter configuration
-        let segmenter = LineSegmenter::new_auto(Default::default());
-        let mut break_iter = segmenter.segment_str(input.text);
-        let mut next_break = break_iter.next();
-
-        let mut first_real = None;
-        let mut emoji_state = EmojiState::None;
-        let mut emoji_start = 0;
-        let mut emoji_end = 0;
-
-        let mut last_is_control = false;
-        let mut last_is_htab = false;
-        let mut non_control_end = 0;
-
-        for (index, c) in input
-            .text
-            .char_indices()
-            .chain(std::iter::once((input.text.len(), '\0')))
-        {
-            let index = index + range.start;
-
-            // Handling for control chars
-            if !last_is_control {
-                non_control_end = index;
-            }
-            let is_htab = c == '\t';
-            let mut require_break = last_is_htab;
-            let is_control = c.is_control();
-
-            // Is wrapping allowed at this position?
-            let is_break = next_break == Some(index);
-            let hard_break = is_break && ends_with_hard_break(&text[..index]);
-            if is_break {
-                next_break = break_iter.next();
-            }
-
-            let script = CodePointMapData::<Script>::new().get(c);
-
-            let emoji_break = emoji_state.advance(c);
-            let mut new_emoji_start = emoji_start;
-            let mut is_emoji = false;
-            let prohibit_break = match emoji_break {
-                EmojiBreak::None => false,
-                EmojiBreak::Start => {
-                    require_break = true;
-                    new_emoji_start = index;
-                    false
-                }
-                EmojiBreak::Prohibit => {
-                    emoji_end = index;
-                    true
-                }
-                EmojiBreak::End => {
-                    require_break = true;
-                    emoji_end = index;
-                    debug_assert!(emoji_end > emoji_start);
-                    is_emoji = true;
-                    false
-                }
-                EmojiBreak::Restart => {
-                    require_break = true;
-                    emoji_end = index;
-                    new_emoji_start = index;
-                    debug_assert!(emoji_end > emoji_start);
-                    is_emoji = true;
-                    false
-                }
-                EmojiBreak::Error => {
-                    is_emoji = emoji_end > emoji_start;
-                    require_break = is_emoji;
-                    false
-                }
-            };
-
-            // Force end of current run?
-            require_break |= text
-                .level(index)
-                .map(|level| level != input.level)
-                .unwrap_or(true);
-
-            if is_real(script) && script != input.script {
-                require_break |= is_real(input.script);
-            }
-
-            if !prohibit_break && (hard_break || require_break) {
-                let special = match () {
-                    _ if hard_break => RunSpecial::HardBreak,
-                    _ if last_is_htab => RunSpecial::HTab,
-                    _ if last_is_control || is_break => RunSpecial::None,
-                    _ => RunSpecial::NoBreak,
-                };
-
-                if is_emoji {
-                    let range = (emoji_start..emoji_end).into();
-                    let face = emoji_face_id()?;
-                    self.push_run(shaper::shape(input, range, face, breaks, special));
-                } else {
-                    // NOTE: the range may be empty; we need it anyway (unless
-                    // we modify the last run's special property).
-                    let range = (start..non_control_end).into();
-                    self.select_font_and_push_run(font, input, range, breaks, special, first_real)?;
-                };
-                first_real = None;
-
-                start = index;
-                non_control_end = index;
-                while let Some(para) = text.paragraph(next_para_i)
-                    && para.range.start <= index
-                {
-                    input.base_level = para.level;
-                    next_para_i += 1;
-                }
-                if let Some(level) = text.level(index) {
-                    input.level = level;
-                }
-                input.script = script;
-                breaks = Default::default();
-            } else {
-                if is_break && !is_control && index > start {
-                    breaks.push(shaper::GlyphBreak::new(to_u32(index)));
-                }
-
-                if input.script == Script::Unknown
-                    || matches!(input.script, Script::Common | Script::Inherited) && is_real(script)
-                {
-                    input.script = script;
-                }
-            }
-
-            if is_real(script) && first_real.is_none() {
-                first_real = Some(c);
-            }
-
-            last_is_control = is_control;
-            last_is_htab = is_htab;
-            emoji_start = new_emoji_start;
-        }
-
         /*
-        println!("text: {}", text);
+        println!("text: {}", &text[..]);
         let fonts = fonts::library();
         for run in &self.runs {
             let slice = &text[run.range];
@@ -635,29 +350,180 @@ trait PushRun {
             println!();
         }
         */
+
         Ok(())
     }
-}
 
-impl<'a> PushRun for RunAppender<'a> {
+    /// Break `&text[range]` into runs and push
+    #[inline(always)]
+    fn push_text_range(
+        &mut self,
+        text: &AnalyzedText<'_>,
+        range: std::ops::Range<usize>,
+        font: FontSelector,
+        dpem: f32,
+    ) -> Result<(), NoFontMatch> {
+        let starting_para_i = text.find_paragraph(range.start);
+
+        let mut input = shaper::Input {
+            text,
+            dpem,
+            base_level: text
+                .paragraph(starting_para_i)
+                .map(|p| p.level)
+                .unwrap_or(text.default_level()),
+            level: text.level(range.start).unwrap_or(text.default_level()),
+            script: Script::Unknown,
+        };
+        let mut next_para_i = starting_para_i + 1;
+
+        let mut breaks = Default::default();
+        let mut start = range.start;
+
+        // TODO: allow segmenter configuration
+        let segmenter = LineSegmenter::new_auto(Default::default());
+        let mut break_iter = segmenter.segment_str(&input.text[range.clone()]);
+        let mut next_break = break_iter.next();
+
+        let mut first_real = None;
+        let mut emoji_state = EmojiState::None;
+        let mut emoji_start = 0;
+        let mut emoji_end = 0;
+
+        let mut last_is_control = false;
+        let mut last_is_htab = false;
+        let mut non_control_end = 0;
+
+        for (sub_index, c) in input.text[range.clone()]
+            .char_indices()
+            .chain(std::iter::once((range.len(), '\0')))
+        {
+            let text_index = sub_index + range.start;
+
+            // Handling for control chars
+            if !last_is_control {
+                non_control_end = text_index;
+            }
+            let is_htab = c == '\t';
+            let mut require_break = last_is_htab;
+            let is_control = c.is_control();
+
+            // Is wrapping allowed at this position?
+            let is_break = next_break == Some(sub_index);
+            let hard_break = is_break && sub_index > 0 && ends_with_hard_break(&text[..text_index]);
+            if is_break {
+                next_break = break_iter.next();
+            }
+
+            let script = CodePointMapData::<Script>::new().get(c);
+
+            let emoji_break = emoji_state.advance(c);
+            let mut new_emoji_start = emoji_start;
+            let mut is_emoji = false;
+            let prohibit_break = match emoji_break {
+                EmojiBreak::None => false,
+                EmojiBreak::Start => {
+                    require_break = true;
+                    new_emoji_start = text_index;
+                    false
+                }
+                EmojiBreak::Prohibit => {
+                    emoji_end = text_index;
+                    true
+                }
+                EmojiBreak::End => {
+                    require_break = true;
+                    emoji_end = text_index;
+                    debug_assert!(emoji_end > emoji_start);
+                    is_emoji = true;
+                    false
+                }
+                EmojiBreak::Restart => {
+                    require_break = true;
+                    emoji_end = text_index;
+                    new_emoji_start = text_index;
+                    debug_assert!(emoji_end > emoji_start);
+                    is_emoji = true;
+                    false
+                }
+                EmojiBreak::Error => {
+                    is_emoji = emoji_end > emoji_start;
+                    require_break = is_emoji;
+                    false
+                }
+            };
+
+            // Force end of current run?
+            require_break |= text
+                .level(text_index)
+                .map(|level| level != input.level)
+                .unwrap_or(true);
+
+            if is_real(script) && script != input.script {
+                require_break |= is_real(input.script);
+            }
+
+            let is_end = text_index == range.end;
+            if is_end || !prohibit_break && (hard_break || require_break) {
+                let special = match () {
+                    _ if hard_break => RunSpecial::HardBreak,
+                    _ if last_is_htab => RunSpecial::HTab,
+                    _ if last_is_control || is_break => RunSpecial::None,
+                    _ => RunSpecial::NoBreak,
+                };
+
+                if is_emoji {
+                    let range = (emoji_start..emoji_end).into();
+                    let face = emoji_face_id()?;
+                    self.push_run(shaper::shape(input, range, face, breaks, special));
+                } else {
+                    // NOTE: the range may be empty; we need it anyway (unless
+                    // we modify the last run's special property).
+                    let range = (start..non_control_end).into();
+                    self.select_font_and_push_run(font, input, range, breaks, special, first_real)?;
+                };
+                first_real = None;
+
+                start = text_index;
+                non_control_end = text_index;
+                while let Some(para) = text.paragraph(next_para_i)
+                    && para.range.start <= text_index
+                {
+                    input.base_level = para.level;
+                    next_para_i += 1;
+                }
+                if let Some(level) = text.level(text_index) {
+                    input.level = level;
+                }
+                input.script = script;
+                breaks = Default::default();
+            } else {
+                if is_break && !is_control && text_index > start {
+                    breaks.push(shaper::GlyphBreak::new(to_u32(text_index)));
+                }
+
+                if input.script == Script::Unknown
+                    || matches!(input.script, Script::Common | Script::Inherited) && is_real(script)
+                {
+                    input.script = script;
+                }
+            }
+
+            if is_real(script) && first_real.is_none() {
+                first_real = Some(c);
+            }
+
+            last_is_control = is_control;
+            last_is_htab = is_htab;
+            emoji_start = new_emoji_start;
+        }
+
+        Ok(())
+    }
+
     #[inline]
     fn push_run(&mut self, run: GlyphRun) {
-        self.display.runs.push(run);
-    }
-}
-
-impl<'a> PushRun for RunReplacer<'a> {
-    fn push_run(&mut self, run: GlyphRun) {
-        debug_assert!(self.index <= self.display.runs.len());
-        if self.index < self.end {
-            self.display.runs[self.index] = run;
-        } else if self.index == self.display.runs.len() {
-            self.display.runs.push(run);
-        } else {
-            // TODO(opt): push to a temporary buffer then insert on Drop?
-            self.display.runs.insert(self.index, run);
-        }
-        self.index += 1;
+        self.runs.push(run);
     }
 }
 
@@ -826,7 +692,12 @@ mod test {
         });
 
         let mut display = TextDisplay::default();
-        assert!(display.prepare_runs(text, dir, fonts).is_ok());
+        assert!(
+            display
+                .set_text(text, dir)
+                .with_tokens(fonts, false)
+                .is_ok()
+        );
 
         for (i, (run, expected)) in display.runs.iter().zip(expected.iter()).enumerate() {
             assert_eq!(

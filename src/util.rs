@@ -40,7 +40,7 @@ impl Status {
 ///
 /// This is typically not stored but computed on use for one or multiple
 /// paragraphs of text (see [`Self::new`] docs).
-pub struct AnalyzedText<'a> {
+pub(crate) struct AnalyzedText<'a> {
     text: &'a str,
     default_level: Level,
     levels: Vec<Level>,
