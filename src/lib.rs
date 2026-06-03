@@ -30,13 +30,16 @@ mod display;
 pub use display::*;
 
 pub mod fonts;
+#[cfg(feature = "text")]
 pub mod format;
 
+#[cfg(feature = "text")]
 mod text;
+#[cfg(feature = "text")]
 pub use text::*;
 
 mod util;
-pub use util::{LineIterator, Status};
+pub use util::{FontToken, LineIterator, Status};
 
 pub(crate) mod shaper;
 pub use shaper::{Glyph, GlyphId};

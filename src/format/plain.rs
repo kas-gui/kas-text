@@ -5,8 +5,8 @@
 
 //! Implementations for plain text
 
-use super::{FontToken, FormattableText};
-use crate::fonts::FontSelector;
+use super::FormattableText;
+use crate::{FontToken, fonts::FontSelector};
 
 impl FormattableText for str {
     type Effect = ();

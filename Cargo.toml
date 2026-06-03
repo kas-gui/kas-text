@@ -34,6 +34,9 @@ serde = ["dep:serde", "bitflags/serde"]
 # Optional: expose ab_glyph font face
 ab_glyph = ["dep:ab_glyph"]
 
+# Provide high-level text API
+text = []
+
 [dependencies]
 cfg-if = "1.0.0"
 easy-cast = "0.5.0"

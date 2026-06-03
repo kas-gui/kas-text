@@ -8,9 +8,8 @@
 use super::TextDisplay;
 use crate::conv::{to_u32, to_usize};
 use crate::fonts::{self, FaceId, FontSelector, NoFontMatch};
-use crate::format::FontToken;
 use crate::util::{AnalyzedText, ends_with_hard_break};
-use crate::{Direction, Range, shaper, shaper::GlyphRun};
+use crate::{Direction, FontToken, Range, shaper, shaper::GlyphRun};
 use icu_properties::CodePointMapData;
 use icu_properties::props::{
     BinaryProperty, DefaultIgnorableCodePoint, EmojiModifier, EmojiPresentation, RegionalIndicator,

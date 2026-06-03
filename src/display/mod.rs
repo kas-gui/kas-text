@@ -6,8 +6,6 @@
 //! Text prepared for display
 
 use crate::conv::to_usize;
-#[allow(unused)]
-use crate::{Direction, Status, Text};
 use crate::{Vec2, shaper};
 use smallvec::SmallVec;
 use tinyvec::TinyVec;
@@ -83,6 +81,9 @@ pub struct NotReady;
 /// To navigate "up" and "down" lines, use [`TextDisplay::text_glyph_pos`] to
 /// get the position of the cursor, [`TextDisplay::find_line`] to get the line
 /// number, then [`TextDisplay::line_index_nearest`] to find the new index.
+///
+/// [`Text`]: crate::Text
+/// [`Status`]: crate::Status
 #[derive(Clone, Debug)]
 pub struct TextDisplay {
     // NOTE: typical numbers of elements:
@@ -202,6 +203,9 @@ impl TextDisplay {
     ///
     /// This returns the direction inferred from the `text` and [`Direction`]
     /// used during run-breaking. See also [`Direction::text_is_rtl`].
+    ///
+    /// [`Direction`]: crate::Direction
+    /// [`Direction::text_is_rtl`]: crate::Direction::text_is_rtl
     #[inline]
     pub fn text_is_rtl(&self) -> bool {
         self.runs
@@ -221,6 +225,8 @@ impl TextDisplay {
     ///
     /// Note: indeterminate lines (e.g. empty lines) have their direction
     /// determined from the passed [`Direction`].
+    ///
+    /// [`Direction`]: crate::Direction
     pub fn line_is_rtl(&self, line: usize) -> Option<bool> {
         if let Some(line) = self.lines.get(line) {
             let first_run = line.run_range.start();

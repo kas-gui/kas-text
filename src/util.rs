@@ -10,7 +10,7 @@ use icu_segmenter::{LineSegmenter, iterators::LineBreakIterator, scaffold::Utf8}
 use std::ops::Range;
 use unicode_bidi::{BidiInfo, LTR_LEVEL, Level, ParagraphInfo, RTL_LEVEL};
 
-use crate::Direction;
+use crate::{Direction, fonts::FontSelector};
 
 /// Describes the state-of-preparation of a [`TextDisplay`][crate::TextDisplay]
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Ord, PartialOrd, Hash)]
@@ -34,6 +34,26 @@ impl Status {
     pub fn is_ready(&self) -> bool {
         *self == Status::Ready
     }
+}
+
+/// Font formatting token
+#[derive(Clone, Debug, PartialEq)]
+pub struct FontToken {
+    /// Index in text at which formatting becomes active
+    ///
+    /// Expected: `start <= text.len()`. (Note: text ending with a mandatory
+    /// break implies a following new-line, at least in some cases.)
+    ///
+    /// (Note that we use `u32` not `usize` since it can be assumed text length
+    /// will never exceed `u32::MAX`.)
+    pub start: u32,
+    /// Font size, in dots-per-em (pixel width of an 'M')
+    ///
+    /// This may be calculated from point size as `pt_size * dpp`, where `dpp`
+    /// is the number of pixels per point (see [`crate::fonts`] documentation).
+    pub dpem: f32,
+    /// Font selector
+    pub font: FontSelector,
 }
 
 /// Analyzer for text direction

@@ -526,7 +526,7 @@ fn shape_simple(
 /// Tests are extensions of those in `display/text_runs.rs`.
 #[cfg(test)]
 mod test {
-    use crate::{Direction, TextDisplay, format::FontToken};
+    use crate::{Direction, FontToken, TextDisplay};
     use std::iter;
     use std::ops::Range;
 

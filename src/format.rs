@@ -7,9 +7,7 @@
 
 #![allow(deprecated)]
 
-use crate::fonts::FontSelector;
-#[allow(unused)]
-use crate::{Text, TextDisplay};
+use crate::{FontToken, fonts::FontSelector};
 use std::fmt::Debug; // for doc-links
 
 mod plain;
@@ -108,24 +106,4 @@ impl<F: FormattableText + ?Sized> FormattableText for &F {
     fn effect_tokens(&self) -> &[(u32, Self::Effect)] {
         F::effect_tokens(self)
     }
-}
-
-/// Font formatting token
-#[derive(Clone, Debug, PartialEq)]
-pub struct FontToken {
-    /// Index in text at which formatting becomes active
-    ///
-    /// Expected: `start <= text.len()`. (Note: text ending with a mandatory
-    /// break implies a following new-line, at least in some cases.)
-    ///
-    /// (Note that we use `u32` not `usize` since it can be assumed text length
-    /// will never exceed `u32::MAX`.)
-    pub start: u32,
-    /// Font size, in dots-per-em (pixel width of an 'M')
-    ///
-    /// This may be calculated from point size as `pt_size * dpp`, where `dpp`
-    /// is the number of pixels per point (see [`crate::fonts`] documentation).
-    pub dpem: f32,
-    /// Font selector
-    pub font: FontSelector,
 }
