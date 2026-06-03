@@ -166,6 +166,15 @@ impl<'a> Appender<'a> {
         self
     }
 
+    /// Specify a content locale (currently only affects line-breaking)
+    ///
+    /// This only affects subsequent calls to [`Self::with_tokens`] and [`Self::with_font`].
+    #[inline]
+    pub fn with_content_locale(&mut self, locale: &'a icu_locale::LanguageIdentifier) -> &mut Self {
+        self.text.lb_opts.content_locale = Some(locale);
+        self
+    }
+
     /// Append the entire `text` using fonts inferred from `tokens`
     ///
     /// If `imply_empty_final_line` and `text` ends with a mandatory line-break
