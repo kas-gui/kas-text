@@ -383,8 +383,7 @@ fn shape_rustybuzz(
         true => rustybuzz::Direction::RightToLeft,
     });
     buffer.push_str(slice);
-    let script: fontique::Script = script.into();
-    let tag = ttf_parser::Tag(u32::from_be_bytes(script.0));
+    let tag = crate::util::to_ttf_parser_tag(script);
     if let Some(script) = rustybuzz::Script::from_iso15924_tag(tag) {
         buffer.set_script(script);
     }
