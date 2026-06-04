@@ -26,8 +26,8 @@ mod data;
 use data::Range;
 pub use data::Vec2;
 
-mod display;
-pub use display::*;
+mod forme;
+pub use forme::*;
 
 pub mod fonts;
 #[cfg(feature = "text")]

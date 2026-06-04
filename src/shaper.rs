@@ -18,8 +18,8 @@
 //! This module *does not* perform line-breaking, wrapping or text reversal.
 
 use crate::conv::{DPU, to_u32, to_usize};
-use crate::display::RunSpecial;
 use crate::fonts::{self, FaceId};
+use crate::forme::RunSpecial;
 use crate::{Range, Vec2};
 use icu_properties::props::Script;
 use tinyvec::TinyVec;
@@ -522,7 +522,7 @@ fn shape_simple(
 
 /// Warning: test results may depend on system fonts
 ///
-/// Tests are extensions of those in `display/text_runs.rs`.
+/// Tests are extensions of those in `forme/text_runs.rs`.
 #[cfg(test)]
 mod test {
     use crate::{Direction, FontToken, Forme};

@@ -5,9 +5,9 @@
 
 //! Text object
 
-use crate::display::{Forme, MarkerPosIter, NotReady};
 use crate::fonts::{FontSelector, NoFontMatch};
 use crate::format::FormattableText;
+use crate::forme::{Forme, MarkerPosIter, NotReady};
 use crate::{Align, Direction, GlyphRun, Line, Status, Vec2};
 use std::fmt::Debug;
 use std::num::NonZeroUsize;
