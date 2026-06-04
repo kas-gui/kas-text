@@ -6,6 +6,8 @@
 //! Text preparation: line breaking and BIDI
 
 use super::Forme;
+#[allow(unused)]
+use crate::Status;
 use crate::conv::{to_u32, to_usize};
 use crate::fonts::{self, FaceId, FontSelector, NoFontMatch};
 use crate::util::{AnalyzedText, ends_with_hard_break, to_fontique_script};
@@ -48,7 +50,7 @@ impl Forme {
     ///
     /// # Preparation status
     ///
-    /// [Requires status][Self#status-of-preparation]: none.
+    /// [Requires status][Self#states-of-preparation]: none.
     ///
     /// Must be called again if any of `text`, `direction` or `font_tokens`
     /// change.
@@ -65,22 +67,33 @@ impl Forme {
         Ok(())
     }
 
-    /// Replace prior content and typeset
+    /// Replace text content and construct shaped glyph-runs
     ///
-    /// This method performs most demanding typesetting steps: run-breaking,
-    /// font matching and [shaping](https://en.wikipedia.org/wiki/Text_shaping).
+    /// May be called from any [`Status`]; results in [`Status::Shaped`].
     ///
-    /// This method may be called from any
-    /// [state of preparation]([Self#status-of-preparation]) but
-    /// [`Self::prepare_lines`] should be called afterwards.
+    /// Call [`Appender::with_tokens`] or [`Appender::with_font`] on the result.
     ///
-    /// By itself this method does nothing; see the methods on [`Appender`].
+    /// This method performs most demanding typesetting steps:
+    ///
+    /// 1. Run-breaking splits the input text into the longest *runs* possible
+    ///    such that runs do not contain mandatory line-breaks and have a single
+    ///    text direction (more accurately: a single BiDi embedding level),
+    ///    [script](https://en.wikipedia.org/wiki/Script_(Unicode)) and set of
+    ///    font properties.
+    /// 2. Font matching assigns a font to each run based on the script and font
+    ///    properties; in some cases, further run-breaking is required to use
+    ///    fallback fonts.
+    /// 3. [Shaping](https://en.wikipedia.org/wiki/Text_shaping); this either
+    ///    uses [rustybuzz](https://crates.io/crates/rustybuzz) (requires the
+    ///    `shaping` crate feature) or just does kerning. (Differences between
+    ///    the two methods are most apparent when using emojis or complex
+    ///    scripts such as Arabic.)
     //
     // Note: the only real difficulty in adding `fn push_text(..)` (to support
     // using multiple disjoint pieces of text) is that text indices get used in
     // various places; such a method would need to offset all text indices used
     // in GlyphRun to make them distinct and correctly ordered.
-    #[must_use = "set_text(..) has no effect without also calling a method on the return value"]
+    #[must_use = "set_text(..) has no effect without calling with_tokens(..) or with_font(..) on the result"]
     pub fn set_text<'a>(&'a mut self, text: &'a str, direction: Direction) -> Appender<'a> {
         self.clear();
         Appender {

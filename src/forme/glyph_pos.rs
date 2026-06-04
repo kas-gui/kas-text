@@ -47,6 +47,9 @@ impl MarkerPos {
     }
 }
 
+/// An iterator over [`MarkerPos`] items.
+///
+/// Represents a maximum of two elements.
 pub struct MarkerPosIter {
     v: [MarkerPos; 2],
     a: usize,
@@ -276,8 +279,7 @@ impl<'a, E: Copy + Default> GlyphRun<'a, E> {
 impl Forme {
     /// Find the starting position (top-left) of the glyph at the given index
     ///
-    /// [Requires status][Self#status-of-preparation]:
-    /// text is fully prepared for display.
+    /// Expects state: [`Status::Ready`](crate::Status::Ready).
     ///
     /// The index should be no greater than the text length. It is not required
     /// to be on a code-point boundary. Returns an iterator over matching
@@ -370,6 +372,8 @@ impl Forme {
 
     /// Iterate over runs of positioned glyphs
     ///
+    /// Expects state: [`Status::Ready`](crate::Status::Ready).
+    ///
     /// All glyphs are translated by the given `offset` (this is practically
     /// free).
     ///
@@ -383,9 +387,6 @@ impl Forme {
     /// default value of `E` if no such `i` exists.
     ///
     /// Runs are yielded in undefined order.
-    ///
-    /// [Requires status][Self#status-of-preparation]:
-    /// text is fully prepared for display.
     pub fn runs<'a, E: Copy + Debug + Default>(
         &'a self,
         offset: Vec2,

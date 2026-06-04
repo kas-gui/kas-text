@@ -5,6 +5,9 @@
 
 //! Utility types and traits
 
+#[allow(unused)]
+use crate::Forme;
+use crate::{Direction, fonts::FontSelector};
 use icu_properties::{CodePointMapData, props::LineBreak};
 use icu_segmenter::{
     LineSegmenter, iterators::LineBreakIterator, options::LineBreakOptions, scaffold::Utf8,
@@ -12,19 +15,17 @@ use icu_segmenter::{
 use std::ops::Range;
 use unicode_bidi::{BidiInfo, LTR_LEVEL, Level, ParagraphInfo, RTL_LEVEL};
 
-use crate::{Direction, fonts::FontSelector};
-
-/// Describes the state-of-preparation of a [`Forme`][crate::Forme]
+/// Describes the [state-of-preparation](Forme#states-of-preparation) of a [`Forme`]
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Ord, PartialOrd, Hash)]
 pub enum Status {
-    /// No content
+    /// An empty [`Forme`].
     #[default]
     Empty,
-    /// Source text has been broken into level runs
+    /// A [`Forme`] with [set text](Forme::set_text).
     Shaped,
-    /// Line wrapping and horizontal alignment is done
+    /// A [`Forme`] with [prepared lines](Forme::prepare_lines).
     Wrapped,
-    /// The forme is ready for display
+    /// A [`Forme`] that is ready for display.
     Ready,
 }
 

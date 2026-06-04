@@ -478,7 +478,8 @@ impl<T: FormattableText + ?Sized> Text<T> {
 
     /// Iterate over line properties
     ///
-    /// [Requires status][Self#status-of-preparation]: lines have been wrapped.
+    /// Expects state [`Status::Wrapped`] or higher.
+    /// Methods [`Line::top`] and [`Line::bottom`] expect state [`Status::Ready`].
     #[inline]
     pub fn lines(&self) -> Result<impl Iterator<Item = &Line>, NotReady> {
         Ok(self.wrapped_forme()?.lines())

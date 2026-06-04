@@ -3,15 +3,22 @@
 // You may obtain a copy of the License in the LICENSE-APACHE file or at:
 //     https://www.apache.org/licenses/LICENSE-2.0
 
-//! KAS-text: text layout library
+//! # Kas-text: font library and text engine
 //!
-//! KAS-text supports plain text input, custom formatted text objects (see the
-//! [`format`] module) and a subset of Markdown ([`format::Markdown`],
-//! feature-gated).
+//! ## Font library
 //!
-//! The library also supports glyph rastering (depending on feature flags).
+//! The [`fonts`] module represents a "library" tracking discovered fonts along
+//! with helpers for font selection and reading font properties.
 //!
-//! [`format`]: mod@format
+//! ## Text engine
+//!
+//! The [`Forme`] struct is able to transform an `&str` into a set of type-set
+//! glyphs, and rapidly re-flow these glyphs to meet any page width.
+//!
+//! ## Formatted text
+//!
+//! The [`Text`] struct provides a slightly higher-level API, using the
+//! [`format`](mod@format) module to control formatting of content.
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![allow(text_direction_codepoint_in_literal)]

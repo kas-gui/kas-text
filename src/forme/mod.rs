@@ -5,6 +5,8 @@
 
 //! Text prepared for display
 
+#[allow(unused)]
+use crate::Status;
 use crate::conv::to_usize;
 use crate::{Vec2, shaper};
 use smallvec::SmallVec;
@@ -26,36 +28,36 @@ use wrap_lines::RunPart;
 #[error("not ready")]
 pub struct NotReady;
 
-/// Text type-setting object (low-level, without text and configuration)
+/// A representation of typeset text glyphs, with reflow support
 ///
-/// This struct caches type-setting data at multiple levels of preparation.
-/// Its end result is a sequence of type-set glyphs.
+/// In typesetting using [movable type](https://en.wikipedia.org/wiki/Movable_type),
+/// a *forme* (fr/en) refers to a page of type metal locked into a heavy steel
+/// frame known as a *chase*. While not a direct equivalent, this type is used
+/// to construct and represent a set of positioned glyphs, ready for "printing"
+/// to a digital screen.
 ///
-/// It is usually recommended to use [`Text`] instead, which includes
-/// the source text, type-setting configuration and status tracking.
+/// It may be preferable to use [`Text`] instead which bundles a `Forme` with
+/// the source text, formatting data and status tracking.
 ///
-/// ### Status of preparation
+/// ## States of preparation
 ///
-/// This struct does not track the state-of-preparation internally. It is
-/// recommended to use [`Text`] or a custom wrapper to do this. The [`Status`]
-/// enum may be helpful here.
+/// A `Forme` may have multiple states. The [`Status`] struct has corresponding
+/// variants. `Forme` does not directly track its state; [`Text`] does.
 ///
-/// Methods note the expected status-of-preparation. Violating this expectation
-/// is memory-safe but may cause a panic or an unexpected result.
+/// -   [`Status::Empty`]: The result of default-constructing a `Forme` or
+///     calling [`Self::clear`] (from any prior state). The `Forme` has zero
+///     size and no content.
+/// -   [`Status::Shaped`]: The result of calling [`Self::set_text`] (from any
+///     prior state). While [`Self::measure_width`] and [`Self::measure_height`]
+///     are able to operate on content in this state, all queries on lines or
+///     glyphs will consider the `Forme` empty.
+/// -   [`Status::Wrapped`]: The result of calling [`Self::prepare_lines`] (from
+///     any prior state, though if called on [`Status::Empty`] the result will
+///     of course be empty).
+/// -   [`Status::Ready`]: The result of calling [`Self::prepare_lines`] and
+///     adjusting alignment (if required).
 ///
-/// Steps of preparation are as follows:
-///
-/// 1.  Run-breaking: call [`Self::prepare_runs`] to break text into runs,
-///     resolve fonts and apply shaping. (This is the most expensive step,
-///     especially when shaping is enabled.)
-/// 2.  (Optional) Measure size requirements using [`Self::measure_width`] and
-///     [`Self::measure_height`].
-/// 3.  Line-wrapping: call [`Self::prepare_lines`] to perform line-wrapping at
-///     the given wrap-width. This also re-orders segments (where lines are
-///     bi-directional) and performs horizontal alignment.
-/// 4.  (Optional) Tweak alignment (e.g. to vertically center text).
-///
-/// ### Text navigation
+/// ## Text navigation
 ///
 /// Despite lacking a copy of the underlying text, text-indices may be mapped to
 /// glyphs and lines, and vice-versa.
@@ -83,19 +85,12 @@ pub struct NotReady;
 /// number, then [`Forme::line_index_nearest`] to find the new index.
 ///
 /// [`Text`]: crate::Text
-/// [`Status`]: crate::Status
 #[derive(Clone, Debug)]
 pub struct Forme {
-    // NOTE: typical numbers of elements:
-    // Simple labels: runs=1, wrapped_runs=1, lines=1
-    // Longer texts wrapped over n lines: runs=1, wrapped_runs=n, lines=n
-    // Justified wrapped text: similar, but wrapped_runs is the word count
-    // Simple texts with explicit breaks over n lines: all=n
-    // Single-line bidi text: runs=n, wrapped_runs=n, lines=1
-    // Complex bidi or formatted texts: all=many
-    // Conclusion: SmallVec<[T; 1]> saves allocations in many cases.
-    //
-    /// Level runs within the text, in logical order
+    /// Level runs (i.e. one BiDi level) of shaped glyphs in logical text order
+    ///
+    /// Frequently (especially for small labels) a single run represents the
+    /// whole text. Complex texts may involve many runs.
     runs: SmallVec<[shaper::GlyphRun; 1]>,
     /// Contiguous runs, in logical order
     ///
@@ -132,6 +127,8 @@ impl Default for Forme {
 
 impl Forme {
     /// Reset the `Forme` to empty
+    ///
+    /// May be called from any [`Status`]; results in [`Status::Empty`].
     pub fn clear(&mut self) {
         self.runs.clear();
         self.wrapped_runs.clear();
@@ -142,7 +139,7 @@ impl Forme {
 
     /// Get the number of lines (after wrapping)
     ///
-    /// [Requires status][Self#status-of-preparation]: lines have been wrapped.
+    /// Expects state: [`Status::Wrapped`] or higher.
     #[inline]
     pub fn num_lines(&self) -> usize {
         self.lines.len()
@@ -150,7 +147,8 @@ impl Forme {
 
     /// Get line properties
     ///
-    /// [Requires status][Self#status-of-preparation]: lines have been wrapped.
+    /// Expects state [`Status::Wrapped`] or higher.
+    /// Methods [`Line::top`] and [`Line::bottom`] expect state [`Status::Ready`].
     #[inline]
     pub fn get_line(&self, index: usize) -> Option<&Line> {
         self.lines.get(index)
@@ -158,7 +156,8 @@ impl Forme {
 
     /// Iterate over line properties
     ///
-    /// [Requires status][Self#status-of-preparation]: lines have been wrapped.
+    /// Expects state [`Status::Wrapped`] or higher.
+    /// Methods [`Line::top`] and [`Line::bottom`] expect state [`Status::Ready`].
     #[inline]
     pub fn lines(&self) -> impl Iterator<Item = &Line> {
         self.lines.iter()
@@ -166,11 +165,7 @@ impl Forme {
 
     /// Get the size of the required bounding box
     ///
-    /// [Requires status][Self#status-of-preparation]: lines have been wrapped.
-    ///
-    /// Returns the position of the upper-left and lower-right corners of a
-    /// bounding box on content.
-    /// Alignment and input bounds do affect the result.
+    /// Expects state [`Status::Ready`].
     pub fn bounding_box(&self) -> (Vec2, Vec2) {
         if self.lines.is_empty() {
             return (Vec2::ZERO, Vec2::ZERO);
@@ -183,13 +178,13 @@ impl Forme {
 
     /// Find the line containing text `index`
     ///
-    /// [Requires status][Self#status-of-preparation]: lines have been wrapped.
-    ///
     /// Returns the line number and the text-range of the line.
     ///
     /// Returns `None` in case `index` does not line on or at the end of a line
     /// (which means either that `index` is beyond the end of the text or that
     /// `index` is within a mult-byte line break).
+    ///
+    /// Expects state [`Status::Wrapped`] or higher.
     pub fn find_line(&self, index: usize) -> Option<(usize, std::ops::Range<usize>)> {
         let mut first = None;
         for (n, line) in self.lines.iter().enumerate() {
@@ -208,7 +203,7 @@ impl Forme {
 
     /// Get the base directionality of the first paragraph
     ///
-    /// [Requires status][Self#status-of-preparation]: run-breaking is complete.
+    /// Expects state [`Status::Shaped`] or higher.
     ///
     /// This returns the direction inferred from the `text` and [`Direction`]
     /// used during run-breaking. See also [`Direction::text_is_rtl`].
@@ -225,7 +220,7 @@ impl Forme {
 
     /// Get the directionality of the current line
     ///
-    /// [Requires status][Self#status-of-preparation]: lines have been wrapped.
+    /// Expects state [`Status::Wrapped`] or higher.
     ///
     /// Returns:
     ///
@@ -248,8 +243,7 @@ impl Forme {
 
     /// Find the text index for the glyph nearest the given `pos`
     ///
-    /// [Requires status][Self#status-of-preparation]:
-    /// text is fully prepared for display.
+    /// Expects state [`Status::Ready`].
     ///
     /// This includes the index immediately after the last glyph, thus
     /// `result ≤ text.len()`.
@@ -270,7 +264,7 @@ impl Forme {
 
     /// Find the text index nearest horizontal-coordinate `x` on `line`
     ///
-    /// [Requires status][Self#status-of-preparation]: lines have been wrapped.
+    /// Expects state [`Status::Ready`].
     ///
     /// This is similar to [`Forme::text_index_nearest`], but allows the
     /// line to be specified explicitly. Returns `None` only on invalid `line`.
