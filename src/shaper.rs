@@ -103,10 +103,6 @@ pub(crate) struct GlyphRun {
     pub base_level: Level,
     /// BiDi level of this run
     pub level: Level,
-    /// Script
-    ///
-    /// We store this only to support `resize_runs`.
-    pub script: Script,
 
     /// Sequence of all glyphs, in left-to-right order
     pub glyphs: Vec<Glyph>,
@@ -339,7 +335,6 @@ pub(crate) fn shape(
         special,
         base_level: input.base_level,
         level: input.level,
-        script: input.script,
 
         glyphs,
         breaks,

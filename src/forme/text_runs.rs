@@ -31,53 +31,6 @@ pub(crate) enum RunSpecial {
 }
 
 impl Forme {
-    /// Reset the `Forme`
-    ///
-    /// This removes all text runs, resetting the display.
-    pub fn clear(&mut self) {
-        self.runs.clear();
-        self.wrapped_runs.clear();
-        self.lines.clear();
-        self.l_bound = 0.0;
-        self.r_bound = 0.0;
-    }
-
-    /// Update font size for existing text runs
-    ///
-    /// [Requires status][Self#status-of-preparation]: run-breaking is complete.
-    ///
-    /// This is a fast way to resize text. Parameters (aside from
-    /// [`FontToken::dpem`] values) must match those passed to
-    /// [`Self::prepare_runs`].
-    pub fn resize_runs<FT>(&mut self, text: &str, mut font_tokens: FT)
-    where
-        FT: Iterator<Item = FontToken>,
-    {
-        let (mut dpem, _) = read_initial_token(&mut font_tokens);
-        let mut next_token = font_tokens.next();
-
-        for run in &mut self.runs {
-            while let Some(token) = next_token.as_ref() {
-                if token.start > run.range.start {
-                    break;
-                }
-                dpem = token.dpem;
-                next_token = font_tokens.next();
-            }
-
-            let input = shaper::Input {
-                text,
-                dpem,
-                base_level: run.base_level,
-                level: run.level,
-                script: run.script,
-            };
-            let mut breaks = Default::default();
-            std::mem::swap(&mut breaks, &mut run.breaks);
-            *run = shaper::shape(input, run.range, run.face_id, breaks, run.special);
-        }
-    }
-
     /// Break `text` into runs, replacing existing content
     ///
     /// The `text` is split into a sequence of runs according to the text
@@ -99,7 +52,6 @@ impl Forme {
     ///
     /// Must be called again if any of `text`, `direction` or `font_tokens`
     /// change.
-    /// If only `dpem` changes, [`Self::resize_runs`] may be called instead.
     #[deprecated(since = "0.10.0", note = "use Self::set_text instead")]
     #[inline]
     pub fn prepare_runs(
@@ -729,7 +681,6 @@ mod test {
             );
             assert_eq!(run.base_level, expected.2, "for text \"{text}\", run {i}");
             assert_eq!(run.level, expected.3, "for text \"{text}\", run {i}");
-            assert_eq!(run.script, expected.4, "for text \"{text}\", run {i}");
             assert_eq!(
                 run.breaks.iter().map(|b| b.index).collect::<Vec<_>>(),
                 expected.5,

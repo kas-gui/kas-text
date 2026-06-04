@@ -20,8 +20,6 @@ pub enum Status {
     /// Nothing done yet
     #[default]
     New,
-    /// As [`Self::LevelRuns`], except these need resizing
-    ResizeLevelRuns,
     /// Source text has been broken into level runs
     LevelRuns,
     /// Line wrapping and horizontal alignment is done

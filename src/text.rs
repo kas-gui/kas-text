@@ -207,7 +207,7 @@ impl<T: FormattableText + ?Sized> Text<T> {
     pub fn set_font_size(&mut self, dpem: f32) {
         if dpem != self.dpem {
             self.dpem = dpem;
-            self.set_max_status(Status::ResizeLevelRuns);
+            self.set_max_status(Status::New);
         }
     }
 
@@ -313,7 +313,7 @@ impl<T: FormattableText + ?Sized> Text<T> {
     /// This does not require that the text is prepared.
     #[inline]
     pub fn text_is_rtl(&self) -> bool {
-        if self.status >= Status::ResizeLevelRuns {
+        if self.status >= Status::LevelRuns {
             return self.forme.text_is_rtl();
         }
 
@@ -385,10 +385,6 @@ impl<T: FormattableText + ?Sized> Text<T> {
                 .forme
                 .set_text(self.text.as_str(), self.direction)
                 .with_tokens(self.text.font_tokens(self.dpem, self.font), true)?,
-            Status::ResizeLevelRuns => self.forme.resize_runs(
-                self.text.as_str(),
-                self.text.font_tokens(self.dpem, self.font),
-            ),
             _ => (),
         }
 
