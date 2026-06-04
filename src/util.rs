@@ -6,7 +6,9 @@
 //! Utility types and traits
 
 use icu_properties::{CodePointMapData, props::LineBreak};
-use icu_segmenter::{LineSegmenter, iterators::LineBreakIterator, scaffold::Utf8};
+use icu_segmenter::{
+    LineSegmenter, iterators::LineBreakIterator, options::LineBreakOptions, scaffold::Utf8,
+};
 use std::ops::Range;
 use unicode_bidi::{BidiInfo, LTR_LEVEL, Level, ParagraphInfo, RTL_LEVEL};
 
@@ -65,6 +67,7 @@ pub(crate) struct AnalyzedText<'a> {
     default_level: Level,
     levels: Vec<Level>,
     paragraphs: Vec<ParagraphInfo>,
+    pub(crate) lb_opts: LineBreakOptions<'a>,
 }
 
 impl<'a> std::ops::Deref for AnalyzedText<'a> {
@@ -104,6 +107,7 @@ impl<'a> AnalyzedText<'a> {
             default_level: direction.level(),
             levels: info.levels,
             paragraphs: info.paragraphs,
+            lb_opts: LineBreakOptions::default(),
         }
     }
 
@@ -190,4 +194,15 @@ impl<'a> Iterator for LineIterator<'a> {
         }
         None
     }
+}
+
+pub(crate) fn to_fontique_script(script: icu_properties::props::Script) -> fontique::Script {
+    let script = icu_locale::subtags::Script::from(script);
+    fontique::Script::from_bytes(script.into_raw())
+}
+
+#[cfg(feature = "rustybuzz")]
+pub(crate) fn to_ttf_parser_tag(script: icu_properties::props::Script) -> ttf_parser::Tag {
+    let script = icu_locale::subtags::Script::from(script);
+    ttf_parser::Tag::from_bytes(&script.into_raw())
 }

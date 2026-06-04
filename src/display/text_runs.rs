@@ -8,7 +8,7 @@
 use super::TextDisplay;
 use crate::conv::{to_u32, to_usize};
 use crate::fonts::{self, FaceId, FontSelector, NoFontMatch};
-use crate::util::{AnalyzedText, ends_with_hard_break};
+use crate::util::{AnalyzedText, ends_with_hard_break, to_fontique_script};
 use crate::{Direction, FontToken, Range, shaper, shaper::GlyphRun};
 use icu_properties::CodePointMapData;
 use icu_properties::props::{
@@ -16,6 +16,7 @@ use icu_properties::props::{
     Script,
 };
 use icu_segmenter::LineSegmenter;
+use icu_segmenter::options::{LineBreakStrictness, LineBreakWordOption};
 use std::sync::OnceLock;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -147,15 +148,42 @@ pub struct Appender<'a> {
 }
 
 impl<'a> Appender<'a> {
+    /// Use a custom line-break strictness
+    ///
+    /// This only affects subsequent calls to [`Self::with_tokens`] and [`Self::with_font`].
+    #[inline]
+    pub fn with_line_break_strictness(&mut self, strictness: LineBreakStrictness) -> &mut Self {
+        self.text.lb_opts.strictness = Some(strictness);
+        self
+    }
+
+    /// Use a custom line-break word option
+    ///
+    /// This only affects subsequent calls to [`Self::with_tokens`] and [`Self::with_font`].
+    #[inline]
+    pub fn with_word_break_option(&mut self, word_option: LineBreakWordOption) -> &mut Self {
+        self.text.lb_opts.word_option = Some(word_option);
+        self
+    }
+
+    /// Specify a content locale (currently only affects line-breaking)
+    ///
+    /// This only affects subsequent calls to [`Self::with_tokens`] and [`Self::with_font`].
+    #[inline]
+    pub fn with_content_locale(&mut self, locale: &'a icu_locale::LanguageIdentifier) -> &mut Self {
+        self.text.lb_opts.content_locale = Some(locale);
+        self
+    }
+
     /// Append the entire `text` using fonts inferred from `tokens`
     ///
     /// If `imply_empty_final_line` and `text` ends with a mandatory line-break
     /// then an empty text run will be added to represent the final line. This
     /// should not be used when another text part will be appended after this
     /// but should be used for the final text part of a multi-line text editor.
-    #[inline(never)]
+    #[inline]
     pub fn with_tokens(
-        self,
+        &mut self,
         font_tokens: impl Iterator<Item = FontToken>,
         imply_empty_final_line: bool,
     ) -> Result<(), NoFontMatch> {
@@ -164,7 +192,7 @@ impl<'a> Appender<'a> {
     }
 
     /// Append `&text[range]` using a single font
-    #[inline(never)]
+    #[inline]
     pub fn with_font(
         &mut self,
         range: std::ops::Range<usize>,
@@ -192,7 +220,7 @@ impl TextDisplay {
         first_real: Option<char>,
     ) -> Result<(), NoFontMatch> {
         let fonts = fonts::library();
-        let font_id = fonts.select_font(&font, input.script.into())?;
+        let font_id = fonts.select_font(&font, to_fontique_script(input.script))?;
         let text = &input.text[range.to_std()];
 
         // Find a font face
@@ -276,7 +304,6 @@ impl TextDisplay {
     /// then an empty text run will be added to represent the final line. This
     /// should not be used when another text part will be appended after this
     /// but should be used for the final text part of a multi-line text editor.
-    #[inline(always)]
     fn push_text(
         &mut self,
         text: &AnalyzedText<'_>,
@@ -354,7 +381,6 @@ impl TextDisplay {
     }
 
     /// Break `&text[range]` into runs and push
-    #[inline(always)]
     fn push_text_range(
         &mut self,
         text: &AnalyzedText<'_>,
@@ -379,8 +405,7 @@ impl TextDisplay {
         let mut breaks = Default::default();
         let mut start = range.start;
 
-        // TODO: allow segmenter configuration
-        let segmenter = LineSegmenter::new_auto(Default::default());
+        let segmenter = LineSegmenter::new_auto(text.lb_opts);
         let mut break_iter = segmenter.segment_str(&input.text[range.clone()]);
         let mut next_break = break_iter.next();
 
@@ -543,7 +568,7 @@ fn emoji_face_id() -> Result<FaceId, NoFontMatch> {
     static ONCE: OnceLock<Result<FaceId, NoFontMatch>> = OnceLock::new();
     *ONCE.get_or_init(|| {
         let fonts = fonts::library();
-        let font = fonts.select_font(&FontSelector::EMOJI, Script::Common.into());
+        let font = fonts.select_font(&FontSelector::EMOJI, to_fontique_script(Script::Common));
         font.map(|font_id| fonts.first_face_for(font_id).expect("invalid FontId"))
     })
 }
