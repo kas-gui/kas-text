@@ -68,7 +68,7 @@ pub struct NotReady;
 /// direction in bi-directional text).
 ///
 /// Navigating to the start or end of a line can be done with
-/// [`TextDisplay::find_line`], [`TextDisplay::get_line`] and [`Line::text_range`].
+/// [`Forme::find_line`], [`Forme::get_line`] and [`Line::text_range`].
 ///
 /// Navigating forwards or backwards should be done via a library such as
 /// [`unicode-segmentation`](https://github.com/unicode-rs/unicode-segmentation)
@@ -78,14 +78,14 @@ pub struct NotReady;
 /// The direction of navigation may be reversed for [right-to-left text](Self::text_is_rtl)
 /// (i.e. reversed logical-order navigation).
 ///
-/// To navigate "up" and "down" lines, use [`TextDisplay::text_glyph_pos`] to
-/// get the position of the cursor, [`TextDisplay::find_line`] to get the line
-/// number, then [`TextDisplay::line_index_nearest`] to find the new index.
+/// To navigate "up" and "down" lines, use [`Forme::text_glyph_pos`] to
+/// get the position of the cursor, [`Forme::find_line`] to get the line
+/// number, then [`Forme::line_index_nearest`] to find the new index.
 ///
 /// [`Text`]: crate::Text
 /// [`Status`]: crate::Status
 #[derive(Clone, Debug)]
-pub struct TextDisplay {
+pub struct Forme {
     // NOTE: typical numbers of elements:
     // Simple labels: runs=1, wrapped_runs=1, lines=1
     // Longer texts wrapped over n lines: runs=1, wrapped_runs=n, lines=n
@@ -115,12 +115,12 @@ fn size_of_elts() {
     assert_eq!(size_of::<shaper::GlyphRun>(), 120);
     assert_eq!(size_of::<RunPart>(), 24);
     assert_eq!(size_of::<Line>(), 24);
-    assert_eq!(size_of::<TextDisplay>(), 208);
+    assert_eq!(size_of::<Forme>(), 208);
 }
 
-impl Default for TextDisplay {
+impl Default for Forme {
     fn default() -> Self {
-        TextDisplay {
+        Forme {
             runs: Default::default(),
             wrapped_runs: Default::default(),
             lines: Default::default(),
@@ -130,7 +130,7 @@ impl Default for TextDisplay {
     }
 }
 
-impl TextDisplay {
+impl Forme {
     /// Get the number of lines (after wrapping)
     ///
     /// [Requires status][Self#status-of-preparation]: lines have been wrapped.
@@ -263,7 +263,7 @@ impl TextDisplay {
     ///
     /// [Requires status][Self#status-of-preparation]: lines have been wrapped.
     ///
-    /// This is similar to [`TextDisplay::text_index_nearest`], but allows the
+    /// This is similar to [`Forme::text_index_nearest`], but allows the
     /// line to be specified explicitly. Returns `None` only on invalid `line`.
     pub fn line_index_nearest(&self, line: usize, x: f32) -> Option<usize> {
         if line >= self.lines.len() {

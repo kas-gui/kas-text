@@ -5,7 +5,7 @@
 
 //! Methods using positioned glyphs
 
-use super::TextDisplay;
+use super::Forme;
 use crate::conv::to_usize;
 use crate::fonts::{self, FaceId, ScaledFaceRef};
 use crate::{Glyph, Range, Vec2, shaper};
@@ -100,7 +100,7 @@ impl ExactSizeIterator for MarkerPosIter {}
 
 /// A sequence of positioned glyphs with effects
 ///
-/// Yielded by [`TextDisplay::runs`].
+/// Yielded by [`Forme::runs`].
 pub struct GlyphRun<'a, E> {
     run: &'a shaper::GlyphRun,
     range: Range,
@@ -273,7 +273,7 @@ impl<'a, E: Copy + Default> GlyphRun<'a, E> {
     }
 }
 
-impl TextDisplay {
+impl Forme {
     /// Find the starting position (top-left) of the glyph at the given index
     ///
     /// [Requires status][Self#status-of-preparation]:
@@ -399,7 +399,7 @@ impl TextDisplay {
                     && effect.0 <= i
                 {
                     panic!(
-                        "TextDisplay::runs: effect start indices are not strictly increasing in {effects:?}"
+                        "Forme::runs: effect start indices are not strictly increasing in {effects:?}"
                     );
                 }
                 start = Some(effect.0);

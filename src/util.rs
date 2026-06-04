@@ -14,7 +14,7 @@ use unicode_bidi::{BidiInfo, LTR_LEVEL, Level, ParagraphInfo, RTL_LEVEL};
 
 use crate::{Direction, fonts::FontSelector};
 
-/// Describes the state-of-preparation of a [`TextDisplay`][crate::TextDisplay]
+/// Describes the state-of-preparation of a [`Forme`][crate::Forme]
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Ord, PartialOrd, Hash)]
 pub enum Status {
     /// Nothing done yet

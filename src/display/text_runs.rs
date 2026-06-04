@@ -5,7 +5,7 @@
 
 //! Text preparation: line breaking and BIDI
 
-use super::TextDisplay;
+use super::Forme;
 use crate::conv::{to_u32, to_usize};
 use crate::fonts::{self, FaceId, FontSelector, NoFontMatch};
 use crate::util::{AnalyzedText, ends_with_hard_break, to_fontique_script};
@@ -30,8 +30,8 @@ pub(crate) enum RunSpecial {
     HTab,
 }
 
-impl TextDisplay {
-    /// Reset the `TextDisplay`
+impl Forme {
+    /// Reset the `Forme`
     ///
     /// This removes all text runs, resetting the display.
     pub fn clear(&mut self) {
@@ -132,7 +132,7 @@ impl TextDisplay {
     pub fn set_text<'a>(&'a mut self, text: &'a str, direction: Direction) -> Appender<'a> {
         self.clear();
         Appender {
-            display: self,
+            forme: self,
             text: AnalyzedText::new(text, direction),
         }
     }
@@ -140,10 +140,10 @@ impl TextDisplay {
 
 /// A shim for appending text runs
 ///
-/// See [`TextDisplay::set_text`].
+/// See [`Forme::set_text`].
 #[must_use]
 pub struct Appender<'a> {
-    display: &'a mut TextDisplay,
+    forme: &'a mut Forme,
     text: AnalyzedText<'a>,
 }
 
@@ -187,7 +187,7 @@ impl<'a> Appender<'a> {
         font_tokens: impl Iterator<Item = FontToken>,
         imply_empty_final_line: bool,
     ) -> Result<(), NoFontMatch> {
-        self.display
+        self.forme
             .push_text(&self.text, font_tokens, imply_empty_final_line)
     }
 
@@ -199,13 +199,12 @@ impl<'a> Appender<'a> {
         font: FontSelector,
         dpem: f32,
     ) -> Result<&mut Self, NoFontMatch> {
-        self.display
-            .push_text_range(&self.text, range, font, dpem)?;
+        self.forme.push_text_range(&self.text, range, font, dpem)?;
         Ok(self)
     }
 }
 
-impl TextDisplay {
+impl Forme {
     /// Resolve font face and shape run
     ///
     /// This may sub-divide text as required to find matching fonts.
@@ -715,15 +714,10 @@ mod test {
             font: Default::default(),
         });
 
-        let mut display = TextDisplay::default();
-        assert!(
-            display
-                .set_text(text, dir)
-                .with_tokens(fonts, false)
-                .is_ok()
-        );
+        let mut forme = Forme::default();
+        assert!(forme.set_text(text, dir).with_tokens(fonts, false).is_ok());
 
-        for (i, (run, expected)) in display.runs.iter().zip(expected.iter()).enumerate() {
+        for (i, (run, expected)) in forme.runs.iter().zip(expected.iter()).enumerate() {
             assert_eq!(
                 run.range.to_std(),
                 expected.0,
@@ -742,7 +736,7 @@ mod test {
                 "wrap-points for text \"{text}\", run {i}"
             );
         }
-        assert_eq!(display.runs.len(), expected.len(), "number of runs");
+        assert_eq!(forme.runs.len(), expected.len(), "number of runs");
     }
 
     #[test]

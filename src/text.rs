@@ -5,7 +5,7 @@
 
 //! Text object
 
-use crate::display::{MarkerPosIter, NotReady, TextDisplay};
+use crate::display::{Forme, MarkerPosIter, NotReady};
 use crate::fonts::{FontSelector, NoFontMatch};
 use crate::format::FormattableText;
 use crate::{Align, Direction, GlyphRun, Line, Status, Vec2};
@@ -16,15 +16,15 @@ use std::num::NonZeroUsize;
 ///
 /// This struct contains:
 /// -   A [`FormattableText`]
-/// -   A [`TextDisplay`]
+/// -   A [`Forme`]
 /// -   A [`FontSelector`]
 /// -   Font size; this defaults to 16px (the web default).
 /// -   Text direction and alignment; by default this is inferred from the text.
 /// -   Line-wrap width; see [`Text::set_wrap_width`].
 /// -   The bounds used for alignment; these [must be set][Text::set_bounds].
 ///
-/// This struct tracks the [`TextDisplay`]'s
-/// [state of preparation][TextDisplay#status-of-preparation] and will perform
+/// This struct tracks the [`Forme`]'s
+/// [state of preparation][Forme#status-of-preparation] and will perform
 /// steps as required. To use this struct:
 /// ```
 /// use kas_text::{Text, Vec2};
@@ -57,7 +57,7 @@ pub struct Text<T: FormattableText + ?Sized> {
     direction: Direction,
     status: Status,
 
-    display: TextDisplay,
+    forme: Forme,
     text: T,
 }
 
@@ -84,24 +84,24 @@ impl<T: FormattableText> Text<T> {
             direction: Direction::default(),
             status: Status::New,
             text,
-            display: Default::default(),
+            forme: Default::default(),
         }
     }
 
-    /// Replace the [`TextDisplay`]
+    /// Replace the [`Forme`]
     ///
     /// This may be used with [`Self::new`] to reconstruct an object which was
     /// disolved [`into_parts`][Self::into_parts].
     #[inline]
-    pub fn with_display(mut self, display: TextDisplay) -> Self {
-        self.display = display;
+    pub fn with_forme(mut self, forme: Forme) -> Self {
+        self.forme = forme;
         self
     }
 
     /// Decompose into parts
     #[inline]
-    pub fn into_parts(self) -> (TextDisplay, T) {
-        (self.display, self.text)
+    pub fn into_parts(self) -> (Forme, T) {
+        (self.forme, self.text)
     }
 
     /// Clone the formatted text
@@ -314,7 +314,7 @@ impl<T: FormattableText + ?Sized> Text<T> {
     #[inline]
     pub fn text_is_rtl(&self) -> bool {
         if self.status >= Status::ResizeLevelRuns {
-            return self.display.text_is_rtl();
+            return self.forme.text_is_rtl();
         }
 
         self.direction.text_is_rtl(self.text.as_str())
@@ -358,34 +358,34 @@ impl<T: FormattableText + ?Sized> Text<T> {
         self.status = self.status.min(status);
     }
 
-    /// Read the [`TextDisplay`], without checking status
+    /// Read the [`Forme`], without checking status
     #[inline]
-    pub fn unchecked_display(&self) -> &TextDisplay {
-        &self.display
+    pub fn unchecked_forme(&self) -> &Forme {
+        &self.forme
     }
 
-    /// Read the [`TextDisplay`], if fully prepared
+    /// Read the [`Forme`], if fully prepared
     #[inline]
-    pub fn display(&self) -> Result<&TextDisplay, NotReady> {
+    pub fn forme(&self) -> Result<&Forme, NotReady> {
         self.check_status(Status::Ready)?;
-        Ok(self.unchecked_display())
+        Ok(self.unchecked_forme())
     }
 
-    /// Read the [`TextDisplay`], if at least wrapped
+    /// Read the [`Forme`], if at least wrapped
     #[inline]
-    pub fn wrapped_display(&self) -> Result<&TextDisplay, NotReady> {
+    pub fn wrapped_forme(&self) -> Result<&Forme, NotReady> {
         self.check_status(Status::Wrapped)?;
-        Ok(self.unchecked_display())
+        Ok(self.unchecked_forme())
     }
 
     #[inline]
     fn prepare_runs(&mut self) -> Result<(), NoFontMatch> {
         match self.status {
             Status::New => self
-                .display
+                .forme
                 .set_text(self.text.as_str(), self.direction)
                 .with_tokens(self.text.font_tokens(self.dpem, self.font), true)?,
-            Status::ResizeLevelRuns => self.display.resize_runs(
+            Status::ResizeLevelRuns => self.forme.resize_runs(
                 self.text.as_str(),
                 self.text.font_tokens(self.dpem, self.font),
             ),
@@ -398,7 +398,7 @@ impl<T: FormattableText + ?Sized> Text<T> {
 
     /// Measure required width, up to some `max_width`
     ///
-    /// This method partially prepares the [`TextDisplay`] as required.
+    /// This method partially prepares the [`Forme`] as required.
     ///
     /// This method allows calculation of the width requirement of a text object
     /// without full wrapping and glyph placement. Whenever the requirement
@@ -408,7 +408,7 @@ impl<T: FormattableText + ?Sized> Text<T> {
     pub fn measure_width(&mut self, max_width: f32) -> Result<f32, NoFontMatch> {
         self.prepare_runs()?;
 
-        Ok(self.display.measure_width(max_width))
+        Ok(self.forme.measure_width(max_width))
     }
 
     /// Measure required vertical height, wrapping as configured
@@ -416,12 +416,12 @@ impl<T: FormattableText + ?Sized> Text<T> {
     /// Stops after `max_lines`, if provided.
     pub fn measure_height(&mut self, max_lines: Option<NonZeroUsize>) -> Result<f32, NoFontMatch> {
         if self.status >= Status::Wrapped {
-            let (tl, br) = self.display.bounding_box();
+            let (tl, br) = self.forme.bounding_box();
             return Ok(br.1 - tl.1);
         }
 
         self.prepare_runs()?;
-        Ok(self.display.measure_height(self.wrap_width, max_lines))
+        Ok(self.forme.measure_height(self.wrap_width, max_lines))
     }
 
     /// Prepare text for display, as necessary
@@ -444,12 +444,12 @@ impl<T: FormattableText + ?Sized> Text<T> {
         debug_assert!(self.status >= Status::LevelRuns);
 
         if self.status == Status::LevelRuns {
-            self.display
+            self.forme
                 .prepare_lines(self.wrap_width, self.bounds.0, self.align.0);
         }
 
         if self.status <= Status::Wrapped {
-            self.display.vertically_align(self.bounds.1, self.align.1);
+            self.forme.vertically_align(self.bounds.1, self.align.1);
         }
 
         self.status = Status::Ready;
@@ -463,21 +463,21 @@ impl<T: FormattableText + ?Sized> Text<T> {
     /// Alignment and input bounds do affect the result.
     #[inline]
     pub fn bounding_box(&self) -> Result<(Vec2, Vec2), NotReady> {
-        Ok(self.wrapped_display()?.bounding_box())
+        Ok(self.wrapped_forme()?.bounding_box())
     }
 
     /// Get the number of lines (after wrapping)
     ///
-    /// See [`TextDisplay::num_lines`].
+    /// See [`Forme::num_lines`].
     #[inline]
     pub fn num_lines(&self) -> Result<usize, NotReady> {
-        Ok(self.wrapped_display()?.num_lines())
+        Ok(self.wrapped_forme()?.num_lines())
     }
 
     /// Get line properties
     #[inline]
     pub fn get_line(&self, index: usize) -> Result<Option<&Line>, NotReady> {
-        Ok(self.wrapped_display()?.get_line(index))
+        Ok(self.wrapped_forme()?.get_line(index))
     }
 
     /// Iterate over line properties
@@ -485,49 +485,49 @@ impl<T: FormattableText + ?Sized> Text<T> {
     /// [Requires status][Self#status-of-preparation]: lines have been wrapped.
     #[inline]
     pub fn lines(&self) -> Result<impl Iterator<Item = &Line>, NotReady> {
-        Ok(self.wrapped_display()?.lines())
+        Ok(self.wrapped_forme()?.lines())
     }
 
     /// Find the line containing text `index`
     ///
-    /// See [`TextDisplay::find_line`].
+    /// See [`Forme::find_line`].
     #[inline]
     pub fn find_line(
         &self,
         index: usize,
     ) -> Result<Option<(usize, std::ops::Range<usize>)>, NotReady> {
-        Ok(self.wrapped_display()?.find_line(index))
+        Ok(self.wrapped_forme()?.find_line(index))
     }
 
     /// Get the directionality of the current line
     ///
-    /// See [`TextDisplay::line_is_rtl`].
+    /// See [`Forme::line_is_rtl`].
     #[inline]
     pub fn line_is_rtl(&self, line: usize) -> Result<Option<bool>, NotReady> {
-        Ok(self.wrapped_display()?.line_is_rtl(line))
+        Ok(self.wrapped_forme()?.line_is_rtl(line))
     }
 
     /// Find the text index for the glyph nearest the given `pos`
     ///
-    /// See [`TextDisplay::text_index_nearest`].
+    /// See [`Forme::text_index_nearest`].
     #[inline]
     pub fn text_index_nearest(&self, pos: Vec2) -> Result<usize, NotReady> {
-        Ok(self.display()?.text_index_nearest(pos))
+        Ok(self.forme()?.text_index_nearest(pos))
     }
 
     /// Find the text index nearest horizontal-coordinate `x` on `line`
     ///
-    /// See [`TextDisplay::line_index_nearest`].
+    /// See [`Forme::line_index_nearest`].
     #[inline]
     pub fn line_index_nearest(&self, line: usize, x: f32) -> Result<Option<usize>, NotReady> {
-        Ok(self.wrapped_display()?.line_index_nearest(line, x))
+        Ok(self.wrapped_forme()?.line_index_nearest(line, x))
     }
 
     /// Find the starting position (top-left) of the glyph at the given index
     ///
-    /// See [`TextDisplay::text_glyph_pos`].
+    /// See [`Forme::text_glyph_pos`].
     pub fn text_glyph_pos(&self, index: usize) -> Result<MarkerPosIter, NotReady> {
-        Ok(self.display()?.text_glyph_pos(index))
+        Ok(self.forme()?.text_glyph_pos(index))
     }
 
     /// Iterate over runs of positioned glyphs
@@ -542,7 +542,7 @@ impl<T: FormattableText + ?Sized> Text<T> {
         &'a self,
         offset: Vec2,
     ) -> Result<impl Iterator<Item = GlyphRun<'a, T::Effect>> + 'a, NotReady> {
-        Ok(self.display()?.runs(offset, self.text.effect_tokens()))
+        Ok(self.forme()?.runs(offset, self.text.effect_tokens()))
     }
 
     /// Iterate over runs of positioned glyphs using a custom effects list
@@ -564,6 +564,6 @@ impl<T: FormattableText + ?Sized> Text<T> {
         offset: Vec2,
         effects: &'a [(u32, E)],
     ) -> Result<impl Iterator<Item = GlyphRun<'a, E>> + 'a, NotReady> {
-        Ok(self.display()?.runs(offset, effects))
+        Ok(self.forme()?.runs(offset, effects))
     }
 }

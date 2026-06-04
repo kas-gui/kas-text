@@ -5,7 +5,7 @@
 
 //! Text preparation: wrapping
 
-use super::{RunSpecial, TextDisplay};
+use super::{Forme, RunSpecial};
 use crate::conv::{to_u32, to_usize};
 use crate::fonts::{self, FontLibrary};
 use crate::shaper::{GlyphRun, PartMetrics};
@@ -53,7 +53,7 @@ impl Line {
     }
 }
 
-impl TextDisplay {
+impl Forme {
     /// Measure required width, up to some `max_width`
     ///
     /// [Requires status][Self#status-of-preparation]: run-breaking is complete.
