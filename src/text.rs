@@ -82,7 +82,7 @@ impl<T: FormattableText> Text<T> {
             wrap_width: f32::INFINITY,
             align: Default::default(),
             direction: Direction::default(),
-            status: Status::New,
+            status: Status::Empty,
             text,
             forme: Default::default(),
         }
@@ -134,7 +134,7 @@ impl<T: FormattableText> Text<T> {
         }
 
         self.text = text;
-        self.set_max_status(Status::New);
+        self.set_max_status(Status::Empty);
     }
 }
 
@@ -182,7 +182,7 @@ impl<T: FormattableText + ?Sized> Text<T> {
     pub fn set_font(&mut self, font: FontSelector) {
         if font != self.font {
             self.font = font;
-            self.set_max_status(Status::New);
+            self.set_max_status(Status::Empty);
         }
     }
 
@@ -207,7 +207,7 @@ impl<T: FormattableText + ?Sized> Text<T> {
     pub fn set_font_size(&mut self, dpem: f32) {
         if dpem != self.dpem {
             self.dpem = dpem;
-            self.set_max_status(Status::New);
+            self.set_max_status(Status::Empty);
         }
     }
 
@@ -234,7 +234,7 @@ impl<T: FormattableText + ?Sized> Text<T> {
     pub fn set_direction(&mut self, direction: Direction) {
         if direction != self.direction {
             self.direction = direction;
-            self.set_max_status(Status::New);
+            self.set_max_status(Status::Empty);
         }
     }
 
@@ -258,7 +258,7 @@ impl<T: FormattableText + ?Sized> Text<T> {
         debug_assert!(wrap_width >= 0.0);
         if wrap_width != self.wrap_width {
             self.wrap_width = wrap_width;
-            self.set_max_status(Status::LevelRuns);
+            self.set_max_status(Status::Shaped);
         }
     }
 
@@ -277,7 +277,7 @@ impl<T: FormattableText + ?Sized> Text<T> {
             if align.0 == self.align.0 {
                 self.set_max_status(Status::Wrapped);
             } else {
-                self.set_max_status(Status::LevelRuns);
+                self.set_max_status(Status::Shaped);
             }
             self.align = align;
         }
@@ -300,7 +300,7 @@ impl<T: FormattableText + ?Sized> Text<T> {
         debug_assert!(bounds.is_finite());
         if bounds != self.bounds {
             if bounds.0 != self.bounds.0 {
-                self.set_max_status(Status::LevelRuns);
+                self.set_max_status(Status::Shaped);
             } else {
                 self.set_max_status(Status::Wrapped);
             }
@@ -313,7 +313,7 @@ impl<T: FormattableText + ?Sized> Text<T> {
     /// This does not require that the text is prepared.
     #[inline]
     pub fn text_is_rtl(&self) -> bool {
-        if self.status >= Status::LevelRuns {
+        if self.status >= Status::Shaped {
             return self.forme.text_is_rtl();
         }
 
@@ -344,7 +344,7 @@ impl<T: FormattableText + ?Sized> Text<T> {
 
     /// Check whether the text is fully prepared and ready for usage
     #[inline]
-    pub fn is_prepared(&self) -> bool {
+    pub fn is_ready(&self) -> bool {
         self.status == Status::Ready
     }
 
@@ -364,7 +364,7 @@ impl<T: FormattableText + ?Sized> Text<T> {
         &self.forme
     }
 
-    /// Read the [`Forme`], if fully prepared
+    /// Read the [`Forme`], if ready for usage
     #[inline]
     pub fn forme(&self) -> Result<&Forme, NotReady> {
         self.check_status(Status::Ready)?;
@@ -381,14 +381,14 @@ impl<T: FormattableText + ?Sized> Text<T> {
     #[inline]
     fn prepare_runs(&mut self) -> Result<(), NoFontMatch> {
         match self.status {
-            Status::New => self
+            Status::Empty => self
                 .forme
                 .set_text(self.text.as_str(), self.direction)
                 .with_tokens(self.text.font_tokens(self.dpem, self.font), true)?,
             _ => (),
         }
 
-        self.status = Status::LevelRuns;
+        self.status = Status::Shaped;
         Ok(())
     }
 
@@ -430,16 +430,16 @@ impl<T: FormattableText + ?Sized> Text<T> {
     /// Returns `Ok(true)` on success when some action is performed, `Ok(false)`
     /// when the text is already prepared.
     pub fn prepare(&mut self) -> Result<bool, NotReady> {
-        if self.is_prepared() {
+        if self.is_ready() {
             return Ok(false);
         } else if !self.bounds.is_finite() {
             return Err(NotReady);
         }
 
         self.prepare_runs().unwrap();
-        debug_assert!(self.status >= Status::LevelRuns);
+        debug_assert!(self.status >= Status::Shaped);
 
-        if self.status == Status::LevelRuns {
+        if self.status == Status::Shaped {
             self.forme
                 .prepare_lines(self.wrap_width, self.bounds.0, self.align.0);
         }

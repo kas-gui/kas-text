@@ -17,14 +17,14 @@ use crate::{Direction, fonts::FontSelector};
 /// Describes the state-of-preparation of a [`Forme`][crate::Forme]
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Ord, PartialOrd, Hash)]
 pub enum Status {
-    /// Nothing done yet
+    /// No content
     #[default]
-    New,
+    Empty,
     /// Source text has been broken into level runs
-    LevelRuns,
+    Shaped,
     /// Line wrapping and horizontal alignment is done
     Wrapped,
-    /// The text is ready for display
+    /// The forme is ready for display
     Ready,
 }
 
