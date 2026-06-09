@@ -19,6 +19,7 @@ use icu_properties::props::{
 };
 use icu_segmenter::LineSegmenter;
 use icu_segmenter::options::{LineBreakStrictness, LineBreakWordOption};
+use std::ops::Bound;
 use std::sync::OnceLock;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -157,14 +158,26 @@ impl<'a> Appender<'a> {
     }
 
     /// Append `&text[range]` using a single font
+    ///
+    /// This method may be called multiple times with non-overlapping ranges.
     #[inline]
     pub fn with_font(
         &mut self,
-        range: std::ops::Range<usize>,
+        range: impl std::ops::RangeBounds<usize>,
         font: FontSelector,
         dpem: f32,
     ) -> Result<&mut Self, NoFontMatch> {
-        self.forme.push_text_range(&self.text, range, font, dpem)?;
+        let l = match range.start_bound() {
+            Bound::Included(x) => *x,
+            Bound::Excluded(x) => x + 1,
+            Bound::Unbounded => 0,
+        };
+        let h = match range.end_bound() {
+            Bound::Included(x) => x + 1,
+            Bound::Excluded(x) => *x,
+            Bound::Unbounded => self.text.len(),
+        };
+        self.forme.push_text_range(&self.text, l..h, font, dpem)?;
         Ok(self)
     }
 }
