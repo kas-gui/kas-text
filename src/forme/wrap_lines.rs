@@ -5,7 +5,9 @@
 
 //! Text preparation: wrapping
 
-use super::{RunSpecial, TextDisplay};
+use super::{Forme, RunSpecial};
+#[allow(unused)]
+use crate::Status;
 use crate::conv::{to_u32, to_usize};
 use crate::fonts::{self, FontLibrary};
 use crate::shaper::{GlyphRun, PartMetrics};
@@ -53,10 +55,10 @@ impl Line {
     }
 }
 
-impl TextDisplay {
+impl Forme {
     /// Measure required width, up to some `max_width`
     ///
-    /// [Requires status][Self#status-of-preparation]: run-breaking is complete.
+    /// Expects state [`Status::Shaped`] or higher.
     ///
     /// This method allows calculation of the width requirement of a text object
     /// without full wrapping and glyph placement. Whenever the requirement
@@ -94,7 +96,7 @@ impl TextDisplay {
     ///
     /// Stops after `max_lines`, if provided.
     ///
-    /// [Requires status][Self#status-of-preparation]: run-breaking is complete.
+    /// Expects state [`Status::Shaped`] or higher.
     pub fn measure_height(&self, wrap_width: f32, max_lines: Option<NonZeroUsize>) -> f32 {
         #[derive(Default)]
         struct MeasureAdder {
@@ -177,15 +179,20 @@ impl TextDisplay {
         adder.vcaret
     }
 
-    /// Prepare lines ("wrap")
+    /// Flow text content into lines
     ///
-    /// [Requires status][Self#status-of-preparation]: run-breaking is complete.
+    /// May be called from any [`Status`], though [`Status::Shaped`] or higher
+    /// is expected for non-empty content; results in [`Status::Wrapped`].
     ///
-    /// This does text layout, including wrapping and horizontal alignment but
-    /// excluding vertical alignment.
+    /// This method constructs displayable lines (see
+    /// [Line-wrapping](Self#line-wrapping)) by wrapping long lines at the given
+    /// `wrap_width`. Calling this method is necessary even if line-wrapping is
+    /// not desired; in this case use `wrap_width = f32::INFINITY`.
     ///
-    /// Lines longer than `wrap_width` will be wrapped at this width. Use
-    /// `f32::INFINITY` to disable wrapping.
+    /// This method is fairly fast, allowing immediate re-wrapping of content
+    /// whenever the `wrap_width` changes.
+    ///
+    /// ## Horizontal alignment
     ///
     /// Text will be aligned to the horizontal interval `0..align_width`, thus
     /// `align_width` must be finite. It usually makes sense to use
@@ -206,6 +213,11 @@ impl TextDisplay {
     ///     text is aligned to `0` *and* `align_width` (if possible) by
     ///     stretching spaces within the text. Other lines are aligned in the
     ///     same way as [`Align::Default`].
+    ///
+    /// ## Vertical alignment
+    ///
+    /// Vertically, content is top-aligned. Call [`Self::vertically_align`]
+    /// after this method to use a different alignment.
     ///
     /// Returns the required height.
     pub fn prepare_lines(&mut self, wrap_width: f32, align_width: f32, h_align: Align) -> f32 {
@@ -358,7 +370,8 @@ impl TextDisplay {
 
     /// Vertically align lines
     ///
-    /// [Requires status][Self#status-of-preparation]: lines have been wrapped.
+    /// [`Self::prepare_lines`] produces top-aligned content. This method
+    /// vertically aligns content within the input height `bound`.
     pub fn vertically_align(&mut self, bound: f32, v_align: Align) {
         debug_assert!(bound.is_finite());
 

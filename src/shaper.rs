@@ -18,8 +18,8 @@
 //! This module *does not* perform line-breaking, wrapping or text reversal.
 
 use crate::conv::{DPU, to_u32, to_usize};
-use crate::display::RunSpecial;
 use crate::fonts::{self, FaceId};
+use crate::forme::RunSpecial;
 use crate::{Range, Vec2};
 use icu_properties::props::Script;
 use tinyvec::TinyVec;
@@ -103,10 +103,6 @@ pub(crate) struct GlyphRun {
     pub base_level: Level,
     /// BiDi level of this run
     pub level: Level,
-    /// Script
-    ///
-    /// We store this only to support `resize_runs`.
-    pub script: Script,
 
     /// Sequence of all glyphs, in left-to-right order
     pub glyphs: Vec<Glyph>,
@@ -339,7 +335,6 @@ pub(crate) fn shape(
         special,
         base_level: input.base_level,
         level: input.level,
-        script: input.script,
 
         glyphs,
         breaks,
@@ -522,10 +517,10 @@ fn shape_simple(
 
 /// Warning: test results may depend on system fonts
 ///
-/// Tests are extensions of those in `display/text_runs.rs`.
+/// Tests are extensions of those in `forme/text_runs.rs`.
 #[cfg(test)]
 mod test {
-    use crate::{Direction, FontToken, TextDisplay};
+    use crate::{Direction, FontToken, Forme};
     use std::iter;
     use std::ops::Range;
 
@@ -538,15 +533,10 @@ mod test {
             font: Default::default(),
         });
 
-        let mut display = TextDisplay::default();
-        assert!(
-            display
-                .set_text(text, dir)
-                .with_tokens(fonts, false)
-                .is_ok()
-        );
+        let mut forme = Forme::default();
+        assert!(forme.set_text(text, dir).with_tokens(fonts, false).is_ok());
 
-        for (i, (run, expected)) in display.raw_runs().iter().zip(expected.iter()).enumerate() {
+        for (i, (run, expected)) in forme.raw_runs().iter().zip(expected.iter()).enumerate() {
             assert_eq!(
                 run.range.to_std(),
                 expected.0,
@@ -563,7 +553,7 @@ mod test {
                 "glyph break indices for text \"{text}\", run {i}"
             );
         }
-        assert_eq!(display.raw_runs().len(), expected.len(), "number of runs");
+        assert_eq!(forme.raw_runs().len(), expected.len(), "number of runs");
     }
 
     #[test]

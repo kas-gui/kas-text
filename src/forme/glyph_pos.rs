@@ -5,7 +5,7 @@
 
 //! Methods using positioned glyphs
 
-use super::TextDisplay;
+use super::Forme;
 use crate::conv::to_usize;
 use crate::fonts::{self, FaceId, ScaledFaceRef};
 use crate::{Glyph, Range, Vec2, shaper};
@@ -47,6 +47,9 @@ impl MarkerPos {
     }
 }
 
+/// An iterator over [`MarkerPos`] items.
+///
+/// Represents a maximum of two elements.
 pub struct MarkerPosIter {
     v: [MarkerPos; 2],
     a: usize,
@@ -100,7 +103,7 @@ impl ExactSizeIterator for MarkerPosIter {}
 
 /// A sequence of positioned glyphs with effects
 ///
-/// Yielded by [`TextDisplay::runs`].
+/// Yielded by [`Forme::runs`].
 pub struct GlyphRun<'a, E> {
     run: &'a shaper::GlyphRun,
     range: Range,
@@ -273,11 +276,10 @@ impl<'a, E: Copy + Default> GlyphRun<'a, E> {
     }
 }
 
-impl TextDisplay {
+impl Forme {
     /// Find the starting position (top-left) of the glyph at the given index
     ///
-    /// [Requires status][Self#status-of-preparation]:
-    /// text is fully prepared for display.
+    /// Expects state: [`Status::Ready`](crate::Status::Ready).
     ///
     /// The index should be no greater than the text length. It is not required
     /// to be on a code-point boundary. Returns an iterator over matching
@@ -370,6 +372,8 @@ impl TextDisplay {
 
     /// Iterate over runs of positioned glyphs
     ///
+    /// Expects state: [`Status::Ready`](crate::Status::Ready).
+    ///
     /// All glyphs are translated by the given `offset` (this is practically
     /// free).
     ///
@@ -383,9 +387,6 @@ impl TextDisplay {
     /// default value of `E` if no such `i` exists.
     ///
     /// Runs are yielded in undefined order.
-    ///
-    /// [Requires status][Self#status-of-preparation]:
-    /// text is fully prepared for display.
     pub fn runs<'a, E: Copy + Debug + Default>(
         &'a self,
         offset: Vec2,
@@ -399,7 +400,7 @@ impl TextDisplay {
                     && effect.0 <= i
                 {
                     panic!(
-                        "TextDisplay::runs: effect start indices are not strictly increasing in {effects:?}"
+                        "Forme::runs: effect start indices are not strictly increasing in {effects:?}"
                     );
                 }
                 start = Some(effect.0);

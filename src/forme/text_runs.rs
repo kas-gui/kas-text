@@ -5,7 +5,9 @@
 
 //! Text preparation: line breaking and BIDI
 
-use super::TextDisplay;
+use super::Forme;
+#[allow(unused)]
+use crate::Status;
 use crate::conv::{to_u32, to_usize};
 use crate::fonts::{self, FaceId, FontSelector, NoFontMatch};
 use crate::util::{AnalyzedText, ends_with_hard_break, to_fontique_script};
@@ -17,6 +19,7 @@ use icu_properties::props::{
 };
 use icu_segmenter::LineSegmenter;
 use icu_segmenter::options::{LineBreakStrictness, LineBreakWordOption};
+use std::ops::Bound;
 use std::sync::OnceLock;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -30,54 +33,7 @@ pub(crate) enum RunSpecial {
     HTab,
 }
 
-impl TextDisplay {
-    /// Reset the `TextDisplay`
-    ///
-    /// This removes all text runs, resetting the display.
-    pub fn clear(&mut self) {
-        self.runs.clear();
-        self.wrapped_runs.clear();
-        self.lines.clear();
-        self.l_bound = 0.0;
-        self.r_bound = 0.0;
-    }
-
-    /// Update font size for existing text runs
-    ///
-    /// [Requires status][Self#status-of-preparation]: run-breaking is complete.
-    ///
-    /// This is a fast way to resize text. Parameters (aside from
-    /// [`FontToken::dpem`] values) must match those passed to
-    /// [`Self::prepare_runs`].
-    pub fn resize_runs<FT>(&mut self, text: &str, mut font_tokens: FT)
-    where
-        FT: Iterator<Item = FontToken>,
-    {
-        let (mut dpem, _) = read_initial_token(&mut font_tokens);
-        let mut next_token = font_tokens.next();
-
-        for run in &mut self.runs {
-            while let Some(token) = next_token.as_ref() {
-                if token.start > run.range.start {
-                    break;
-                }
-                dpem = token.dpem;
-                next_token = font_tokens.next();
-            }
-
-            let input = shaper::Input {
-                text,
-                dpem,
-                base_level: run.base_level,
-                level: run.level,
-                script: run.script,
-            };
-            let mut breaks = Default::default();
-            std::mem::swap(&mut breaks, &mut run.breaks);
-            *run = shaper::shape(input, run.range, run.face_id, breaks, run.special);
-        }
-    }
-
+impl Forme {
     /// Break `text` into runs, replacing existing content
     ///
     /// The `text` is split into a sequence of runs according to the text
@@ -95,11 +51,10 @@ impl TextDisplay {
     ///
     /// # Preparation status
     ///
-    /// [Requires status][Self#status-of-preparation]: none.
+    /// [Requires status][Self#states-of-preparation]: none.
     ///
     /// Must be called again if any of `text`, `direction` or `font_tokens`
     /// change.
-    /// If only `dpem` changes, [`Self::resize_runs`] may be called instead.
     #[deprecated(since = "0.10.0", note = "use Self::set_text instead")]
     #[inline]
     pub fn prepare_runs(
@@ -113,26 +68,37 @@ impl TextDisplay {
         Ok(())
     }
 
-    /// Replace prior content and typeset
+    /// Replace text content and construct shaped glyph-runs
     ///
-    /// This method performs most demanding typesetting steps: run-breaking,
-    /// font matching and [shaping](https://en.wikipedia.org/wiki/Text_shaping).
+    /// May be called from any [`Status`]; results in [`Status::Shaped`].
     ///
-    /// This method may be called from any
-    /// [state of preparation]([Self#status-of-preparation]) but
-    /// [`Self::prepare_lines`] should be called afterwards.
+    /// Call [`Appender::with_tokens`] or [`Appender::with_font`] on the result.
     ///
-    /// By itself this method does nothing; see the methods on [`Appender`].
+    /// This method performs most demanding typesetting steps:
+    ///
+    /// 1. Run-breaking splits the input text into the longest *runs* possible
+    ///    such that runs do not contain mandatory line-breaks and have a single
+    ///    text direction (more accurately: a single BiDi embedding level),
+    ///    [script](https://en.wikipedia.org/wiki/Script_(Unicode)) and set of
+    ///    font properties.
+    /// 2. Font matching assigns a font to each run based on the script and font
+    ///    properties; in some cases, further run-breaking is required to use
+    ///    fallback fonts.
+    /// 3. [Shaping](https://en.wikipedia.org/wiki/Text_shaping); this either
+    ///    uses [rustybuzz](https://crates.io/crates/rustybuzz) (requires the
+    ///    `shaping` crate feature) or just does kerning. (Differences between
+    ///    the two methods are most apparent when using emojis or complex
+    ///    scripts such as Arabic.)
     //
     // Note: the only real difficulty in adding `fn push_text(..)` (to support
     // using multiple disjoint pieces of text) is that text indices get used in
     // various places; such a method would need to offset all text indices used
     // in GlyphRun to make them distinct and correctly ordered.
-    #[must_use = "set_text(..) has no effect without also calling a method on the return value"]
+    #[must_use = "set_text(..) has no effect without calling with_tokens(..) or with_font(..) on the result"]
     pub fn set_text<'a>(&'a mut self, text: &'a str, direction: Direction) -> Appender<'a> {
         self.clear();
         Appender {
-            display: self,
+            forme: self,
             text: AnalyzedText::new(text, direction),
         }
     }
@@ -140,10 +106,10 @@ impl TextDisplay {
 
 /// A shim for appending text runs
 ///
-/// See [`TextDisplay::set_text`].
+/// See [`Forme::set_text`].
 #[must_use]
 pub struct Appender<'a> {
-    display: &'a mut TextDisplay,
+    forme: &'a mut Forme,
     text: AnalyzedText<'a>,
 }
 
@@ -187,25 +153,36 @@ impl<'a> Appender<'a> {
         font_tokens: impl Iterator<Item = FontToken>,
         imply_empty_final_line: bool,
     ) -> Result<(), NoFontMatch> {
-        self.display
+        self.forme
             .push_text(&self.text, font_tokens, imply_empty_final_line)
     }
 
     /// Append `&text[range]` using a single font
+    ///
+    /// This method may be called multiple times with non-overlapping ranges.
     #[inline]
     pub fn with_font(
         &mut self,
-        range: std::ops::Range<usize>,
+        range: impl std::ops::RangeBounds<usize>,
         font: FontSelector,
         dpem: f32,
     ) -> Result<&mut Self, NoFontMatch> {
-        self.display
-            .push_text_range(&self.text, range, font, dpem)?;
+        let l = match range.start_bound() {
+            Bound::Included(x) => *x,
+            Bound::Excluded(x) => x + 1,
+            Bound::Unbounded => 0,
+        };
+        let h = match range.end_bound() {
+            Bound::Included(x) => x + 1,
+            Bound::Excluded(x) => *x,
+            Bound::Unbounded => self.text.len(),
+        };
+        self.forme.push_text_range(&self.text, l..h, font, dpem)?;
         Ok(self)
     }
 }
 
-impl TextDisplay {
+impl Forme {
     /// Resolve font face and shape run
     ///
     /// This may sub-divide text as required to find matching fonts.
@@ -715,15 +692,10 @@ mod test {
             font: Default::default(),
         });
 
-        let mut display = TextDisplay::default();
-        assert!(
-            display
-                .set_text(text, dir)
-                .with_tokens(fonts, false)
-                .is_ok()
-        );
+        let mut forme = Forme::default();
+        assert!(forme.set_text(text, dir).with_tokens(fonts, false).is_ok());
 
-        for (i, (run, expected)) in display.runs.iter().zip(expected.iter()).enumerate() {
+        for (i, (run, expected)) in forme.runs.iter().zip(expected.iter()).enumerate() {
             assert_eq!(
                 run.range.to_std(),
                 expected.0,
@@ -735,14 +707,13 @@ mod test {
             );
             assert_eq!(run.base_level, expected.2, "for text \"{text}\", run {i}");
             assert_eq!(run.level, expected.3, "for text \"{text}\", run {i}");
-            assert_eq!(run.script, expected.4, "for text \"{text}\", run {i}");
             assert_eq!(
                 run.breaks.iter().map(|b| b.index).collect::<Vec<_>>(),
                 expected.5,
                 "wrap-points for text \"{text}\", run {i}"
             );
         }
-        assert_eq!(display.runs.len(), expected.len(), "number of runs");
+        assert_eq!(forme.runs.len(), expected.len(), "number of runs");
     }
 
     #[test]
