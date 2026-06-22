@@ -32,7 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.8.1] — 2025-09-17
 
--   Fix sizing of empty lines by prefering to match some font than nothing (#102)
+-   Fix sizing of empty lines by preferring to match some font than nothing (#102)
 
 ## [0.8.0] — 2025-09-12
 

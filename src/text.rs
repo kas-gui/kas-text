@@ -91,7 +91,7 @@ impl<T: FormattableText> Text<T> {
     /// Replace the [`Forme`]
     ///
     /// This may be used with [`Self::new`] to reconstruct an object which was
-    /// disolved [`into_parts`][Self::into_parts].
+    /// dissolved [`into_parts`][Self::into_parts].
     #[inline]
     pub fn with_forme(mut self, forme: Forme) -> Self {
         self.forme = forme;
