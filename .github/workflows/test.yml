@@ -50,7 +50,7 @@ jobs:
         toolchain: [stable]
         include:
           - os: ubuntu-latest
-            toolchain: "1.88.0"
+            toolchain: "1.96.0"
           - os: ubuntu-latest
             toolchain: beta
 

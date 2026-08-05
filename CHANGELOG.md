@@ -2,6 +2,10 @@
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+-   Bump MSRV to 1.96.0 (#264)
+
 ## [0.9.3] — 2026-02-16
 
 -   Fix: allow font formatting tokens to break text runs (#128)
