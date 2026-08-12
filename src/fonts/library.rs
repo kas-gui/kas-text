@@ -240,6 +240,14 @@ impl FaceStore {
     }
 }
 
+/// A "font" is a list of faces (primary + fallbacks)
+struct Font {
+    id: FontId,
+    faces: Vec<FaceId>,
+    /// Cached `char -> FaceId` lookups
+    glyph_map: HashMap<char, Option<FaceId>>,
+}
+
 #[derive(Default)]
 struct FontList {
     // Safety: unsafe code depends on entries never moving (hence the otherwise
@@ -248,8 +256,7 @@ struct FontList {
     faces: Vec<Box<FaceStore>>,
     // These are vec-maps. Why? Because length should be short.
     source_hash: Vec<(u64, FaceId)>,
-    // A "font" is a list of faces (primary + fallbacks); we cache glyph-lookups per char
-    fonts: Vec<(FontId, Vec<FaceId>, HashMap<char, Option<FaceId>>)>,
+    fonts: Vec<Font>,
     sel_hash: Vec<(u64, FontId)>,
 }
 
@@ -261,9 +268,13 @@ impl FontList {
         id
     }
 
-    fn push_font(&mut self, list: Vec<FaceId>, sel_hash: u64) -> FontId {
+    fn push_font(&mut self, faces: Vec<FaceId>, sel_hash: u64) -> FontId {
         let id = FontId(to_u32(self.fonts.len()));
-        self.fonts.push((id, list, HashMap::new()));
+        self.fonts.push(Font {
+            id,
+            faces,
+            glyph_map: HashMap::new(),
+        });
         self.sel_hash.push((sel_hash, id));
         id
     }
@@ -283,11 +294,11 @@ impl FontList {
         let fonts = &mut self.fonts;
         let font = fonts
             .iter_mut()
-            .find(|item| item.0 == font_id)
+            .find(|item| item.id == font_id)
             .ok_or(InvalidFontId)?;
 
         if let Some(face_id) = preferred_face
-            && font.1.contains(&face_id)
+            && font.faces.contains(&face_id)
         {
             let face = &faces[face_id.get()];
             // TODO(opt): should we cache this lookup?
@@ -296,11 +307,11 @@ impl FontList {
             }
         }
 
-        Ok(match font.2.entry(c) {
+        Ok(match font.glyph_map.entry(c) {
             Entry::Occupied(entry) => *entry.get(),
             Entry::Vacant(entry) => {
                 let mut id: Option<FaceId> = None;
-                for face_id in font.1.iter() {
+                for face_id in font.faces.iter() {
                     let face = &faces[face_id.get()];
                     if face.face.glyph_index(c).is_some() {
                         id = Some(*face_id);
@@ -340,9 +351,9 @@ impl FontLibrary {
     /// (default) one.
     pub(crate) fn first_face_for(&self, font_id: FontId) -> Result<FaceId, InvalidFontId> {
         let fonts = self.fonts.lock().unwrap();
-        for (id, list, _) in &fonts.fonts {
-            if *id == font_id {
-                return Ok(*list.first().unwrap());
+        for font in &fonts.fonts {
+            if font.id == font_id {
+                return Ok(*font.faces.first().unwrap());
             }
         }
         Err(InvalidFontId)
