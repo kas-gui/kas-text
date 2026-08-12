@@ -11,7 +11,6 @@ use fontique::{Blob, QueryStatus, Script, Synthesis};
 use std::collections::hash_map::{Entry, HashMap};
 use std::sync::{LazyLock, Mutex, MutexGuard};
 use thiserror::Error;
-pub(crate) use ttf_parser::Face;
 
 /// Font loading errors
 #[derive(Error, Debug)]
@@ -68,10 +67,16 @@ impl From<u32> for FaceId {
 pub(crate) struct FontId(u32);
 
 /// A store of data for a font face, supporting various backends
+///
+/// Each required font face is cached using an instance of this struct. An
+/// instance corresponds to a *font face*, loaded from a font file at a given
+/// index and using the provided variation (synthesis) data.
+///
+/// Various backends are supported, depending on the enabled crate features.
 pub struct FaceStore {
     blob: Blob<u8>,
     index: u32,
-    face: Face<'static>,
+    face: ttf_parser::Face<'static>,
     #[cfg(feature = "rustybuzz")]
     rustybuzz: rustybuzz::Face<'static>,
     #[cfg(feature = "ab_glyph")]
@@ -88,7 +93,7 @@ impl FaceStore {
         // FaceStore holds onto `blob`, so `data` is valid until program exit.
         let data = unsafe { extend_lifetime(blob.data()) };
 
-        let face = Face::parse(data, index)?;
+        let face = ttf_parser::Face::parse(data, index)?;
 
         Ok(FaceStore {
             blob,
@@ -179,29 +184,41 @@ impl FaceStore {
         self.read_name(4)
     }
 
-    /// Access the [`Face`] object
-    pub fn face(&self) -> &Face<'static> {
+    /// Get a [`ttf_parser::Face`]
+    ///
+    /// This backend is currently always enabled due to usage by [`FaceRef`].
+    ///
+    /// [`ttf_parser::Face`]: https://docs.rs/ttf-parser/latest/ttf_parser/struct.Face.html
+    pub fn face(&self) -> &ttf_parser::Face<'static> {
         &self.face
     }
 
-    /// Access a [`FaceRef`] object
+    /// Get font metrics via a [`FaceRef`]
     pub fn face_ref(&self) -> FaceRef<'_> {
         FaceRef(&self.face)
     }
 
-    /// Access the [`rustybuzz`] object
+    /// Get a [`rustybuzz::Face`]
+    ///
+    /// [`rustybuzz::Face`]: https://docs.rs/rustybuzz/latest/rustybuzz/struct.Face.html
     #[cfg(feature = "rustybuzz")]
     pub fn rustybuzz(&self) -> &rustybuzz::Face<'static> {
         &self.rustybuzz
     }
 
-    /// Access the [`ab_glyph`] object
+    /// Get a [`ab_glyph::FontRef`]
+    ///
+    /// [`ab_glyph::FontRef`]: https://docs.rs/ab_glyph/latest/ab_glyph/struct.FontRef.html
     #[cfg(feature = "ab_glyph")]
     pub fn ab_glyph(&self) -> &ab_glyph::FontRef<'static> {
         &self.ab_glyph
     }
 
-    /// Get a swash `FontRef`
+    /// Get a [`swash::FontRef`]
+    ///
+    /// This backend is currently always enabled.
+    ///
+    /// [`swash::FontRef`]: https://docs.rs/swash/latest/swash/struct.FontRef.html
     pub fn swash(&self) -> swash::FontRef<'_> {
         swash::FontRef {
             data: self.face.raw_face().data,
@@ -210,7 +227,12 @@ impl FaceStore {
         }
     }
 
-    /// Get font variation settings
+    /// Get font variation settings aka [`Synthesis`]
+    ///
+    /// These settings are used for example to support variable weight fonts
+    /// and synthesized italics.
+    ///
+    /// [`Synthesis`]: https://docs.rs/fontique/latest/fontique/struct.Synthesis.html
     pub fn synthesis(&self) -> &Synthesis {
         &self.synthesis
     }

@@ -36,7 +36,9 @@ impl Resolver {
         }
     }
 
-    /// Get a font family name from an id
+    /// Get a font family name from a [`FamilyId`]
+    ///
+    /// [`FamilyId`]: https://docs.rs/fontique/latest/fontique/struct.FamilyId.html
     pub fn font_family(&mut self, id: FamilyId) -> Option<&str> {
         self.collection.family_name(id)
     }
