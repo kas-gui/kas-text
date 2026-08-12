@@ -20,6 +20,7 @@ enum FontError {
     #[cfg(feature = "ab_glyph")]
     #[error("font load error")]
     AbGlyph(#[from] ab_glyph::InvalidFont),
+    #[cfg(feature = "swash")]
     #[error("font load error")]
     Swash,
 }
@@ -81,6 +82,7 @@ pub struct FaceStore {
     rustybuzz: rustybuzz::Face<'static>,
     #[cfg(feature = "ab_glyph")]
     ab_glyph: ab_glyph::FontRef<'static>,
+    #[cfg(feature = "swash")]
     swash: (u32, swash::CacheKey), // (offset, key)
     synthesis: Synthesis,
 }
@@ -126,6 +128,7 @@ impl FaceStore {
                 }
                 font
             },
+            #[cfg(feature = "swash")]
             swash: {
                 use easy_cast::Cast;
                 let f = swash::FontRef::from_index(data, index.cast()).ok_or(FontError::Swash)?;
@@ -216,9 +219,8 @@ impl FaceStore {
 
     /// Get a [`swash::FontRef`]
     ///
-    /// This backend is currently always enabled.
-    ///
     /// [`swash::FontRef`]: https://docs.rs/swash/latest/swash/struct.FontRef.html
+    #[cfg(feature = "swash")]
     pub fn swash(&self) -> swash::FontRef<'_> {
         swash::FontRef {
             data: self.face.raw_face().data,
