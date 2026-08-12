@@ -31,8 +31,11 @@ markdown = ["pulldown-cmark"]
 # Serialization is optionally supported for some types:
 serde = ["dep:serde", "bitflags/serde"]
 
-# Optional: expose ab_glyph font face
+# Optional: load ab_glyph font face
 ab_glyph = ["dep:ab_glyph"]
+
+# Optional: load swash font face
+swash = ["dep:swash"]
 
 # Provide high-level text API
 text = []
@@ -51,7 +54,7 @@ pulldown-cmark = { version = "0.13.0", optional = true }
 log = "0.4"
 serde = { version = "1.0.123", features = ["derive"], optional = true }
 ab_glyph = { version = "0.2.10", optional = true }
-swash = "0.2.4"
+swash = { version = "0.2.4", optional = true }
 fontique = { version = "0.11.0" }
 icu_properties = "2.2"
 icu_segmenter = "2.2"

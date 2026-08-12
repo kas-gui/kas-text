@@ -11,7 +11,6 @@ use fontique::{Blob, QueryStatus, Script, Synthesis};
 use std::collections::hash_map::{Entry, HashMap};
 use std::sync::{LazyLock, Mutex, MutexGuard};
 use thiserror::Error;
-pub(crate) use ttf_parser::Face;
 
 /// Font loading errors
 #[derive(Error, Debug)]
@@ -21,6 +20,7 @@ enum FontError {
     #[cfg(feature = "ab_glyph")]
     #[error("font load error")]
     AbGlyph(#[from] ab_glyph::InvalidFont),
+    #[cfg(feature = "swash")]
     #[error("font load error")]
     Swash,
 }
@@ -31,7 +31,7 @@ enum FontError {
 /// lower level methods.
 #[derive(Error, Debug)]
 #[error("invalid FontId")]
-pub struct InvalidFontId;
+pub(crate) struct InvalidFontId;
 
 /// No matching font found
 ///
@@ -44,7 +44,7 @@ pub struct NoFontMatch;
 ///
 /// Identifies a loaded font face within the [`FontLibrary`] by index.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub struct FaceId(pub(crate) u32);
+pub struct FaceId(u32);
 impl FaceId {
     /// Get as `usize`
     pub fn get(self) -> usize {
@@ -58,27 +58,31 @@ impl From<u32> for FaceId {
     }
 }
 
-/// Font face identifier
+/// Font list identifier
+///
+/// A "font" is a list of faces selected for a given [`FontSelector`] and
+/// [`Script`].
 ///
 /// Identifies a font list within the [`FontLibrary`] by index.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub struct FontId(u32);
-impl FontId {
-    /// Get as `usize`
-    pub fn get(self) -> usize {
-        to_usize(self.0)
-    }
-}
+pub(crate) struct FontId(u32);
 
 /// A store of data for a font face, supporting various backends
+///
+/// Each required font face is cached using an instance of this struct. An
+/// instance corresponds to a *font face*, loaded from a font file at a given
+/// index and using the provided variation (synthesis) data.
+///
+/// Various backends are supported, depending on the enabled crate features.
 pub struct FaceStore {
     blob: Blob<u8>,
     index: u32,
-    face: Face<'static>,
+    face: ttf_parser::Face<'static>,
     #[cfg(feature = "rustybuzz")]
     rustybuzz: rustybuzz::Face<'static>,
     #[cfg(feature = "ab_glyph")]
     ab_glyph: ab_glyph::FontRef<'static>,
+    #[cfg(feature = "swash")]
     swash: (u32, swash::CacheKey), // (offset, key)
     synthesis: Synthesis,
 }
@@ -91,7 +95,7 @@ impl FaceStore {
         // FaceStore holds onto `blob`, so `data` is valid until program exit.
         let data = unsafe { extend_lifetime(blob.data()) };
 
-        let face = Face::parse(data, index)?;
+        let face = ttf_parser::Face::parse(data, index)?;
 
         Ok(FaceStore {
             blob,
@@ -124,6 +128,7 @@ impl FaceStore {
                 }
                 font
             },
+            #[cfg(feature = "swash")]
             swash: {
                 use easy_cast::Cast;
                 let f = swash::FontRef::from_index(data, index.cast()).ok_or(FontError::Swash)?;
@@ -182,29 +187,40 @@ impl FaceStore {
         self.read_name(4)
     }
 
-    /// Access the [`Face`] object
-    pub fn face(&self) -> &Face<'static> {
+    /// Get a [`ttf_parser::Face`]
+    ///
+    /// This backend is currently always enabled due to usage by [`FaceRef`].
+    ///
+    /// [`ttf_parser::Face`]: https://docs.rs/ttf-parser/latest/ttf_parser/struct.Face.html
+    pub fn face(&self) -> &ttf_parser::Face<'static> {
         &self.face
     }
 
-    /// Access a [`FaceRef`] object
+    /// Get font metrics via a [`FaceRef`]
     pub fn face_ref(&self) -> FaceRef<'_> {
         FaceRef(&self.face)
     }
 
-    /// Access the [`rustybuzz`] object
+    /// Get a [`rustybuzz::Face`]
+    ///
+    /// [`rustybuzz::Face`]: https://docs.rs/rustybuzz/latest/rustybuzz/struct.Face.html
     #[cfg(feature = "rustybuzz")]
     pub fn rustybuzz(&self) -> &rustybuzz::Face<'static> {
         &self.rustybuzz
     }
 
-    /// Access the [`ab_glyph`] object
+    /// Get a [`ab_glyph::FontRef`]
+    ///
+    /// [`ab_glyph::FontRef`]: https://docs.rs/ab_glyph/latest/ab_glyph/struct.FontRef.html
     #[cfg(feature = "ab_glyph")]
     pub fn ab_glyph(&self) -> &ab_glyph::FontRef<'static> {
         &self.ab_glyph
     }
 
-    /// Get a swash `FontRef`
+    /// Get a [`swash::FontRef`]
+    ///
+    /// [`swash::FontRef`]: https://docs.rs/swash/latest/swash/struct.FontRef.html
+    #[cfg(feature = "swash")]
     pub fn swash(&self) -> swash::FontRef<'_> {
         swash::FontRef {
             data: self.face.raw_face().data,
@@ -213,10 +229,23 @@ impl FaceStore {
         }
     }
 
-    /// Get font variation settings
+    /// Get font variation settings aka [`Synthesis`]
+    ///
+    /// These settings are used for example to support variable weight fonts
+    /// and synthesized italics.
+    ///
+    /// [`Synthesis`]: https://docs.rs/fontique/latest/fontique/struct.Synthesis.html
     pub fn synthesis(&self) -> &Synthesis {
         &self.synthesis
     }
+}
+
+/// A "font" is a list of faces (primary + fallbacks)
+struct Font {
+    id: FontId,
+    faces: Vec<FaceId>,
+    /// Cached `char -> FaceId` lookups
+    glyph_map: HashMap<char, Option<FaceId>>,
 }
 
 #[derive(Default)]
@@ -227,8 +256,7 @@ struct FontList {
     faces: Vec<Box<FaceStore>>,
     // These are vec-maps. Why? Because length should be short.
     source_hash: Vec<(u64, FaceId)>,
-    // A "font" is a list of faces (primary + fallbacks); we cache glyph-lookups per char
-    fonts: Vec<(FontId, Vec<FaceId>, HashMap<char, Option<FaceId>>)>,
+    fonts: Vec<Font>,
     sel_hash: Vec<(u64, FontId)>,
 }
 
@@ -240,9 +268,13 @@ impl FontList {
         id
     }
 
-    fn push_font(&mut self, list: Vec<FaceId>, sel_hash: u64) -> FontId {
+    fn push_font(&mut self, faces: Vec<FaceId>, sel_hash: u64) -> FontId {
         let id = FontId(to_u32(self.fonts.len()));
-        self.fonts.push((id, list, HashMap::new()));
+        self.fonts.push(Font {
+            id,
+            faces,
+            glyph_map: HashMap::new(),
+        });
         self.sel_hash.push((sel_hash, id));
         id
     }
@@ -262,11 +294,11 @@ impl FontList {
         let fonts = &mut self.fonts;
         let font = fonts
             .iter_mut()
-            .find(|item| item.0 == font_id)
+            .find(|item| item.id == font_id)
             .ok_or(InvalidFontId)?;
 
         if let Some(face_id) = preferred_face
-            && font.1.contains(&face_id)
+            && font.faces.contains(&face_id)
         {
             let face = &faces[face_id.get()];
             // TODO(opt): should we cache this lookup?
@@ -275,11 +307,11 @@ impl FontList {
             }
         }
 
-        Ok(match font.2.entry(c) {
+        Ok(match font.glyph_map.entry(c) {
             Entry::Occupied(entry) => *entry.get(),
             Entry::Vacant(entry) => {
                 let mut id: Option<FaceId> = None;
-                for face_id in font.1.iter() {
+                for face_id in font.faces.iter() {
                     let face = &faces[face_id.get()];
                     if face.face.glyph_index(c).is_some() {
                         id = Some(*face_id);
@@ -319,9 +351,9 @@ impl FontLibrary {
     /// (default) one.
     pub(crate) fn first_face_for(&self, font_id: FontId) -> Result<FaceId, InvalidFontId> {
         let fonts = self.fonts.lock().unwrap();
-        for (id, list, _) in &fonts.fonts {
-            if *id == font_id {
-                return Ok(*list.first().unwrap());
+        for font in &fonts.fonts {
+            if font.id == font_id {
+                return Ok(*font.faces.first().unwrap());
             }
         }
         Err(InvalidFontId)
@@ -456,7 +488,7 @@ impl FontLibrary {
     }
 }
 
-pub(crate) unsafe fn extend_lifetime<'b, T: ?Sized>(r: &'b T) -> &'static T {
+unsafe fn extend_lifetime<'b, T: ?Sized>(r: &'b T) -> &'static T {
     unsafe { std::mem::transmute::<&'b T, &'static T>(r) }
 }
 
