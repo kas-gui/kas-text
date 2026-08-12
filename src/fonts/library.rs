@@ -31,7 +31,7 @@ enum FontError {
 /// lower level methods.
 #[derive(Error, Debug)]
 #[error("invalid FontId")]
-pub struct InvalidFontId;
+pub(crate) struct InvalidFontId;
 
 /// No matching font found
 ///
@@ -44,7 +44,7 @@ pub struct NoFontMatch;
 ///
 /// Identifies a loaded font face within the [`FontLibrary`] by index.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub struct FaceId(pub(crate) u32);
+pub struct FaceId(u32);
 impl FaceId {
     /// Get as `usize`
     pub fn get(self) -> usize {
@@ -58,17 +58,14 @@ impl From<u32> for FaceId {
     }
 }
 
-/// Font face identifier
+/// Font list identifier
+///
+/// A "font" is a list of faces selected for a given [`FontSelector`] and
+/// [`Script`].
 ///
 /// Identifies a font list within the [`FontLibrary`] by index.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub struct FontId(u32);
-impl FontId {
-    /// Get as `usize`
-    pub fn get(self) -> usize {
-        to_usize(self.0)
-    }
-}
+pub(crate) struct FontId(u32);
 
 /// A store of data for a font face, supporting various backends
 pub struct FaceStore {
@@ -456,7 +453,7 @@ impl FontLibrary {
     }
 }
 
-pub(crate) unsafe fn extend_lifetime<'b, T: ?Sized>(r: &'b T) -> &'static T {
+unsafe fn extend_lifetime<'b, T: ?Sized>(r: &'b T) -> &'static T {
     unsafe { std::mem::transmute::<&'b T, &'static T>(r) }
 }
 
