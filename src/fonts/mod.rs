@@ -52,7 +52,7 @@ mod scaled;
 
 pub use attributes::{FontStyle, FontWeight, FontWidth};
 pub use fontique::GenericFamily;
-pub use library::{FaceId, FaceStore, FontLibrary, NoFontMatch, library};
+pub use library::{Face, FaceId, FontLibrary, NoFontMatch, library};
 pub use resolver::*;
 pub use scaled::ScaledFace;
 

@@ -7,7 +7,7 @@
 
 use crate::GlyphId;
 use crate::conv::{DPU, LineMetrics};
-use crate::fonts::FaceStore;
+use crate::fonts::Face;
 
 /// Reference to a font face with scaling data
 ///
@@ -15,11 +15,11 @@ use crate::fonts::FaceStore;
 /// common axis conventions, it may be necessary to negate these; for example
 /// `baseline - self.ascent()`.
 #[derive(Copy, Clone)]
-pub struct ScaledFace<'a>(pub(super) &'a FaceStore, pub(super) DPU);
+pub struct ScaledFace<'a>(pub(super) &'a Face, pub(super) DPU);
 impl<'a> ScaledFace<'a> {
     /// Get the underlying (unscaled) font data
     #[inline]
-    pub fn face(&self) -> &FaceStore {
+    pub fn face(&self) -> &Face {
         self.0
     }
 

@@ -71,14 +71,11 @@ impl From<u32> for FaceId {
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct FontId(u32);
 
-/// A store of data for a font face, supporting various backends
+/// Font face data
 ///
-/// Each required font face is cached using an instance of this struct. An
-/// instance corresponds to a *font face*, loaded from a font file at a given
-/// index and using the provided variation (synthesis) data.
-///
+/// This struct is a cache of font-face data. It is immutable once loaded.
 /// Various backends are supported, depending on the enabled crate features.
-pub struct FaceStore {
+pub struct Face {
     blob: Blob<u8>,
     index: u32,
     ems_per_unit: f32,
@@ -93,21 +90,21 @@ pub struct FaceStore {
     synthesis: Synthesis,
 }
 
-impl FaceStore {
+impl Face {
     /// Construct, given a data blob, face index and synthesis settings
     fn new(qf: &QueryFont) -> Result<Self, FontError> {
         let blob = qf.blob.clone();
         let index = qf.index;
         let synthesis = qf.synthesis;
 
-        // Safety: this is a private fn used to construct a FaceStore instance
+        // Safety: this is a private fn used to construct a Face instance
         // to be stored in FontLibrary which is never deallocated. This
-        // FaceStore holds onto `blob`, so `data` is valid until program exit.
+        // Face holds onto `blob`, so `data` is valid until program exit.
         let data = unsafe { extend_lifetime(blob.data()) };
 
         let face = ttf_parser::Face::parse(data, index)?;
 
-        Ok(FaceStore {
+        Ok(Face {
             blob,
             index,
             ems_per_unit: 1f32 / f32::from(face.units_per_em()),
@@ -197,6 +194,12 @@ impl FaceStore {
     #[inline]
     pub fn name_full(&self) -> Option<String> {
         self.read_name(4)
+    }
+
+    /// Get the face index within the font file
+    #[inline]
+    pub fn face_index(&self) -> u32 {
+        self.index
     }
 
     /// Get a [`ttf_parser::Face`]
@@ -303,7 +306,7 @@ struct FontList {
     // Safety: unsafe code depends on entries never moving (hence the otherwise
     // redundant use of Box). See e.g. FontLibrary::get_face().
     #[allow(clippy::vec_box)]
-    faces: Vec<Box<FaceStore>>,
+    faces: Vec<Box<Face>>,
     // These are vec-maps. Why? Because length should be short.
     source_hash: Vec<(u64, FaceId)>,
     fonts: Vec<Font>,
@@ -311,7 +314,7 @@ struct FontList {
 }
 
 impl FontList {
-    fn push_face(&mut self, face: Box<FaceStore>, source_hash: u64) -> FaceId {
+    fn push_face(&mut self, face: Box<Face>, source_hash: u64) -> FaceId {
         let id = FaceId(to_u32(self.faces.len()));
         self.faces.push(face);
         self.source_hash.push((source_hash, id));
@@ -490,7 +493,7 @@ impl FontLibrary {
                 }
             }
 
-            match FaceStore::new(qf) {
+            match Face::new(qf) {
                 Ok(store) => {
                     let id = fonts.push_face(Box::new(store), source_hash);
                     faces.push(id);
@@ -519,13 +522,17 @@ impl FontLibrary {
 
 /// Face management
 impl FontLibrary {
-    /// Get access to the [`FaceStore`]
+    /// Get the [`Face`] for a given `id`
     ///
     /// Panics if `id` is not valid (required: `id.get() < self.num_faces()`).
-    pub fn get_face(&self, id: FaceId) -> &'static FaceStore {
+    /// This shouldn't be the case for any [`FaceId`] returned by this library.
+    ///
+    /// This method returns a `'static` reference: font face data is immutable
+    /// once loaded and is never freed.
+    pub fn get_face(&self, id: FaceId) -> &'static Face {
         let fonts = self.fonts.lock().unwrap();
         assert!(id.get() < fonts.faces.len(), "FontLibrary: invalid {id:?}!",);
-        let faces: &FaceStore = &fonts.faces[id.get()];
+        let faces: &Face = &fonts.faces[id.get()];
         // Safety: elements of self.faces are never dropped or modified
         unsafe { extend_lifetime(faces) }
     }
