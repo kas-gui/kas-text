@@ -115,6 +115,7 @@ impl Face {
         }
         let font = read_fonts::FontRef::from_index(data, index)?;
         let hhea = font.hhea()?;
+        // Validate that required core metrics tables are readable at load time.
         let _ = font.hmtx()?;
         let ascender = hhea.ascender().into();
         let descender = hhea.descender().into();
