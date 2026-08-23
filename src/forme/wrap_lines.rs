@@ -270,8 +270,9 @@ impl Forme {
                     // then use a checkpoint reset if too long.
 
                     let sf = fonts.get_face(run.face_id).scale_by_dpu(run.dpu);
+                    let glyph = sf.face().glyph_index(' ').unwrap_or_default();
                     // TODO: custom tab sizes?
-                    let tab_size = sf.h_advance(sf.face().glyph_index(' ')) * 8.0;
+                    let tab_size = sf.h_advance(glyph) * 8.0;
                     let stops = (caret / tab_size).floor() + 1.0;
                     part.len = tab_size * stops - caret;
                 }

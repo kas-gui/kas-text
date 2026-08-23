@@ -5,9 +5,10 @@
 
 //! Font library
 
-use super::{FaceRef, FontSelector, Resolver};
-use crate::GlyphId;
+use super::{FontSelector, Resolver};
 use crate::conv::{to_u32, to_usize};
+use crate::fonts::ScaledFaceRef;
+use crate::{DPU, GlyphId};
 use fontique::{Blob, Charmap, QueryFont, QueryStatus, Script, Synthesis};
 use std::collections::hash_map::{Entry, HashMap};
 use std::sync::{LazyLock, Mutex, MutexGuard};
@@ -80,6 +81,7 @@ pub(crate) struct FontId(u32);
 pub struct FaceStore {
     blob: Blob<u8>,
     index: u32,
+    ems_per_unit: f32,
     charmap: Charmap<'static>,
     face: ttf_parser::Face<'static>,
     #[cfg(feature = "rustybuzz")]
@@ -108,6 +110,7 @@ impl FaceStore {
         Ok(FaceStore {
             blob,
             index,
+            ems_per_unit: 1f32 / f32::from(face.units_per_em()),
             charmap: qf.charmap_index.charmap(data).ok_or(FontError::NoCmap)?,
             #[cfg(feature = "rustybuzz")]
             rustybuzz: {
@@ -198,16 +201,11 @@ impl FaceStore {
 
     /// Get a [`ttf_parser::Face`]
     ///
-    /// This backend is currently always enabled due to usage by [`FaceRef`].
+    /// This backend is currently always enabled due to internal usage.
     ///
     /// [`ttf_parser::Face`]: https://docs.rs/ttf-parser/latest/ttf_parser/struct.Face.html
     pub fn face(&self) -> &ttf_parser::Face<'static> {
         &self.face
-    }
-
-    /// Get font metrics via a [`FaceRef`]
-    pub fn face_ref(&self) -> FaceRef<'_> {
-        FaceRef(&self.face)
     }
 
     /// Get a [`rustybuzz::Face`]
@@ -256,6 +254,39 @@ impl FaceStore {
         self.charmap
             .map(code_point as u32)
             .and_then(|id| (id <= u16::MAX as u32).then_some(GlyphId(id as u16)))
+    }
+
+    /// Convert `dpem` to `dpu`
+    ///
+    /// Output: a font-specific scale.
+    ///
+    /// Input: `dpem` is pixels/em
+    ///
+    /// ```none
+    /// dpem
+    ///   = pt_size × dpp
+    ///   = pt_size × dpi / 72
+    ///   = pt_size × scale_factor × (96 / 72)
+    /// ```
+    #[inline]
+    pub fn dpu(&self, dpem: f32) -> DPU {
+        DPU(dpem * self.ems_per_unit)
+    }
+
+    /// Get a scaled reference
+    ///
+    /// Units: `dpem` is dots (pixels) per Em (module documentation).
+    #[inline]
+    pub fn scale_by_dpem(&self, dpem: f32) -> ScaledFaceRef<'_> {
+        ScaledFaceRef(self, self.dpu(dpem))
+    }
+
+    /// Get a scaled reference
+    ///
+    /// Units: `dpu` is dots (pixels) per font-unit (see module documentation).
+    #[inline]
+    pub fn scale_by_dpu(&self, dpu: DPU) -> ScaledFaceRef<'_> {
+        ScaledFaceRef(self, dpu)
     }
 }
 
@@ -488,17 +519,10 @@ impl FontLibrary {
 
 /// Face management
 impl FontLibrary {
-    /// Get a font face from its identifier
-    ///
-    /// Panics if `id` is not valid (required: `id.get() < self.num_faces()`).
-    pub fn get_face(&self, id: FaceId) -> FaceRef<'static> {
-        self.get_face_store(id).face_ref()
-    }
-
     /// Get access to the [`FaceStore`]
     ///
     /// Panics if `id` is not valid (required: `id.get() < self.num_faces()`).
-    pub fn get_face_store(&self, id: FaceId) -> &'static FaceStore {
+    pub fn get_face(&self, id: FaceId) -> &'static FaceStore {
         let fonts = self.fonts.lock().unwrap();
         assert!(id.get() < fonts.faces.len(), "FontLibrary: invalid {id:?}!",);
         let faces: &FaceStore = &fonts.faces[id.get()];

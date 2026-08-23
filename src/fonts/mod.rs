@@ -51,7 +51,7 @@ mod library;
 mod resolver;
 
 pub use attributes::{FontStyle, FontWeight, FontWidth};
-pub use face::{FaceRef, ScaledFaceRef};
+pub use face::ScaledFaceRef;
 pub use fontique::GenericFamily;
 pub use library::{FaceId, FaceStore, FontLibrary, NoFontMatch, library};
 pub use resolver::*;

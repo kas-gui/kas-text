@@ -363,8 +363,8 @@ fn shape_rustybuzz(
     } = input;
 
     let fonts = fonts::library();
-    let store = fonts.get_face_store(face_id);
-    let dpu = store.face_ref().dpu(dpem);
+    let store = fonts.get_face(face_id);
+    let dpu = store.dpu(dpem);
     let face = store.rustybuzz();
 
     // ppem affects hinting but does not scale layout, so this has little effect:
@@ -474,7 +474,7 @@ fn shape_simple(
         if rtl && let Some(m) = get_mirrored(c) {
             c = m;
         }
-        let id = sf.face().glyph_index(c);
+        let id = sf.face().glyph_index(c).unwrap_or_default();
 
         if breaks
             .get(break_i)
@@ -488,7 +488,7 @@ fn shape_simple(
         }
 
         if let Some(prev) = prev_glyph_id
-            && let Some(kern) = sf.face().0.tables().kern
+            && let Some(kern) = sf.face().face().tables().kern
             && let Some(adv) = kern
                 .subtables
                 .into_iter()
