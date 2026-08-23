@@ -20,10 +20,8 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
-# Enable shaping with the default dependency.
-shaping = ["rustybuzz"]
-# Enable shaping via rustybuzz.
-rustybuzz = ["dep:rustybuzz"]
+# Enable shaping using HarfRust
+shaping = ["dep:harfrust"]
 
 # Enable Markdown parsing
 markdown = ["pulldown-cmark"]
@@ -41,7 +39,6 @@ swash = ["dep:swash"]
 text = []
 
 [dependencies]
-cfg-if = "1.0.0"
 easy-cast = "0.7.0"
 bitflags = "2.4.2"
 ttf-parser = "0.25.1"
@@ -62,10 +59,7 @@ icu_locale = "2.2"
 # These must use a common read-fonts version
 read-fonts = "0.41.0"
 fontique = { version = "0.11.0" }
-
-[dependencies.rustybuzz]
-version = "0.20.1"
-optional = true
+harfrust = { version = "0.12.0", optional = true }
 
 [dev-dependencies]
 serde_json = "1.0"

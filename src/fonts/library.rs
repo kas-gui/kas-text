@@ -103,8 +103,10 @@ pub struct Face {
     charmap: Charmap<'static>,
     face: ttf_parser::Face<'static>,
     font: FontRef<'static>,
-    #[cfg(feature = "rustybuzz")]
-    rustybuzz: rustybuzz::Face<'static>,
+    #[cfg(feature = "shaping")]
+    shaper_data: harfrust::ShaperData,
+    #[cfg(feature = "shaping")]
+    shaper_instance: harfrust::ShaperInstance,
     #[cfg(feature = "ab_glyph")]
     ab_glyph: ab_glyph::FontRef<'static>,
     #[cfg(feature = "swash")]
@@ -184,26 +186,14 @@ impl Face {
                 subtables
             },
             charmap: qf.charmap_index.charmap(data).ok_or(FontError::NoCmap)?,
-            #[cfg(feature = "rustybuzz")]
-            rustybuzz: {
-                use {rustybuzz::Variation, ttf_parser::Tag};
-
-                let len = synthesis.variation_settings().len();
-                debug_assert!(len <= 3);
-                let mut vars = [Variation {
-                    tag: Tag(0),
-                    value: 0.0,
-                }; 3];
-                for (r, (tag, value)) in vars.iter_mut().zip(synthesis.variation_settings()) {
-                    r.tag = Tag::from_bytes(&tag.to_be_bytes());
-                    r.value = *value;
-                }
-
-                let mut rustybuzz = rustybuzz::Face::from_face(face.clone());
-                rustybuzz.set_variations(&vars[0..len]);
-                rustybuzz
-            },
             face,
+            #[cfg(feature = "shaping")]
+            shaper_data: harfrust::ShaperData::new(&font),
+            #[cfg(feature = "shaping")]
+            shaper_instance: harfrust::ShaperInstance::from_variations(
+                &font,
+                synthesis.variation_settings(),
+            ),
             font,
             #[cfg(feature = "ab_glyph")]
             ab_glyph: {
@@ -304,12 +294,15 @@ impl Face {
         self.font.post().ok()
     }
 
-    /// Get a [`rustybuzz::Face`]
+    /// Get a [`harfrust::Shaper`] for this font
     ///
-    /// [`rustybuzz::Face`]: https://docs.rs/rustybuzz/latest/rustybuzz/struct.Face.html
-    #[cfg(feature = "rustybuzz")]
-    pub fn rustybuzz(&self) -> &rustybuzz::Face<'static> {
-        &self.rustybuzz
+    /// [`harfrust::Shaper`]: https://docs.rs/harfrust/latest/harfrust/struct.Shaper.html
+    #[cfg(feature = "shaping")]
+    pub(crate) fn shaper(&self) -> harfrust::Shaper<'_> {
+        self.shaper_data
+            .shaper(&self.font)
+            .instance(Some(&self.shaper_instance))
+            .build()
     }
 
     /// Get a [`ab_glyph::FontRef`]

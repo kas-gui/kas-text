@@ -85,7 +85,7 @@ impl Forme {
     ///    properties; in some cases, further run-breaking is required to use
     ///    fallback fonts.
     /// 3. [Shaping](https://en.wikipedia.org/wiki/Text_shaping); this either
-    ///    uses [rustybuzz](https://crates.io/crates/rustybuzz) (requires the
+    ///    uses [HarfRust](https://github.com/harfbuzz/harfrust) (requires the
     ///    `shaping` crate feature) or just does kerning. (Differences between
     ///    the two methods are most apparent when using emojis or complex
     ///    scripts such as Arabic.)

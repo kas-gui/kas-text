@@ -14,7 +14,7 @@ More on what Kas-text does do:
 - [x] Font loading and management
 - [x] Script-aware font selection and glyph-level fallback
 - [x] Emoji support
-- [x] Text layout via a choice of [rustybuzz](https://github.com/harfbuzz/rustybuzz) or a simple built-in shaper
+- [x] Text layout via a choice of [HarfRust] or a simple built-in shaper
 - [ ] Vertical text support
 - [x] Supports bi-directional texts
 - [x] A low-level API for text editing including logical-order and mouse navigation
@@ -55,8 +55,8 @@ Crates and features
 
 Significant external dependencies:
 
--   [rustybuzz](https://crates.io/crates/rustybuzz): a complete harfbuzz's shaping algorithm port to Rust
--   [fontique](https://crates.io/crates/fontique): Font enumeration and fallback
+-   [HarfRust]: a complete harfbuzz's shaping algorithm port to Rust
+-   [Fontique]: Font enumeration and fallback
 
 ### Feature flags
 
@@ -96,3 +96,5 @@ the following web page: <https://www.apache.org/licenses/LICENSE-2.0>
 [Parley]: https://github.com/linebender/parley
 [COSMIC Text]: https://github.com/linebender/parley
 [`kas-wgpu`]: https://crates.io/crates/kas-wgpu
+[HarfRust]: https://github.com/harfbuzz/harfrust
+[Fontique]: https://crates.io/crates/fontique
