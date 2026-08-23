@@ -6,6 +6,7 @@
 //! Font library
 
 use super::{FaceRef, FontSelector, Resolver};
+use crate::GlyphId;
 use crate::conv::{to_u32, to_usize};
 use fontique::{Blob, QueryStatus, Script, Synthesis};
 use std::collections::hash_map::{Entry, HashMap};
@@ -238,6 +239,14 @@ impl FaceStore {
     pub fn synthesis(&self) -> &Synthesis {
         &self.synthesis
     }
+
+    /// Find a glyph within the font face
+    ///
+    /// To use the "missing ideograph" (white square) fallback for missing
+    /// glyphs use `store.glyph_index(c).unwrap_or_default()`.
+    pub fn glyph_index(&self, code_point: char) -> Option<GlyphId> {
+        self.face.glyph_index(code_point).map(|id| GlyphId(id.0))
+    }
 }
 
 /// A "font" is a list of faces (primary + fallbacks)
@@ -302,7 +311,7 @@ impl FontList {
         {
             let face = &faces[face_id.get()];
             // TODO(opt): should we cache this lookup?
-            if face.face.glyph_index(c).is_some() {
+            if face.glyph_index(c).is_some() {
                 return Ok(Some(face_id));
             }
         }
@@ -313,7 +322,7 @@ impl FontList {
                 let mut id: Option<FaceId> = None;
                 for face_id in font.faces.iter() {
                     let face = &faces[face_id.get()];
-                    if face.face.glyph_index(c).is_some() {
+                    if face.glyph_index(c).is_some() {
                         id = Some(*face_id);
                         break;
                     }

@@ -26,6 +26,9 @@ use tinyvec::TinyVec;
 use unicode_bidi::Level;
 
 /// A type-safe wrapper for glyph ID.
+///
+/// `GlyphId::default()` (that is, `GlyphId(0)`) should refer to the
+/// "missing ideograph" glyph, usually a white square.
 #[repr(transparent)]
 #[derive(Clone, Copy, Ord, PartialOrd, Eq, PartialEq, Default, Debug)]
 pub struct GlyphId(pub u16);
