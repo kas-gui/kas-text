@@ -9,15 +9,15 @@ use crate::GlyphId;
 use crate::conv::{DPU, LineMetrics};
 use crate::fonts::FaceStore;
 
-/// Handle to a loaded font face
+/// Reference to a font face with scaling data
 ///
 /// Several values are relative to the vertical baseline of the text. Due to
 /// common axis conventions, it may be necessary to negate these; for example
 /// `baseline - self.ascent()`.
 #[derive(Copy, Clone)]
-pub struct ScaledFaceRef<'a>(pub(super) &'a FaceStore, pub(super) DPU);
-impl<'a> ScaledFaceRef<'a> {
-    /// Unscaled face store
+pub struct ScaledFace<'a>(pub(super) &'a FaceStore, pub(super) DPU);
+impl<'a> ScaledFace<'a> {
+    /// Get the underlying (unscaled) font data
     #[inline]
     pub fn face(&self) -> &FaceStore {
         self.0

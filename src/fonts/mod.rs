@@ -46,15 +46,15 @@
 use crate::GlyphId;
 
 mod attributes;
-mod scaled;
 mod library;
 mod resolver;
+mod scaled;
 
 pub use attributes::{FontStyle, FontWeight, FontWidth};
-pub use scaled::ScaledFaceRef;
 pub use fontique::GenericFamily;
 pub use library::{FaceId, FaceStore, FontLibrary, NoFontMatch, library};
 pub use resolver::*;
+pub use scaled::ScaledFace;
 
 impl From<GlyphId> for ttf_parser::GlyphId {
     fn from(id: GlyphId) -> Self {

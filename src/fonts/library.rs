@@ -7,7 +7,7 @@
 
 use super::{FontSelector, Resolver};
 use crate::conv::{to_u32, to_usize};
-use crate::fonts::ScaledFaceRef;
+use crate::fonts::ScaledFace;
 use crate::{DPU, GlyphId};
 use fontique::{Blob, Charmap, QueryFont, QueryStatus, Script, Synthesis};
 use std::collections::hash_map::{Entry, HashMap};
@@ -277,16 +277,16 @@ impl FaceStore {
     ///
     /// Units: `dpem` is dots (pixels) per Em (module documentation).
     #[inline]
-    pub fn scale_by_dpem(&self, dpem: f32) -> ScaledFaceRef<'_> {
-        ScaledFaceRef(self, self.dpu(dpem))
+    pub fn scale_by_dpem(&self, dpem: f32) -> ScaledFace<'_> {
+        ScaledFace(self, self.dpu(dpem))
     }
 
     /// Get a scaled reference
     ///
     /// Units: `dpu` is dots (pixels) per font-unit (see module documentation).
     #[inline]
-    pub fn scale_by_dpu(&self, dpu: DPU) -> ScaledFaceRef<'_> {
-        ScaledFaceRef(self, dpu)
+    pub fn scale_by_dpu(&self, dpu: DPU) -> ScaledFace<'_> {
+        ScaledFace(self, dpu)
     }
 }
 

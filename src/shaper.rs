@@ -444,7 +444,7 @@ fn shape_rustybuzz(
 // Simple implementation (kerning but no shaping)
 #[cfg(not(feature = "rustybuzz"))]
 fn shape_simple(
-    sf: crate::fonts::ScaledFaceRef,
+    sf: crate::fonts::ScaledFace,
     input: Input<'_>,
     range: Range,
     breaks: &mut [GlyphBreak],
