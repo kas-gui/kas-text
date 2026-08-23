@@ -109,7 +109,10 @@ impl Face {
         // Face holds onto `blob`, so `data` is valid until program exit.
         let data = unsafe { extend_lifetime(blob.data()) };
 
-        let face = ttf_parser::Face::parse(data, index)?;
+        let mut face = ttf_parser::Face::parse(data, index)?;
+        for (tag, value) in synthesis.variation_settings() {
+            let _ = face.set_variation(ttf_parser::Tag::from_bytes(&tag.to_be_bytes()), *value);
+        }
         let font = read_fonts::FontRef::from_index(data, index)?;
         let hhea = font.hhea()?;
         let _ = font.hmtx()?;
