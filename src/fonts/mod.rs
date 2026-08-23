@@ -46,12 +46,12 @@
 use crate::GlyphId;
 
 mod attributes;
-mod face;
+mod scaled;
 mod library;
 mod resolver;
 
 pub use attributes::{FontStyle, FontWeight, FontWidth};
-pub use face::ScaledFaceRef;
+pub use scaled::ScaledFaceRef;
 pub use fontique::GenericFamily;
 pub use library::{FaceId, FaceStore, FontLibrary, NoFontMatch, library};
 pub use resolver::*;
