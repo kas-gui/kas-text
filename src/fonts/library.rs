@@ -8,7 +8,7 @@
 use super::{FaceRef, FontSelector, Resolver};
 use crate::GlyphId;
 use crate::conv::{to_u32, to_usize};
-use fontique::{Blob, QueryStatus, Script, Synthesis};
+use fontique::{Blob, Charmap, QueryFont, QueryStatus, Script, Synthesis};
 use std::collections::hash_map::{Entry, HashMap};
 use std::sync::{LazyLock, Mutex, MutexGuard};
 use thiserror::Error;
@@ -16,6 +16,8 @@ use thiserror::Error;
 /// Font loading errors
 #[derive(Error, Debug)]
 enum FontError {
+    #[error("error reading font: no cmap table found")]
+    NoCmap,
     #[error("font load error")]
     TtfParser(#[from] ttf_parser::FaceParsingError),
     #[cfg(feature = "ab_glyph")]
@@ -78,6 +80,7 @@ pub(crate) struct FontId(u32);
 pub struct FaceStore {
     blob: Blob<u8>,
     index: u32,
+    charmap: Charmap<'static>,
     face: ttf_parser::Face<'static>,
     #[cfg(feature = "rustybuzz")]
     rustybuzz: rustybuzz::Face<'static>,
@@ -90,7 +93,11 @@ pub struct FaceStore {
 
 impl FaceStore {
     /// Construct, given a data blob, face index and synthesis settings
-    fn new(blob: Blob<u8>, index: u32, synthesis: Synthesis) -> Result<Self, FontError> {
+    fn new(qf: &QueryFont) -> Result<Self, FontError> {
+        let blob = qf.blob.clone();
+        let index = qf.index;
+        let synthesis = qf.synthesis;
+
         // Safety: this is a private fn used to construct a FaceStore instance
         // to be stored in FontLibrary which is never deallocated. This
         // FaceStore holds onto `blob`, so `data` is valid until program exit.
@@ -101,6 +108,7 @@ impl FaceStore {
         Ok(FaceStore {
             blob,
             index,
+            charmap: qf.charmap_index.charmap(data).ok_or(FontError::NoCmap)?,
             #[cfg(feature = "rustybuzz")]
             rustybuzz: {
                 use {rustybuzz::Variation, ttf_parser::Tag};
@@ -245,7 +253,9 @@ impl FaceStore {
     /// To use the "missing ideograph" (white square) fallback for missing
     /// glyphs use `store.glyph_index(c).unwrap_or_default()`.
     pub fn glyph_index(&self, code_point: char) -> Option<GlyphId> {
-        self.face.glyph_index(code_point).map(|id| GlyphId(id.0))
+        self.charmap
+            .map(code_point as u32)
+            .and_then(|id| (id <= u16::MAX as u32).then_some(GlyphId(id as u16)))
     }
 }
 
@@ -449,7 +459,7 @@ impl FontLibrary {
                 }
             }
 
-            match FaceStore::new(qf.blob.clone(), qf.index, qf.synthesis) {
+            match FaceStore::new(qf) {
                 Ok(store) => {
                     let id = fonts.push_face(Box::new(store), source_hash);
                     faces.push(id);
