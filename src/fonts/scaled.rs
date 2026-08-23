@@ -71,7 +71,7 @@ impl<'a> ScaledFace<'a> {
     /// Line height
     #[inline]
     pub fn height(&self) -> f32 {
-        self.1.i16_to_px(self.0.ascender() - self.0.descender())
+        self.ascent() - self.descent()
     }
 
     /// Metrics for underline

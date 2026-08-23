@@ -22,7 +22,7 @@ enum FontError {
     NoCmap,
     #[error("font load error")]
     TtfParser(#[from] ttf_parser::FaceParsingError),
-    #[error("font load error")]
+    #[error("font table read error")]
     ReadFonts(#[from] read_fonts::ReadError),
     #[cfg(feature = "ab_glyph")]
     #[error("font load error")]
