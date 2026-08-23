@@ -45,6 +45,7 @@ cfg-if = "1.0.0"
 easy-cast = "0.7.0"
 bitflags = "2.4.2"
 ttf-parser = "0.25.1"
+read-fonts = "0.41.0"
 smallvec = "1.6.1"
 tinyvec = { version = "1.9.0", features = ["alloc"] }
 unicode-bidi = "0.3.4"

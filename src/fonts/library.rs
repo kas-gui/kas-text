@@ -10,6 +10,7 @@ use crate::conv::{to_u32, to_usize};
 use crate::fonts::ScaledFace;
 use crate::{DPU, GlyphId};
 use fontique::{Blob, Charmap, QueryFont, QueryStatus, Script, Synthesis};
+use read_fonts::TableProvider;
 use std::collections::hash_map::{Entry, HashMap};
 use std::sync::{LazyLock, Mutex, MutexGuard};
 use thiserror::Error;
@@ -21,6 +22,8 @@ enum FontError {
     NoCmap,
     #[error("font load error")]
     TtfParser(#[from] ttf_parser::FaceParsingError),
+    #[error("font load error")]
+    ReadFonts(#[from] read_fonts::ReadError),
     #[cfg(feature = "ab_glyph")]
     #[error("font load error")]
     AbGlyph(#[from] ab_glyph::InvalidFont),
@@ -80,6 +83,10 @@ pub struct Face {
     index: u32,
     ems_per_unit: f32,
     charmap: Charmap<'static>,
+    font: read_fonts::FontRef<'static>,
+    ascender: i16,
+    descender: i16,
+    line_gap: i16,
     face: ttf_parser::Face<'static>,
     #[cfg(feature = "rustybuzz")]
     rustybuzz: rustybuzz::Face<'static>,
@@ -103,12 +110,22 @@ impl Face {
         let data = unsafe { extend_lifetime(blob.data()) };
 
         let face = ttf_parser::Face::parse(data, index)?;
+        let font = read_fonts::FontRef::from_index(data, index)?;
+        let hhea = font.hhea()?;
+        let _ = font.hmtx()?;
+        let ascender = hhea.ascender().into();
+        let descender = hhea.descender().into();
+        let line_gap = hhea.line_gap().into();
 
         Ok(Face {
             blob,
             index,
             ems_per_unit: 1f32 / f32::from(face.units_per_em()),
             charmap: qf.charmap_index.charmap(data).ok_or(FontError::NoCmap)?,
+            font,
+            ascender,
+            descender,
+            line_gap,
             #[cfg(feature = "rustybuzz")]
             rustybuzz: {
                 use {rustybuzz::Variation, ttf_parser::Tag};
@@ -209,6 +226,26 @@ impl Face {
     /// [`ttf_parser::Face`]: https://docs.rs/ttf-parser/latest/ttf_parser/struct.Face.html
     pub fn face(&self) -> &ttf_parser::Face<'static> {
         &self.face
+    }
+
+    /// Get a [`read_fonts::FontRef`]
+    pub fn font(&self) -> read_fonts::FontRef<'_> {
+        self.font.clone()
+    }
+
+    /// Get ascender in font units
+    pub fn ascender(&self) -> i16 {
+        self.ascender
+    }
+
+    /// Get descender in font units
+    pub fn descender(&self) -> i16 {
+        self.descender
+    }
+
+    /// Get line gap in font units
+    pub fn line_gap(&self) -> i16 {
+        self.line_gap
     }
 
     /// Get a [`rustybuzz::Face`]
