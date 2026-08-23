@@ -10,7 +10,7 @@ use super::Forme;
 use crate::Status;
 use crate::conv::{to_u32, to_usize};
 use crate::fonts::{self, FaceId, FontSelector, NoFontMatch};
-use crate::util::{AnalyzedText, ends_with_hard_break, to_fontique_script};
+use crate::util::{AnalyzedText, ends_with_hard_break, icu_script_as_raw_tag};
 use crate::{Direction, FontToken, Range, shaper, shaper::GlyphRun};
 use icu_properties::CodePointMapData;
 use icu_properties::props::{
@@ -197,7 +197,8 @@ impl Forme {
         first_real: Option<char>,
     ) -> Result<(), NoFontMatch> {
         let fonts = fonts::library();
-        let font_id = fonts.select_font(&font, to_fontique_script(input.script))?;
+        let script = fontique::Script::from_bytes(icu_script_as_raw_tag(input.script));
+        let font_id = fonts.select_font(&font, script)?;
         let text = &input.text[range.to_std()];
 
         // Find a font face
@@ -545,7 +546,8 @@ fn emoji_face_id() -> Result<FaceId, NoFontMatch> {
     static ONCE: OnceLock<Result<FaceId, NoFontMatch>> = OnceLock::new();
     *ONCE.get_or_init(|| {
         let fonts = fonts::library();
-        let font = fonts.select_font(&FontSelector::EMOJI, to_fontique_script(Script::Common));
+        let script = fontique::Script::from_bytes(icu_script_as_raw_tag(Script::Common));
+        let font = fonts.select_font(&FontSelector::EMOJI, script);
         font.map(|font_id| fonts.first_face_for(font_id).expect("invalid FontId"))
     })
 }

@@ -20,6 +20,8 @@
 use crate::conv::{DPU, to_u32, to_usize};
 use crate::fonts::{self, FaceId};
 use crate::forme::RunSpecial;
+#[cfg(feature = "rustybuzz")]
+use crate::util::icu_script_as_raw_tag;
 use crate::{Range, Vec2};
 use icu_properties::props::Script;
 use tinyvec::TinyVec;
@@ -374,7 +376,7 @@ fn shape_rustybuzz(
         true => Direction::RightToLeft,
     });
     buffer.push_str(slice);
-    let tag = crate::util::to_ttf_parser_tag(script);
+    let tag = ttf_parser::Tag::from_bytes(&icu_script_as_raw_tag(script));
     if let Some(script) = Script::from_iso15924_tag(tag) {
         buffer.set_script(script);
     }
