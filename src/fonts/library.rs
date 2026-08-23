@@ -5,9 +5,11 @@
 
 //! Font library
 
-use super::{FaceRef, FontSelector, Resolver};
+use super::{FontSelector, Resolver};
 use crate::conv::{to_u32, to_usize};
-use fontique::{Blob, QueryStatus, Script, Synthesis};
+use crate::fonts::ScaledFace;
+use crate::{DPU, GlyphId};
+use fontique::{Blob, Charmap, QueryFont, QueryStatus, Script, Synthesis};
 use std::collections::hash_map::{Entry, HashMap};
 use std::sync::{LazyLock, Mutex, MutexGuard};
 use thiserror::Error;
@@ -15,6 +17,8 @@ use thiserror::Error;
 /// Font loading errors
 #[derive(Error, Debug)]
 enum FontError {
+    #[error("error reading font: no cmap table found")]
+    NoCmap,
     #[error("font load error")]
     TtfParser(#[from] ttf_parser::FaceParsingError),
     #[cfg(feature = "ab_glyph")]
@@ -67,16 +71,15 @@ impl From<u32> for FaceId {
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct FontId(u32);
 
-/// A store of data for a font face, supporting various backends
+/// Font face data
 ///
-/// Each required font face is cached using an instance of this struct. An
-/// instance corresponds to a *font face*, loaded from a font file at a given
-/// index and using the provided variation (synthesis) data.
-///
+/// This struct is a cache of font-face data. It is immutable once loaded.
 /// Various backends are supported, depending on the enabled crate features.
-pub struct FaceStore {
+pub struct Face {
     blob: Blob<u8>,
     index: u32,
+    ems_per_unit: f32,
+    charmap: Charmap<'static>,
     face: ttf_parser::Face<'static>,
     #[cfg(feature = "rustybuzz")]
     rustybuzz: rustybuzz::Face<'static>,
@@ -87,19 +90,25 @@ pub struct FaceStore {
     synthesis: Synthesis,
 }
 
-impl FaceStore {
+impl Face {
     /// Construct, given a data blob, face index and synthesis settings
-    fn new(blob: Blob<u8>, index: u32, synthesis: Synthesis) -> Result<Self, FontError> {
-        // Safety: this is a private fn used to construct a FaceStore instance
+    fn new(qf: &QueryFont) -> Result<Self, FontError> {
+        let blob = qf.blob.clone();
+        let index = qf.index;
+        let synthesis = qf.synthesis;
+
+        // Safety: this is a private fn used to construct a Face instance
         // to be stored in FontLibrary which is never deallocated. This
-        // FaceStore holds onto `blob`, so `data` is valid until program exit.
+        // Face holds onto `blob`, so `data` is valid until program exit.
         let data = unsafe { extend_lifetime(blob.data()) };
 
         let face = ttf_parser::Face::parse(data, index)?;
 
-        Ok(FaceStore {
+        Ok(Face {
             blob,
             index,
+            ems_per_unit: 1f32 / f32::from(face.units_per_em()),
+            charmap: qf.charmap_index.charmap(data).ok_or(FontError::NoCmap)?,
             #[cfg(feature = "rustybuzz")]
             rustybuzz: {
                 use {rustybuzz::Variation, ttf_parser::Tag};
@@ -187,18 +196,19 @@ impl FaceStore {
         self.read_name(4)
     }
 
+    /// Get the face index within the font file
+    #[inline]
+    pub fn face_index(&self) -> u32 {
+        self.index
+    }
+
     /// Get a [`ttf_parser::Face`]
     ///
-    /// This backend is currently always enabled due to usage by [`FaceRef`].
+    /// This backend is currently always enabled due to internal usage.
     ///
     /// [`ttf_parser::Face`]: https://docs.rs/ttf-parser/latest/ttf_parser/struct.Face.html
     pub fn face(&self) -> &ttf_parser::Face<'static> {
         &self.face
-    }
-
-    /// Get font metrics via a [`FaceRef`]
-    pub fn face_ref(&self) -> FaceRef<'_> {
-        FaceRef(&self.face)
     }
 
     /// Get a [`rustybuzz::Face`]
@@ -223,7 +233,7 @@ impl FaceStore {
     #[cfg(feature = "swash")]
     pub fn swash(&self) -> swash::FontRef<'_> {
         swash::FontRef {
-            data: self.face.raw_face().data,
+            data: self.blob.data(),
             offset: self.swash.0,
             key: self.swash.1,
         }
@@ -237,6 +247,49 @@ impl FaceStore {
     /// [`Synthesis`]: https://docs.rs/fontique/latest/fontique/struct.Synthesis.html
     pub fn synthesis(&self) -> &Synthesis {
         &self.synthesis
+    }
+
+    /// Find a glyph within the font face
+    ///
+    /// To use the "missing ideograph" (white square) fallback for missing
+    /// glyphs use `store.glyph_index(c).unwrap_or_default()`.
+    pub fn glyph_index(&self, code_point: char) -> Option<GlyphId> {
+        self.charmap
+            .map(code_point as u32)
+            .and_then(|id| (id <= u16::MAX as u32).then_some(GlyphId(id as u16)))
+    }
+
+    /// Convert `dpem` to `dpu`
+    ///
+    /// Output: a font-specific scale.
+    ///
+    /// Input: `dpem` is pixels/em
+    ///
+    /// ```none
+    /// dpem
+    ///   = pt_size × dpp
+    ///   = pt_size × dpi / 72
+    ///   = pt_size × scale_factor × (96 / 72)
+    /// ```
+    #[inline]
+    pub fn dpu(&self, dpem: f32) -> DPU {
+        DPU(dpem * self.ems_per_unit)
+    }
+
+    /// Get a scaled reference
+    ///
+    /// Units: `dpem` is dots (pixels) per Em (module documentation).
+    #[inline]
+    pub fn scale_by_dpem(&self, dpem: f32) -> ScaledFace<'_> {
+        ScaledFace(self, self.dpu(dpem))
+    }
+
+    /// Get a scaled reference
+    ///
+    /// Units: `dpu` is dots (pixels) per font-unit (see module documentation).
+    #[inline]
+    pub fn scale_by_dpu(&self, dpu: DPU) -> ScaledFace<'_> {
+        ScaledFace(self, dpu)
     }
 }
 
@@ -253,7 +306,7 @@ struct FontList {
     // Safety: unsafe code depends on entries never moving (hence the otherwise
     // redundant use of Box). See e.g. FontLibrary::get_face().
     #[allow(clippy::vec_box)]
-    faces: Vec<Box<FaceStore>>,
+    faces: Vec<Box<Face>>,
     // These are vec-maps. Why? Because length should be short.
     source_hash: Vec<(u64, FaceId)>,
     fonts: Vec<Font>,
@@ -261,7 +314,7 @@ struct FontList {
 }
 
 impl FontList {
-    fn push_face(&mut self, face: Box<FaceStore>, source_hash: u64) -> FaceId {
+    fn push_face(&mut self, face: Box<Face>, source_hash: u64) -> FaceId {
         let id = FaceId(to_u32(self.faces.len()));
         self.faces.push(face);
         self.source_hash.push((source_hash, id));
@@ -302,7 +355,7 @@ impl FontList {
         {
             let face = &faces[face_id.get()];
             // TODO(opt): should we cache this lookup?
-            if face.face.glyph_index(c).is_some() {
+            if face.glyph_index(c).is_some() {
                 return Ok(Some(face_id));
             }
         }
@@ -313,7 +366,7 @@ impl FontList {
                 let mut id: Option<FaceId> = None;
                 for face_id in font.faces.iter() {
                     let face = &faces[face_id.get()];
-                    if face.face.glyph_index(c).is_some() {
+                    if face.glyph_index(c).is_some() {
                         id = Some(*face_id);
                         break;
                     }
@@ -440,7 +493,7 @@ impl FontLibrary {
                 }
             }
 
-            match FaceStore::new(qf.blob.clone(), qf.index, qf.synthesis) {
+            match Face::new(qf) {
                 Ok(store) => {
                     let id = fonts.push_face(Box::new(store), source_hash);
                     faces.push(id);
@@ -469,20 +522,17 @@ impl FontLibrary {
 
 /// Face management
 impl FontLibrary {
-    /// Get a font face from its identifier
+    /// Get the [`Face`] for a given `id`
     ///
     /// Panics if `id` is not valid (required: `id.get() < self.num_faces()`).
-    pub fn get_face(&self, id: FaceId) -> FaceRef<'static> {
-        self.get_face_store(id).face_ref()
-    }
-
-    /// Get access to the [`FaceStore`]
+    /// This shouldn't be the case for any [`FaceId`] returned by this library.
     ///
-    /// Panics if `id` is not valid (required: `id.get() < self.num_faces()`).
-    pub fn get_face_store(&self, id: FaceId) -> &'static FaceStore {
+    /// This method returns a `'static` reference: font face data is immutable
+    /// once loaded and is never freed.
+    pub fn get_face(&self, id: FaceId) -> &'static Face {
         let fonts = self.fonts.lock().unwrap();
         assert!(id.get() < fonts.faces.len(), "FontLibrary: invalid {id:?}!",);
-        let faces: &FaceStore = &fonts.faces[id.get()];
+        let faces: &Face = &fonts.faces[id.get()];
         // Safety: elements of self.faces are never dropped or modified
         unsafe { extend_lifetime(faces) }
     }

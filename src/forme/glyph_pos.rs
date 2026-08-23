@@ -7,7 +7,7 @@
 
 use super::Forme;
 use crate::conv::to_usize;
-use crate::fonts::{self, FaceId, ScaledFaceRef};
+use crate::fonts::{self, FaceId, ScaledFace};
 use crate::{Glyph, Range, Vec2, shaper};
 use std::fmt::Debug;
 
@@ -128,11 +128,11 @@ impl<'a, E: Copy + Default> GlyphRun<'a, E> {
         self.run.dpem
     }
 
-    /// Get the [`ScaledFaceRef`] for this run
+    /// Get the [`ScaledFace`] for this run
     ///
     /// This may be useful to access font metrics.
     #[inline]
-    pub fn scaled_face(&self) -> ScaledFaceRef<'_> {
+    pub fn scaled_face(&self) -> ScaledFace<'_> {
         fonts::library()
             .get_face(self.run.face_id)
             .scale_by_dpu(self.run.dpu)
@@ -141,7 +141,7 @@ impl<'a, E: Copy + Default> GlyphRun<'a, E> {
     /// Get the `top` position of the line
     ///
     /// Note that there may be multiple runs per line and that these may not all
-    /// have the same [`ScaledFaceRef::ascent`] value when multiple fonts are
+    /// have the same [`ScaledFace::ascent`] value when multiple fonts are
     /// used, thus it is usually preferable to use the this value for
     /// background colors (highlighting).
     #[inline]
@@ -152,7 +152,7 @@ impl<'a, E: Copy + Default> GlyphRun<'a, E> {
     /// Get the `bottom` position of the line
     ///
     /// Note that there may be multiple runs per line and that these may not all
-    /// have the same [`ScaledFaceRef::descent`] value when multiple fonts are
+    /// have the same [`ScaledFace::descent`] value when multiple fonts are
     /// used, thus it is usually preferable to use the this value for
     /// background colors (highlighting).
     #[inline]
