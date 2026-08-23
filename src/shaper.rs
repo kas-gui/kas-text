@@ -283,10 +283,10 @@ pub(crate) fn shape(
 
     if input.dpem >= 0.0 {
         #[cfg(feature = "rustybuzz")]
-        let r = shape_rustybuzz(sf, input, range, &mut breaks);
+        let r = shape_rustybuzz(sf.clone(), input, range, &mut breaks);
 
         #[cfg(not(feature = "rustybuzz"))]
-        let r = shape_simple(sf, input, range, &mut breaks);
+        let r = shape_simple(sf.clone(), input, range, &mut breaks);
 
         glyphs = r.0;
         no_space_end = r.1;

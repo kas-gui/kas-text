@@ -10,6 +10,7 @@ use crate::conv::{to_u32, to_usize};
 use crate::fonts::ScaledFace;
 use crate::{DPU, GlyphId};
 use fontique::{Blob, Charmap, QueryFont, QueryStatus, Script, Synthesis};
+use read_fonts::{FontRef, ReadError, TableProvider};
 use std::collections::hash_map::{Entry, HashMap};
 use std::sync::{LazyLock, Mutex, MutexGuard};
 use thiserror::Error;
@@ -19,6 +20,8 @@ use thiserror::Error;
 enum FontError {
     #[error("error reading font: no cmap table found")]
     NoCmap,
+    #[error("error reading font")]
+    ReadError(#[from] ReadError),
     #[error("font load error")]
     TtfParser(#[from] ttf_parser::FaceParsingError),
     #[cfg(feature = "ab_glyph")]
@@ -81,6 +84,7 @@ pub struct Face {
     ems_per_unit: f32,
     charmap: Charmap<'static>,
     face: ttf_parser::Face<'static>,
+    font: FontRef<'static>,
     #[cfg(feature = "rustybuzz")]
     rustybuzz: rustybuzz::Face<'static>,
     #[cfg(feature = "ab_glyph")]
@@ -103,6 +107,9 @@ impl Face {
         let data = unsafe { extend_lifetime(blob.data()) };
 
         let face = ttf_parser::Face::parse(data, index)?;
+
+        let font = FontRef::from_index(data, index)?;
+        let _ = font.hmtx()?; // accessed via unwrap() later
 
         Ok(Face {
             blob,
@@ -129,6 +136,7 @@ impl Face {
                 rustybuzz
             },
             face,
+            font,
             #[cfg(feature = "ab_glyph")]
             ab_glyph: {
                 let mut font = ab_glyph::FontRef::try_from_slice_and_index(data, index)?;
@@ -211,6 +219,13 @@ impl Face {
         &self.face
     }
 
+    /// Get a [`read_fonts::FontRef`]
+    ///
+    /// [`read_fonts::FontRef`]: https://docs.rs/read-fonts/latest/read_fonts/struct.FontRef.html
+    pub fn font_ref(&self) -> &FontRef<'_> {
+        &self.font
+    }
+
     /// Get a [`rustybuzz::Face`]
     ///
     /// [`rustybuzz::Face`]: https://docs.rs/rustybuzz/latest/rustybuzz/struct.Face.html
@@ -289,7 +304,8 @@ impl Face {
     /// Units: `dpu` is dots (pixels) per font-unit (see module documentation).
     #[inline]
     pub fn scale_by_dpu(&self, dpu: DPU) -> ScaledFace<'_> {
-        ScaledFace::new(self, dpu)
+        let hmtx = self.font.hmtx().unwrap();
+        ScaledFace::new(self, hmtx, dpu)
     }
 }
 

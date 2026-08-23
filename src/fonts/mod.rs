@@ -61,3 +61,9 @@ impl From<GlyphId> for ttf_parser::GlyphId {
         ttf_parser::GlyphId(id.0)
     }
 }
+
+impl From<GlyphId> for read_fonts::types::GlyphId {
+    fn from(id: GlyphId) -> Self {
+        read_fonts::types::GlyphId::new(id.0.into())
+    }
+}
