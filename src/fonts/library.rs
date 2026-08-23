@@ -223,7 +223,7 @@ impl FaceStore {
     #[cfg(feature = "swash")]
     pub fn swash(&self) -> swash::FontRef<'_> {
         swash::FontRef {
-            data: self.face.raw_face().data,
+            data: self.blob.data(),
             offset: self.swash.0,
             key: self.swash.1,
         }
