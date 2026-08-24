@@ -29,11 +29,9 @@ use unicode_bidi::Level;
 
 /// A type-safe wrapper for glyph ID.
 ///
-/// `GlyphId::default()` (that is, `GlyphId(0)`) should refer to the
+/// `GlyphId::default()` (that is, `GlyphId::NOTDEF`) should refer to the
 /// "missing ideograph" glyph, usually a white square.
-#[repr(transparent)]
-#[derive(Clone, Copy, Ord, PartialOrd, Eq, PartialEq, Default, Debug)]
-pub struct GlyphId(pub u16);
+pub type GlyphId = read_fonts::types::GlyphId16;
 
 /// A positioned glyph
 #[derive(Clone, Copy, Debug)]

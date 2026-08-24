@@ -349,7 +349,7 @@ impl Face {
     pub fn glyph_index(&self, code_point: char) -> Option<GlyphId> {
         self.charmap
             .map(code_point as u32)
-            .and_then(|id| (id <= u16::MAX as u32).then_some(GlyphId(id as u16)))
+            .and_then(|id| (id <= u16::MAX as u32).then_some(GlyphId::new(id as u16)))
     }
 
     /// Convert `dpem` to `dpu`
