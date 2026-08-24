@@ -11,7 +11,8 @@ use crate::fonts::ScaledFace;
 use crate::{DPU, GlyphId};
 use easy_cast::Cast;
 use fontique::{Blob, Charmap, QueryFont, QueryStatus, Script, Synthesis};
-use read_fonts::tables::os2::SelectionFlags;
+use read_fonts::tables::os2::{Os2, SelectionFlags};
+use read_fonts::tables::post::Post;
 use read_fonts::{FontRef, ReadError, TableProvider};
 use std::collections::hash_map::{Entry, HashMap};
 use std::sync::{LazyLock, Mutex, MutexGuard};
@@ -123,6 +124,7 @@ impl Face {
 
         let font = FontRef::from_index(data, index)?;
         let _ = font.hmtx()?; // accessed via unwrap() later
+        let _ = opt_table(font.post())?;
 
         // Read ascent/descent/line_gap values (logic taken from ttf_parser)
         let os2 = font.os2();
@@ -273,6 +275,16 @@ impl Face {
     /// [`read_fonts::FontRef`]: https://docs.rs/read-fonts/latest/read_fonts/struct.FontRef.html
     pub fn font_ref(&self) -> &FontRef<'_> {
         &self.font
+    }
+
+    /// Access the OS/2 table
+    pub(crate) fn os2(&self) -> Option<Os2<'_>> {
+        self.font.os2().ok()
+    }
+
+    /// Access the post (PostScript) table
+    pub(crate) fn post(&self) -> Option<Post<'_>> {
+        self.font.post().ok()
     }
 
     /// Get a [`rustybuzz::Face`]
