@@ -9,6 +9,8 @@ use crate::GlyphId;
 use crate::conv::{DPU, LineMetrics};
 use crate::fonts::Face;
 use read_fonts::tables::hmtx::Hmtx;
+#[cfg(not(feature = "shaping"))]
+use read_fonts::tables::kern::SubtableKind;
 
 /// Reference to a font face with scaling data
 ///
@@ -57,6 +59,22 @@ impl<'a> ScaledFace<'a> {
         // TODO: support font variations
         let x = self.hmtx.side_bearing(id.into()).unwrap_or_default();
         self.dpu.i16_to_px(x)
+    }
+
+    /// Get the horizontal kerning adjustment for a glyph pair, if any
+    #[cfg(not(feature = "shaping"))]
+    pub fn h_kerning(&self, left: GlyphId, right: GlyphId) -> Option<f32> {
+        let (left, right) = (left.into(), right.into());
+        self.face
+            .h_kern
+            .iter()
+            .find_map(|kind| match kind {
+                SubtableKind::Format0(sub) => sub.kerning(left, right),
+                SubtableKind::Format1(_) => None,
+                SubtableKind::Format2(sub) => sub.kerning(left, right),
+                SubtableKind::Format3(sub) => sub.kerning(left, right),
+            })
+            .map(|v| self.dpu.i32_to_px(v))
     }
 
     /// Ascender

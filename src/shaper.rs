@@ -483,14 +483,9 @@ fn shape_simple(
         }
 
         if let Some(prev) = prev_glyph_id
-            && let Some(kern) = sf.face().face().tables().kern
-            && let Some(adv) = kern
-                .subtables
-                .into_iter()
-                .filter(|st| st.horizontal && !st.variable)
-                .find_map(|st| st.glyphs_kerning(prev.into(), id.into()))
+            && let Some(adv) = sf.h_kerning(prev, id)
         {
-            caret += sf.dpu().i16_to_px(adv);
+            caret += adv;
         }
         prev_glyph_id = Some(id);
 

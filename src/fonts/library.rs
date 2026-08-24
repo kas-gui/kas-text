@@ -11,6 +11,8 @@ use crate::fonts::ScaledFace;
 use crate::{DPU, GlyphId};
 use easy_cast::Cast;
 use fontique::{Blob, Charmap, QueryFont, QueryStatus, Script, Synthesis};
+#[cfg(not(feature = "shaping"))]
+use read_fonts::tables::kern;
 use read_fonts::tables::os2::{Os2, SelectionFlags};
 use read_fonts::tables::post::Post;
 use read_fonts::{FontRef, ReadError, TableProvider};
@@ -96,6 +98,8 @@ pub struct Face {
     pub(super) ascender: i16,
     pub(super) descender: i16,
     pub(super) line_gap: i16,
+    #[cfg(not(feature = "shaping"))]
+    pub(super) h_kern: Vec<kern::SubtableKind<'static>>,
     charmap: Charmap<'static>,
     face: ttf_parser::Face<'static>,
     font: FontRef<'static>,
@@ -166,6 +170,19 @@ impl Face {
             ascender,
             descender,
             line_gap,
+            #[cfg(not(feature = "shaping"))]
+            h_kern: {
+                let mut subtables = vec![];
+                if let Some(table) = opt_table(font.kern())? {
+                    for sub in table.subtables() {
+                        let sub = sub?;
+                        if sub.is_horizontal() && !sub.is_variable() {
+                            subtables.push(sub.kind()?);
+                        }
+                    }
+                }
+                subtables
+            },
             charmap: qf.charmap_index.charmap(data).ok_or(FontError::NoCmap)?,
             #[cfg(feature = "rustybuzz")]
             rustybuzz: {
