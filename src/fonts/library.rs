@@ -27,8 +27,6 @@ enum FontError {
     NoCmap,
     #[error("error reading font")]
     ReadError(#[from] ReadError),
-    #[error("font load error")]
-    TtfParser(#[from] ttf_parser::FaceParsingError),
     #[cfg(feature = "ab_glyph")]
     #[error("font load error")]
     AbGlyph(#[from] ab_glyph::InvalidFont),
@@ -101,7 +99,6 @@ pub struct Face {
     #[cfg(not(feature = "shaping"))]
     pub(super) h_kern: Vec<kern::SubtableKind<'static>>,
     charmap: Charmap<'static>,
-    face: ttf_parser::Face<'static>,
     font: FontRef<'static>,
     #[cfg(feature = "shaping")]
     shaper_data: harfrust::ShaperData,
@@ -126,9 +123,8 @@ impl Face {
         // Face holds onto `blob`, so `data` is valid until program exit.
         let data = unsafe { extend_lifetime(blob.data()) };
 
-        let face = ttf_parser::Face::parse(data, index)?;
-
         let font = FontRef::from_index(data, index)?;
+        let _ = opt_table(font.name())?;
         let _ = font.hmtx()?; // accessed via unwrap() later
         let _ = opt_table(font.post())?;
 
@@ -168,7 +164,7 @@ impl Face {
         Ok(Face {
             blob,
             index,
-            ems_per_unit: 1f32 / f32::from(face.units_per_em()),
+            ems_per_unit: 1f32 / f32::from(font.head()?.units_per_em()),
             ascender,
             descender,
             line_gap,
@@ -186,7 +182,6 @@ impl Face {
                 subtables
             },
             charmap: qf.charmap_index.charmap(data).ok_or(FontError::NoCmap)?,
-            face,
             #[cfg(feature = "shaping")]
             shaper_data: harfrust::ShaperData::new(&font),
             #[cfg(feature = "shaping")]
@@ -222,26 +217,12 @@ impl Face {
     ///
     /// [Microsoft's documentation]: https://learn.microsoft.com/en-us/typography/opentype/spec/name
     pub fn read_name(&self, id: u16) -> Option<String> {
-        use ttf_parser::PlatformId;
-        let name = self.face.names().get(id)?;
-
-        // NOTE: we ignore name.encoding_id which should be used to select a
-        // Unicode / ASCII code page encoding.
-        match name.platform_id {
-            PlatformId::Macintosh => Some(String::from_utf8_lossy(name.name).to_string()),
-            // TODO(std lib) use String::from_utf16be_lossy:
-            PlatformId::Unicode | PlatformId::Windows => {
-                let name: Vec<u16> = name
-                    .name
-                    .as_chunks()
-                    .0
-                    .iter()
-                    .map(|chunk| u16::from_be_bytes(*chunk))
-                    .collect();
-                Some(String::from_utf16_lossy(&name))
-            }
-            _ => None,
-        }
+        let Ok(table) = self.font.name() else {
+            return None;
+        };
+        let record = table.name_record().get(id as usize)?;
+        // Note: we do not report read errors here
+        Some(record.string(self.font.data()).ok()?.chars().collect())
     }
 
     /// Get the font family name
@@ -266,15 +247,6 @@ impl Face {
     #[inline]
     pub fn face_index(&self) -> u32 {
         self.index
-    }
-
-    /// Get a [`ttf_parser::Face`]
-    ///
-    /// This backend is currently always enabled due to internal usage.
-    ///
-    /// [`ttf_parser::Face`]: https://docs.rs/ttf-parser/latest/ttf_parser/struct.Face.html
-    pub fn face(&self) -> &ttf_parser::Face<'static> {
-        &self.face
     }
 
     /// Get a [`read_fonts::FontRef`]
