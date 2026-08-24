@@ -9,7 +9,9 @@ use super::{FontSelector, Resolver};
 use crate::conv::{to_u32, to_usize};
 use crate::fonts::ScaledFace;
 use crate::{DPU, GlyphId};
+use easy_cast::Cast;
 use fontique::{Blob, Charmap, QueryFont, QueryStatus, Script, Synthesis};
+use read_fonts::tables::os2::SelectionFlags;
 use read_fonts::{FontRef, ReadError, TableProvider};
 use std::collections::hash_map::{Entry, HashMap};
 use std::sync::{LazyLock, Mutex, MutexGuard};
@@ -74,6 +76,14 @@ impl From<u32> for FaceId {
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct FontId(u32);
 
+fn opt_table<T>(r: Result<T, ReadError>) -> Result<Option<T>, ReadError> {
+    match r {
+        Ok(t) => Ok(Some(t)),
+        Err(ReadError::TableIsMissing(_)) => Ok(None),
+        Err(e) => Err(e),
+    }
+}
+
 /// Font face data
 ///
 /// This struct is a cache of font-face data. It is immutable once loaded.
@@ -82,6 +92,9 @@ pub struct Face {
     blob: Blob<u8>,
     index: u32,
     ems_per_unit: f32,
+    pub(super) ascender: i16,
+    pub(super) descender: i16,
+    pub(super) line_gap: i16,
     charmap: Charmap<'static>,
     face: ttf_parser::Face<'static>,
     font: FontRef<'static>,
@@ -111,10 +124,46 @@ impl Face {
         let font = FontRef::from_index(data, index)?;
         let _ = font.hmtx()?; // accessed via unwrap() later
 
+        // Read ascent/descent/line_gap values (logic taken from ttf_parser)
+        let os2 = font.os2();
+        let use_typo_metrics = os2.as_ref().is_ok_and(|os2| {
+            os2.fs_selection()
+                .contains(SelectionFlags::USE_TYPO_METRICS)
+        });
+        let (ascender, descender, line_gap) = if !use_typo_metrics
+            && let Some(hhea) = opt_table(font.hhea())?
+            && hhea.ascender().to_i16() != 0
+        {
+            let _ = opt_table(os2)?;
+            (
+                hhea.ascender().to_i16(),
+                hhea.descender().to_i16(),
+                hhea.line_gap().to_i16(),
+            )
+        } else {
+            let os2 = os2?;
+            if use_typo_metrics || os2.s_typo_ascender() != 0 {
+                (
+                    os2.s_typo_ascender(),
+                    os2.s_typo_descender(),
+                    os2.s_typo_line_gap(),
+                )
+            } else {
+                (
+                    os2.us_win_ascent().cast(),
+                    os2.us_win_descent().cast(),
+                    os2.s_typo_line_gap(),
+                )
+            }
+        };
+
         Ok(Face {
             blob,
             index,
             ems_per_unit: 1f32 / f32::from(face.units_per_em()),
+            ascender,
+            descender,
+            line_gap,
             charmap: qf.charmap_index.charmap(data).ok_or(FontError::NoCmap)?,
             #[cfg(feature = "rustybuzz")]
             rustybuzz: {

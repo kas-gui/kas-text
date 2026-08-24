@@ -62,25 +62,29 @@ impl<'a> ScaledFace<'a> {
     /// Ascender
     #[inline]
     pub fn ascent(&self) -> f32 {
-        self.dpu.i16_to_px(self.face.face().ascender())
+        // TODO: support font variations
+        self.dpu.i16_to_px(self.face.ascender)
     }
 
     /// Descender
     #[inline]
     pub fn descent(&self) -> f32 {
-        self.dpu.i16_to_px(self.face.face().descender())
+        // TODO: support font variations
+        self.dpu.i16_to_px(self.face.descender)
     }
 
     /// Line gap
     #[inline]
     pub fn line_gap(&self) -> f32 {
-        self.dpu.i16_to_px(self.face.face().line_gap())
+        // TODO: support font variations
+        self.dpu.i16_to_px(self.face.line_gap)
     }
 
     /// Line height
     #[inline]
     pub fn height(&self) -> f32 {
-        self.dpu.i16_to_px(self.face.face().height())
+        // TODO: support font variations
+        self.dpu.i16_to_px(self.face.ascender - self.face.descender)
     }
 
     /// Metrics for underline
