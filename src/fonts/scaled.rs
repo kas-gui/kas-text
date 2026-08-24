@@ -15,25 +15,35 @@ use crate::fonts::Face;
 /// common axis conventions, it may be necessary to negate these; for example
 /// `baseline - self.ascent()`.
 #[derive(Copy, Clone)]
-pub struct ScaledFace<'a>(pub(super) &'a Face, pub(super) DPU);
+pub struct ScaledFace<'a> {
+    face: &'a Face,
+    dpu: DPU,
+}
+
 impl<'a> ScaledFace<'a> {
+    /// Construct
+    #[inline]
+    pub(super) fn new(face: &'a Face, dpu: DPU) -> Self {
+        ScaledFace { face, dpu }
+    }
+
     /// Get the underlying (unscaled) font data
     #[inline]
     pub fn face(&self) -> &Face {
-        self.0
+        self.face
     }
 
     /// Scale
     #[inline]
     pub fn dpu(&self) -> DPU {
-        self.1
+        self.dpu
     }
 
     /// Horizontal advancement after this glyph, without shaping or kerning
     #[inline]
     pub fn h_advance(&self, id: GlyphId) -> f32 {
-        let x = self.0.face().glyph_hor_advance(id.into()).unwrap();
-        self.1.u16_to_px(x)
+        let x = self.face.face().glyph_hor_advance(id.into()).unwrap();
+        self.dpu.u16_to_px(x)
     }
 
     /// Horizontal side bearing
@@ -41,49 +51,53 @@ impl<'a> ScaledFace<'a> {
     /// If unspecified by the font this resolves to 0.
     #[inline]
     pub fn h_side_bearing(&self, id: GlyphId) -> f32 {
-        let x = self.0.face().glyph_hor_side_bearing(id.into()).unwrap_or(0);
-        self.1.i16_to_px(x)
+        let x = self
+            .face
+            .face()
+            .glyph_hor_side_bearing(id.into())
+            .unwrap_or(0);
+        self.dpu.i16_to_px(x)
     }
 
     /// Ascender
     #[inline]
     pub fn ascent(&self) -> f32 {
-        self.1.i16_to_px(self.0.face().ascender())
+        self.dpu.i16_to_px(self.face.face().ascender())
     }
 
     /// Descender
     #[inline]
     pub fn descent(&self) -> f32 {
-        self.1.i16_to_px(self.0.face().descender())
+        self.dpu.i16_to_px(self.face.face().descender())
     }
 
     /// Line gap
     #[inline]
     pub fn line_gap(&self) -> f32 {
-        self.1.i16_to_px(self.0.face().line_gap())
+        self.dpu.i16_to_px(self.face.face().line_gap())
     }
 
     /// Line height
     #[inline]
     pub fn height(&self) -> f32 {
-        self.1.i16_to_px(self.0.face().height())
+        self.dpu.i16_to_px(self.face.face().height())
     }
 
     /// Metrics for underline
     #[inline]
     pub fn underline_metrics(&self) -> Option<LineMetrics> {
-        self.0
+        self.face
             .face()
             .underline_metrics()
-            .map(|m| self.1.to_line_metrics(m))
+            .map(|m| self.dpu.to_line_metrics(m))
     }
 
     /// Metrics for strike-through
     #[inline]
     pub fn strikethrough_metrics(&self) -> Option<LineMetrics> {
-        self.0
+        self.face
             .face()
             .strikeout_metrics()
-            .map(|m| self.1.to_line_metrics(m))
+            .map(|m| self.dpu.to_line_metrics(m))
     }
 }

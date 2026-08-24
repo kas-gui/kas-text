@@ -281,7 +281,7 @@ impl Face {
     /// Units: `dpem` is dots (pixels) per Em (module documentation).
     #[inline]
     pub fn scale_by_dpem(&self, dpem: f32) -> ScaledFace<'_> {
-        ScaledFace(self, self.dpu(dpem))
+        self.scale_by_dpu(self.dpu(dpem))
     }
 
     /// Get a scaled reference
@@ -289,7 +289,7 @@ impl Face {
     /// Units: `dpu` is dots (pixels) per font-unit (see module documentation).
     #[inline]
     pub fn scale_by_dpu(&self, dpu: DPU) -> ScaledFace<'_> {
-        ScaledFace(self, dpu)
+        ScaledFace::new(self, dpu)
     }
 }
 
