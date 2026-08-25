@@ -222,7 +222,7 @@ impl Face {
         };
         let record = table.name_record().get(id as usize)?;
         // Note: we do not report read errors here
-        Some(record.string(self.font.data()).ok()?.chars().collect())
+        Some(record.string(table.string_data()).ok()?.to_string())
     }
 
     /// Get the font family name
