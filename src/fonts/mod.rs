@@ -43,8 +43,6 @@
 //!
 //! -   [`crate::DPU`]: pixels per font unit
 
-use crate::GlyphId;
-
 mod attributes;
 mod library;
 mod resolver;
@@ -55,9 +53,3 @@ pub use fontique::GenericFamily;
 pub use library::{Face, FaceId, FontLibrary, NoFontMatch, library};
 pub use resolver::*;
 pub use scaled::ScaledFace;
-
-impl From<GlyphId> for ttf_parser::GlyphId {
-    fn from(id: GlyphId) -> Self {
-        ttf_parser::GlyphId(id.0)
-    }
-}

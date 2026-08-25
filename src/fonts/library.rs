@@ -9,7 +9,13 @@ use super::{FontSelector, Resolver};
 use crate::conv::{to_u32, to_usize};
 use crate::fonts::ScaledFace;
 use crate::{DPU, GlyphId};
+use easy_cast::Cast;
 use fontique::{Blob, Charmap, QueryFont, QueryStatus, Script, Synthesis};
+#[cfg(not(feature = "shaping"))]
+use read_fonts::tables::kern;
+use read_fonts::tables::os2::{Os2, SelectionFlags};
+use read_fonts::tables::post::Post;
+use read_fonts::{FontRef, ReadError, TableProvider};
 use std::collections::hash_map::{Entry, HashMap};
 use std::sync::{LazyLock, Mutex, MutexGuard};
 use thiserror::Error;
@@ -19,8 +25,8 @@ use thiserror::Error;
 enum FontError {
     #[error("error reading font: no cmap table found")]
     NoCmap,
-    #[error("font load error")]
-    TtfParser(#[from] ttf_parser::FaceParsingError),
+    #[error("error reading font")]
+    ReadError(#[from] ReadError),
     #[cfg(feature = "ab_glyph")]
     #[error("font load error")]
     AbGlyph(#[from] ab_glyph::InvalidFont),
@@ -71,6 +77,14 @@ impl From<u32> for FaceId {
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct FontId(u32);
 
+fn opt_table<T>(r: Result<T, ReadError>) -> Result<Option<T>, ReadError> {
+    match r {
+        Ok(t) => Ok(Some(t)),
+        Err(ReadError::TableIsMissing(_)) => Ok(None),
+        Err(e) => Err(e),
+    }
+}
+
 /// Font face data
 ///
 /// This struct is a cache of font-face data. It is immutable once loaded.
@@ -79,10 +93,17 @@ pub struct Face {
     blob: Blob<u8>,
     index: u32,
     ems_per_unit: f32,
+    pub(super) ascender: i16,
+    pub(super) descender: i16,
+    pub(super) line_gap: i16,
+    #[cfg(not(feature = "shaping"))]
+    pub(super) h_kern: Vec<kern::SubtableKind<'static>>,
     charmap: Charmap<'static>,
-    face: ttf_parser::Face<'static>,
-    #[cfg(feature = "rustybuzz")]
-    rustybuzz: rustybuzz::Face<'static>,
+    font: FontRef<'static>,
+    #[cfg(feature = "shaping")]
+    shaper_data: harfrust::ShaperData,
+    #[cfg(feature = "shaping")]
+    shaper_instance: harfrust::ShaperInstance,
     #[cfg(feature = "ab_glyph")]
     ab_glyph: ab_glyph::FontRef<'static>,
     #[cfg(feature = "swash")]
@@ -102,33 +123,73 @@ impl Face {
         // Face holds onto `blob`, so `data` is valid until program exit.
         let data = unsafe { extend_lifetime(blob.data()) };
 
-        let face = ttf_parser::Face::parse(data, index)?;
+        let font = FontRef::from_index(data, index)?;
+        let _ = opt_table(font.name())?;
+        let _ = font.hmtx()?; // accessed via unwrap() later
+        let _ = opt_table(font.post())?;
+
+        // Read ascent/descent/line_gap values (logic taken from ttf_parser)
+        let os2 = font.os2();
+        let use_typo_metrics = os2.as_ref().is_ok_and(|os2| {
+            os2.fs_selection()
+                .contains(SelectionFlags::USE_TYPO_METRICS)
+        });
+        let (ascender, descender, line_gap) = if !use_typo_metrics
+            && let Some(hhea) = opt_table(font.hhea())?
+            && hhea.ascender().to_i16() != 0
+        {
+            let _ = opt_table(os2)?;
+            (
+                hhea.ascender().to_i16(),
+                hhea.descender().to_i16(),
+                hhea.line_gap().to_i16(),
+            )
+        } else {
+            let os2 = os2?;
+            if use_typo_metrics || os2.s_typo_ascender() != 0 {
+                (
+                    os2.s_typo_ascender(),
+                    os2.s_typo_descender(),
+                    os2.s_typo_line_gap(),
+                )
+            } else {
+                (
+                    os2.us_win_ascent().cast(),
+                    os2.us_win_descent().cast(),
+                    os2.s_typo_line_gap(),
+                )
+            }
+        };
 
         Ok(Face {
             blob,
             index,
-            ems_per_unit: 1f32 / f32::from(face.units_per_em()),
-            charmap: qf.charmap_index.charmap(data).ok_or(FontError::NoCmap)?,
-            #[cfg(feature = "rustybuzz")]
-            rustybuzz: {
-                use {rustybuzz::Variation, ttf_parser::Tag};
-
-                let len = synthesis.variation_settings().len();
-                debug_assert!(len <= 3);
-                let mut vars = [Variation {
-                    tag: Tag(0),
-                    value: 0.0,
-                }; 3];
-                for (r, (tag, value)) in vars.iter_mut().zip(synthesis.variation_settings()) {
-                    r.tag = Tag::from_bytes(&tag.to_be_bytes());
-                    r.value = *value;
+            ems_per_unit: 1f32 / f32::from(font.head()?.units_per_em()),
+            ascender,
+            descender,
+            line_gap,
+            #[cfg(not(feature = "shaping"))]
+            h_kern: {
+                let mut subtables = vec![];
+                if let Some(table) = opt_table(font.kern())? {
+                    for sub in table.subtables() {
+                        let sub = sub?;
+                        if sub.is_horizontal() && !sub.is_variable() {
+                            subtables.push(sub.kind()?);
+                        }
+                    }
                 }
-
-                let mut rustybuzz = rustybuzz::Face::from_face(face.clone());
-                rustybuzz.set_variations(&vars[0..len]);
-                rustybuzz
+                subtables
             },
-            face,
+            charmap: qf.charmap_index.charmap(data).ok_or(FontError::NoCmap)?,
+            #[cfg(feature = "shaping")]
+            shaper_data: harfrust::ShaperData::new(&font),
+            #[cfg(feature = "shaping")]
+            shaper_instance: harfrust::ShaperInstance::from_variations(
+                &font,
+                synthesis.variation_settings(),
+            ),
+            font,
             #[cfg(feature = "ab_glyph")]
             ab_glyph: {
                 let mut font = ab_glyph::FontRef::try_from_slice_and_index(data, index)?;
@@ -156,26 +217,12 @@ impl Face {
     ///
     /// [Microsoft's documentation]: https://learn.microsoft.com/en-us/typography/opentype/spec/name
     pub fn read_name(&self, id: u16) -> Option<String> {
-        use ttf_parser::PlatformId;
-        let name = self.face.names().get(id)?;
-
-        // NOTE: we ignore name.encoding_id which should be used to select a
-        // Unicode / ASCII code page encoding.
-        match name.platform_id {
-            PlatformId::Macintosh => Some(String::from_utf8_lossy(name.name).to_string()),
-            // TODO(std lib) use String::from_utf16be_lossy:
-            PlatformId::Unicode | PlatformId::Windows => {
-                let name: Vec<u16> = name
-                    .name
-                    .as_chunks()
-                    .0
-                    .iter()
-                    .map(|chunk| u16::from_be_bytes(*chunk))
-                    .collect();
-                Some(String::from_utf16_lossy(&name))
-            }
-            _ => None,
-        }
+        let Ok(table) = self.font.name() else {
+            return None;
+        };
+        let record = table.name_record().get(id as usize)?;
+        // Note: we do not report read errors here
+        Some(record.string(self.font.data()).ok()?.chars().collect())
     }
 
     /// Get the font family name
@@ -202,21 +249,32 @@ impl Face {
         self.index
     }
 
-    /// Get a [`ttf_parser::Face`]
+    /// Get a [`read_fonts::FontRef`]
     ///
-    /// This backend is currently always enabled due to internal usage.
-    ///
-    /// [`ttf_parser::Face`]: https://docs.rs/ttf-parser/latest/ttf_parser/struct.Face.html
-    pub fn face(&self) -> &ttf_parser::Face<'static> {
-        &self.face
+    /// [`read_fonts::FontRef`]: https://docs.rs/read-fonts/latest/read_fonts/struct.FontRef.html
+    pub fn font_ref(&self) -> &FontRef<'_> {
+        &self.font
     }
 
-    /// Get a [`rustybuzz::Face`]
+    /// Access the OS/2 table
+    pub(crate) fn os2(&self) -> Option<Os2<'_>> {
+        self.font.os2().ok()
+    }
+
+    /// Access the post (PostScript) table
+    pub(crate) fn post(&self) -> Option<Post<'_>> {
+        self.font.post().ok()
+    }
+
+    /// Get a [`harfrust::Shaper`] for this font
     ///
-    /// [`rustybuzz::Face`]: https://docs.rs/rustybuzz/latest/rustybuzz/struct.Face.html
-    #[cfg(feature = "rustybuzz")]
-    pub fn rustybuzz(&self) -> &rustybuzz::Face<'static> {
-        &self.rustybuzz
+    /// [`harfrust::Shaper`]: https://docs.rs/harfrust/latest/harfrust/struct.Shaper.html
+    #[cfg(feature = "shaping")]
+    pub(crate) fn shaper(&self) -> harfrust::Shaper<'_> {
+        self.shaper_data
+            .shaper(&self.font)
+            .instance(Some(&self.shaper_instance))
+            .build()
     }
 
     /// Get a [`ab_glyph::FontRef`]
@@ -256,7 +314,7 @@ impl Face {
     pub fn glyph_index(&self, code_point: char) -> Option<GlyphId> {
         self.charmap
             .map(code_point as u32)
-            .and_then(|id| (id <= u16::MAX as u32).then_some(GlyphId(id as u16)))
+            .and_then(|id| (id <= u16::MAX as u32).then_some(GlyphId::new(id as u16)))
     }
 
     /// Convert `dpem` to `dpu`
@@ -281,7 +339,7 @@ impl Face {
     /// Units: `dpem` is dots (pixels) per Em (module documentation).
     #[inline]
     pub fn scale_by_dpem(&self, dpem: f32) -> ScaledFace<'_> {
-        ScaledFace(self, self.dpu(dpem))
+        self.scale_by_dpu(self.dpu(dpem))
     }
 
     /// Get a scaled reference
@@ -289,7 +347,8 @@ impl Face {
     /// Units: `dpu` is dots (pixels) per font-unit (see module documentation).
     #[inline]
     pub fn scale_by_dpu(&self, dpu: DPU) -> ScaledFace<'_> {
-        ScaledFace(self, dpu)
+        let hmtx = self.font.hmtx().unwrap();
+        ScaledFace::new(self, hmtx, dpu)
     }
 }
 

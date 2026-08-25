@@ -20,6 +20,8 @@
 use crate::conv::{DPU, to_u32, to_usize};
 use crate::fonts::{self, FaceId};
 use crate::forme::RunSpecial;
+#[cfg(feature = "shaping")]
+use crate::util::icu_script_as_raw_tag;
 use crate::{Range, Vec2};
 use icu_properties::props::Script;
 use tinyvec::TinyVec;
@@ -27,11 +29,9 @@ use unicode_bidi::Level;
 
 /// A type-safe wrapper for glyph ID.
 ///
-/// `GlyphId::default()` (that is, `GlyphId(0)`) should refer to the
+/// `GlyphId::default()` (that is, `GlyphId::NOTDEF`) should refer to the
 /// "missing ideograph" glyph, usually a white square.
-#[repr(transparent)]
-#[derive(Clone, Copy, Ord, PartialOrd, Eq, PartialEq, Default, Debug)]
-pub struct GlyphId(pub u16);
+pub type GlyphId = read_fonts::types::GlyphId16;
 
 /// A positioned glyph
 #[derive(Clone, Copy, Debug)]
@@ -280,11 +280,11 @@ pub(crate) fn shape(
     let sf = face.scale_by_dpu(dpu);
 
     if input.dpem >= 0.0 {
-        #[cfg(feature = "rustybuzz")]
-        let r = shape_rustybuzz(input, range, face_id, &mut breaks);
+        #[cfg(feature = "shaping")]
+        let r = shape_harfrust(sf.clone(), input, range, &mut breaks);
 
-        #[cfg(not(feature = "rustybuzz"))]
-        let r = shape_simple(sf, input, range, &mut breaks);
+        #[cfg(not(feature = "shaping"))]
+        let r = shape_simple(sf.clone(), input, range, &mut breaks);
 
         glyphs = r.0;
         no_space_end = r.1;
@@ -347,47 +347,40 @@ pub(crate) fn shape(
 }
 
 // Use Rustybuzz lib
-#[cfg(feature = "rustybuzz")]
-fn shape_rustybuzz(
+#[cfg(feature = "shaping")]
+fn shape_harfrust(
+    sf: crate::fonts::ScaledFace,
     input: Input<'_>,
     range: Range,
-    face_id: FaceId,
     breaks: &mut [GlyphBreak],
 ) -> (Vec<Glyph>, f32, f32) {
+    use harfrust::{Direction, Script, ShapeOptions, Tag, UnicodeBuffer};
+
     let Input {
         text,
-        dpem,
         level,
         script,
         ..
     } = input;
 
-    let fonts = fonts::library();
-    let store = fonts.get_face(face_id);
-    let dpu = store.dpu(dpem);
-    let face = store.rustybuzz();
-
-    // ppem affects hinting but does not scale layout, so this has little effect:
-    // face.set_pixels_per_em(Some((dpem as u16, dpem as u16)));
-
     let slice = &text[range];
     let idx_offset = range.start;
     let rtl = level.is_rtl();
 
-    // TODO: cache the buffer for reuse later?
-    let mut buffer = rustybuzz::UnicodeBuffer::new();
+    let mut buffer = UnicodeBuffer::new();
     buffer.set_direction(match rtl {
-        false => rustybuzz::Direction::LeftToRight,
-        true => rustybuzz::Direction::RightToLeft,
+        false => Direction::LeftToRight,
+        true => Direction::RightToLeft,
     });
     buffer.push_str(slice);
-    let tag = crate::util::to_ttf_parser_tag(script);
-    if let Some(script) = rustybuzz::Script::from_iso15924_tag(tag) {
+    let tag = Tag::new(&icu_script_as_raw_tag(script));
+    if let Some(script) = Script::from_iso15924_tag(tag) {
         buffer.set_script(script);
     }
-    let features = [];
+    let options = ShapeOptions::new();
 
-    let output = rustybuzz::shape(face, &features, buffer);
+    let shaper = sf.face().shaper();
+    let output = shaper.shape(buffer, options);
 
     let mut caret = 0.0;
     let mut no_space_end = caret;
@@ -402,7 +395,7 @@ fn shape_rustybuzz(
     {
         let index = idx_offset + info.cluster;
         assert!(info.glyph_id <= u16::MAX as u32, "failed to map glyph id");
-        let id = GlyphId(info.glyph_id as u16);
+        let id = GlyphId::new(info.glyph_id as u16);
 
         if breaks
             .get(break_i)
@@ -415,8 +408,8 @@ fn shape_rustybuzz(
         }
 
         let position = Vec2(
-            caret + dpu.i32_to_px(pos.x_offset),
-            dpu.i32_to_px(pos.y_offset),
+            caret + sf.dpu().i32_to_px(pos.x_offset),
+            sf.dpu().i32_to_px(pos.y_offset),
         );
         glyphs.push(Glyph {
             index,
@@ -427,7 +420,7 @@ fn shape_rustybuzz(
         // IIRC this is only applicable to vertical text, which we don't
         // currently support:
         debug_assert_eq!(pos.y_advance, 0);
-        caret += dpu.i32_to_px(pos.x_advance);
+        caret += sf.dpu().i32_to_px(pos.x_advance);
         if text[to_usize(index)..]
             .chars()
             .next()
@@ -442,7 +435,7 @@ fn shape_rustybuzz(
 }
 
 // Simple implementation (kerning but no shaping)
-#[cfg(not(feature = "rustybuzz"))]
+#[cfg(not(feature = "shaping"))]
 fn shape_simple(
     sf: crate::fonts::ScaledFace,
     input: Input<'_>,
@@ -488,14 +481,9 @@ fn shape_simple(
         }
 
         if let Some(prev) = prev_glyph_id
-            && let Some(kern) = sf.face().face().tables().kern
-            && let Some(adv) = kern
-                .subtables
-                .into_iter()
-                .filter(|st| st.horizontal && !st.variable)
-                .find_map(|st| st.glyphs_kerning(prev.into(), id.into()))
+            && let Some(adv) = sf.h_kerning(prev, id)
         {
-            caret += sf.dpu().i16_to_px(adv);
+            caret += adv;
         }
         prev_glyph_id = Some(id);
 
