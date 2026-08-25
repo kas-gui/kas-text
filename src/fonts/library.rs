@@ -312,9 +312,7 @@ impl Face {
     /// To use the "missing ideograph" (white square) fallback for missing
     /// glyphs use `store.glyph_index(c).unwrap_or_default()`.
     pub fn glyph_index(&self, code_point: char) -> Option<GlyphId> {
-        self.charmap
-            .map(code_point as u32)
-            .and_then(|id| (id <= u16::MAX as u32).then_some(GlyphId::new(id as u16)))
+        self.charmap.map(code_point as u32).map(GlyphId::new)
     }
 
     /// Convert `dpem` to `dpu`

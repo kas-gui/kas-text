@@ -31,7 +31,7 @@ use unicode_bidi::Level;
 ///
 /// `GlyphId::default()` (that is, `GlyphId::NOTDEF`) should refer to the
 /// "missing ideograph" glyph, usually a white square.
-pub type GlyphId = read_fonts::types::GlyphId16;
+pub type GlyphId = read_fonts::types::GlyphId;
 
 /// A positioned glyph
 #[derive(Clone, Copy, Debug)]
@@ -394,8 +394,7 @@ fn shape_harfrust(
         .zip(output.glyph_positions().iter())
     {
         let index = idx_offset + info.cluster;
-        assert!(info.glyph_id <= u16::MAX as u32, "failed to map glyph id");
-        let id = GlyphId::new(info.glyph_id as u16);
+        let id = GlyphId::new(info.glyph_id);
 
         if breaks
             .get(break_i)

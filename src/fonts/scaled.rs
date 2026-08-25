@@ -47,7 +47,7 @@ impl<'a> ScaledFace<'a> {
     #[inline]
     pub fn h_advance(&self, id: GlyphId) -> f32 {
         // TODO: support font variations
-        let x = self.hmtx.advance(id.into()).unwrap_or_default();
+        let x = self.hmtx.advance(id).unwrap_or_default();
         self.dpu.u16_to_px(x)
     }
 
@@ -57,14 +57,13 @@ impl<'a> ScaledFace<'a> {
     #[inline]
     pub fn h_side_bearing(&self, id: GlyphId) -> f32 {
         // TODO: support font variations
-        let x = self.hmtx.side_bearing(id.into()).unwrap_or_default();
+        let x = self.hmtx.side_bearing(id).unwrap_or_default();
         self.dpu.i16_to_px(x)
     }
 
     /// Get the horizontal kerning adjustment for a glyph pair, if any
     #[cfg(not(feature = "shaping"))]
     pub fn h_kerning(&self, left: GlyphId, right: GlyphId) -> Option<f32> {
-        let (left, right) = (left.into(), right.into());
         self.face
             .h_kern
             .iter()
