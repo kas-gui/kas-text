@@ -48,6 +48,8 @@ mod library;
 mod resolver;
 mod scaled;
 
+pub use read_fonts::types::NameId;
+
 pub use attributes::{FontStyle, FontWeight, FontWidth};
 pub use fontique::GenericFamily;
 pub use library::{Face, FaceId, FontLibrary, NoFontMatch, library};

@@ -15,6 +15,7 @@ use fontique::{Blob, Charmap, QueryFont, QueryStatus, Script, Synthesis};
 use read_fonts::tables::kern;
 use read_fonts::tables::os2::{Os2, SelectionFlags};
 use read_fonts::tables::post::Post;
+use read_fonts::types::NameId;
 use read_fonts::{FontRef, ReadError, TableProvider};
 use std::collections::hash_map::{Entry, HashMap};
 use std::sync::{LazyLock, Mutex, MutexGuard};
@@ -216,11 +217,11 @@ impl Face {
     /// See [Microsoft's documentation].
     ///
     /// [Microsoft's documentation]: https://learn.microsoft.com/en-us/typography/opentype/spec/name
-    pub fn read_name(&self, id: u16) -> Option<String> {
+    pub fn read_name(&self, id: NameId) -> Option<String> {
         let Ok(table) = self.font.name() else {
             return None;
         };
-        let record = table.name_record().get(id as usize)?;
+        let record = table.name_record().get(id.to_u16() as usize)?;
         // Note: we do not report read errors here
         Some(record.string(table.string_data()).ok()?.to_string())
     }
@@ -228,19 +229,19 @@ impl Face {
     /// Get the font family name
     #[inline]
     pub fn name_family(&self) -> Option<String> {
-        self.read_name(1)
+        self.read_name(NameId::FAMILY_NAME)
     }
 
     /// Get the font sub-family (i.e. style) name
     #[inline]
     pub fn name_subfamily(&self) -> Option<String> {
-        self.read_name(2)
+        self.read_name(NameId::SUBFAMILY_NAME)
     }
 
     /// Get the full font name
     #[inline]
     pub fn name_full(&self) -> Option<String> {
-        self.read_name(4)
+        self.read_name(NameId::FULL_NAME)
     }
 
     /// Get the face index within the font file
