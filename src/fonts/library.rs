@@ -8,7 +8,7 @@
 use super::{Face, FontSelector, Resolver};
 use crate::conv::{to_u32, to_usize};
 use fontique::{QueryStatus, Script, Synthesis};
-use std::collections::hash_map::{Entry, HashMap};
+use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex, MutexGuard};
 use thiserror::Error;
 
@@ -54,7 +54,6 @@ impl FontId {
 
 /// A "font" is a list of faces (primary + fallbacks)
 struct Font {
-    id: FontId,
     faces: Vec<FaceId>,
     /// Cached `char -> FaceId` lookups
     glyph_map: HashMap<char, Option<FaceId>>,
@@ -73,20 +72,14 @@ struct FontList {
 }
 
 impl FontList {
-    fn push_face(&mut self, face: Box<Face>, source_hash: u64) -> FaceId {
-        let id = FaceId(to_u32(self.faces.len()));
+    fn push_face(&mut self, id: FaceId, face: Box<Face>, source_hash: u64) {
         self.faces.push(face);
         self.source_hash.push((source_hash, id));
-        id
     }
 
-    fn push_font(&mut self, faces: Vec<FaceId>, sel_hash: u64) -> FontId {
+    fn push_font(&mut self, font: Font, sel_hash: u64) -> FontId {
         let id = FontId(to_u32(self.fonts.len()));
-        self.fonts.push(Font {
-            id,
-            faces,
-            glyph_map: HashMap::new(),
-        });
+        self.fonts.push(font);
         self.sel_hash.push((sel_hash, id));
         id
     }
@@ -97,13 +90,7 @@ impl FontList {
         preferred_face: Option<FaceId>,
         c: char,
     ) -> Option<FaceId> {
-        // TODO: `face.glyph_index` is a bit slow to use like this where several
-        // faces may return no result before we find a match. Caching results
-        // in a HashMap helps. Perhaps better would be to (somehow) determine
-        // the script/language in use and check whether the font face supports
-        // that, perhaps also checking it has shaping support.
         let font = &mut self.fonts[font_id.get()];
-        debug_assert_eq!(font.id, font_id);
 
         if let Some(face_id) = preferred_face
             && font.faces.contains(&face_id)
@@ -115,7 +102,11 @@ impl FontList {
             }
         }
 
-        match font.glyph_map.entry(c) {
+        // glyph_map covers every char we use which is covered by one of this
+        // font's faces, though not all chars covered by the font faces.
+        font.glyph_map.get(&c).cloned().flatten()
+
+        /* match font.glyph_map.entry(c) {
             Entry::Occupied(entry) => *entry.get(),
             Entry::Vacant(entry) => {
                 let mut id: Option<FaceId> = None;
@@ -127,13 +118,44 @@ impl FontList {
                     }
                 }
 
-                // TODO: we need some mechanism to widen the search when this
-                // fails (certain chars might only be found in a special font).
-
                 entry.insert(id);
                 id
             }
+        } */
+    }
+}
+
+impl Font {
+    /// Reduce `text` to only chars not covered by any font face in `self`
+    ///
+    /// Also ensures that the glyph map contains each `char` in `text` which
+    /// does map to a font face.
+    fn uncovered_chars(&mut self, faces: &Vec<Box<Face>>, text: &str) -> String {
+        let mut unmatched = String::new();
+        for c in text.chars() {
+            if !self.glyph_map.contains_key(&c) && !unmatched.contains(c) {
+                unmatched.push(c);
+            }
         }
+
+        for face_id in self.faces.iter() {
+            if unmatched.is_empty() {
+                break;
+            }
+
+            let face = &faces[face_id.get()];
+            let mut remaining = String::new();
+            for c in unmatched.chars() {
+                if face.glyph_index(c).is_some() {
+                    self.glyph_map.insert(c, Some(*face_id));
+                } else {
+                    remaining.push(c);
+                }
+            }
+            unmatched = remaining;
+        }
+
+        unmatched
     }
 }
 
@@ -160,7 +182,6 @@ impl FontLibrary {
     pub(crate) fn first_face_for(&self, font_id: FontId) -> FaceId {
         let fonts = self.fonts.lock().unwrap();
         let font = &fonts.fonts[font_id.get()];
-        debug_assert_eq!(font.id, font_id);
         *font.faces.first().unwrap()
     }
 
@@ -189,6 +210,7 @@ impl FontLibrary {
         &self,
         selector: &FontSelector,
         script: Script,
+        text: &str,
     ) -> Result<FontId, NoFontMatch> {
         let sel_hash = {
             use std::collections::hash_map::DefaultHasher;
@@ -202,15 +224,54 @@ impl FontLibrary {
 
         let mut resolver = self.resolver.lock().unwrap();
         let mut fonts = self.fonts.lock().unwrap();
+        let fonts = &mut *fonts;
+        let mut existing_font_id = None;
+        let mut glyph_map = HashMap::new();
+        let mut uncovered_chars = String::new();
 
         for (h, id) in &fonts.sel_hash {
             if *h == sel_hash {
-                return Ok(*id);
+                let font = &mut fonts.fonts[id.get()];
+                uncovered_chars = font.uncovered_chars(&fonts.faces, text);
+                if uncovered_chars.is_empty() {
+                    return Ok(*id);
+                } else {
+                    // Note that the code below replaces the faces list.
+                    // Assuming that the query is deterministic, the resulting
+                    // list should be a strict extension of the old one.
+                    existing_font_id = Some(*id);
+                    glyph_map = std::mem::take(&mut font.glyph_map);
+                    break;
+                }
             }
         }
 
         let mut faces = Vec::new();
         let mut families = Vec::new();
+
+        let mut filter_chars = |face_id: FaceId, face: &Face| -> QueryStatus {
+            let mut unmatched = String::new();
+            let is_first_filter = uncovered_chars.is_empty();
+            let source = if is_first_filter {
+                text
+            } else {
+                &uncovered_chars
+            };
+            for c in source.chars() {
+                if face.glyph_index(c).is_some() {
+                    glyph_map.insert(c, Some(face_id));
+                } else if !is_first_filter || !unmatched.contains(c) {
+                    unmatched.push(c);
+                }
+            }
+
+            if unmatched.is_empty() {
+                QueryStatus::Stop
+            } else {
+                uncovered_chars = unmatched;
+                QueryStatus::Continue
+            }
+        };
 
         selector.select(&mut resolver, script, |qf| {
             if log::log_enabled!(log::Level::Debug) {
@@ -237,29 +298,32 @@ impl FontLibrary {
                     let face = &fonts.faces[id.get()];
                     if face.is_query_font(qf) {
                         faces.push(id);
-                        return QueryStatus::Continue;
+                        return filter_chars(id, face);
                     }
                 }
             }
 
             match Face::new(qf) {
-                Ok(store) => {
-                    if let Some(name) = store.name_full() {
-                        if *store.synthesis() == Synthesis::default() {
+                Ok(face) => {
+                    if let Some(name) = face.name_full() {
+                        if *face.synthesis() == Synthesis::default() {
                             log::debug!("Loaded font: {name}");
                         } else {
-                            log::debug!("Loaded font: {name} with {:?}", store.synthesis());
+                            log::debug!("Loaded font: {name} with {:?}", face.synthesis());
                         }
                     }
-                    let id = fonts.push_face(Box::new(store), source_hash);
+
+                    let id = FaceId(to_u32(fonts.faces.len()));
+                    let status = filter_chars(id, &face);
+                    fonts.push_face(id, Box::new(face), source_hash);
                     faces.push(id);
+                    status
                 }
                 Err(err) => {
                     log::error!("Failed to load font: {err}");
+                    QueryStatus::Continue
                 }
             }
-
-            QueryStatus::Continue
         });
 
         for family in families {
@@ -271,8 +335,14 @@ impl FontLibrary {
         if faces.is_empty() {
             return Err(NoFontMatch);
         }
-        let font = fonts.push_font(faces, sel_hash);
-        Ok(font)
+
+        let font = Font { faces, glyph_map };
+        if let Some(id) = existing_font_id {
+            fonts.fonts[id.get()] = font;
+            Ok(id)
+        } else {
+            Ok(fonts.push_font(font, sel_hash))
+        }
     }
 }
 
