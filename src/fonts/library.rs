@@ -139,11 +139,11 @@ impl FontList {
 }
 
 impl Font {
-    /// Test whether the font has a glyph for each `char` in `text`
+    /// Reduce `text` to only chars not covered by any font face in `self`
     ///
     /// Also ensures that the glyph map contains each `char` in `text` which
     /// does map to a font face.
-    fn covers_text(&mut self, faces: &Vec<Box<Face>>, text: &str) -> bool {
+    fn uncovered_chars(&mut self, faces: &Vec<Box<Face>>, text: &str) -> String {
         let mut unmatched = String::new();
         for c in text.chars() {
             if !self.glyph_map.contains_key(&c) && !unmatched.contains(c) {
@@ -168,7 +168,7 @@ impl Font {
             unmatched = remaining;
         }
 
-        unmatched.is_empty()
+        unmatched
     }
 }
 
@@ -239,11 +239,13 @@ impl FontLibrary {
         let mut fonts = self.fonts.lock().unwrap();
         let fonts = &mut *fonts;
         let mut existing_font_id = None;
+        let mut uncovered_chars = String::new();
 
         for (h, id) in &fonts.sel_hash {
             if *h == sel_hash {
                 let font = &mut fonts.fonts[id.get()];
-                if font.covers_text(&fonts.faces, text) {
+                uncovered_chars = font.uncovered_chars(&fonts.faces, text);
+                if uncovered_chars.is_empty() {
                     return Ok(*id);
                 } else {
                     // Note that the code below replaces the faces list.
@@ -258,13 +260,12 @@ impl FontLibrary {
         let mut faces = Vec::new();
         let mut families = Vec::new();
 
-        let mut unmatched_text = String::new();
         let mut filter_chars = |face: &Face| -> QueryStatus {
             let mut unmatched = String::new();
-            let source = if unmatched_text.is_empty() {
+            let source = if uncovered_chars.is_empty() {
                 text
             } else {
-                &unmatched_text
+                &uncovered_chars
             };
             for c in source.chars() {
                 if face.glyph_index(c).is_none() && !unmatched.contains(c) {
@@ -275,7 +276,7 @@ impl FontLibrary {
             if unmatched.is_empty() {
                 QueryStatus::Stop
             } else {
-                unmatched_text = unmatched;
+                uncovered_chars = unmatched;
                 QueryStatus::Continue
             }
         };
