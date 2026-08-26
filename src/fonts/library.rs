@@ -18,6 +18,7 @@ use read_fonts::tables::post::Post;
 use read_fonts::types::NameId;
 use read_fonts::{FontRef, ReadError, TableProvider};
 use std::collections::hash_map::{Entry, HashMap};
+use std::fmt::Display;
 use std::sync::{LazyLock, Mutex, MutexGuard};
 use thiserror::Error;
 
@@ -217,30 +218,30 @@ impl Face {
     /// See [Microsoft's documentation].
     ///
     /// [Microsoft's documentation]: https://learn.microsoft.com/en-us/typography/opentype/spec/name
-    pub fn read_name(&self, id: NameId) -> Option<String> {
+    pub fn read_name(&self, id: NameId) -> Option<impl Display> {
         let Ok(table) = self.font.name() else {
             return None;
         };
         let record = table.name_record().get(id.to_u16() as usize)?;
         // Note: we do not report read errors here
-        Some(record.string(table.string_data()).ok()?.to_string())
+        Some(record.string(table.string_data()).ok()?)
     }
 
     /// Get the font family name
     #[inline]
-    pub fn name_family(&self) -> Option<String> {
+    pub fn name_family(&self) -> Option<impl Display> {
         self.read_name(NameId::FAMILY_NAME)
     }
 
     /// Get the font sub-family (i.e. style) name
     #[inline]
-    pub fn name_subfamily(&self) -> Option<String> {
+    pub fn name_subfamily(&self) -> Option<impl Display> {
         self.read_name(NameId::SUBFAMILY_NAME)
     }
 
     /// Get the full font name
     #[inline]
-    pub fn name_full(&self) -> Option<String> {
+    pub fn name_full(&self) -> Option<impl Display> {
         self.read_name(NameId::FULL_NAME)
     }
 
