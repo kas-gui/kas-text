@@ -20,7 +20,6 @@ use icu_properties::props::{
 use icu_segmenter::LineSegmenter;
 use icu_segmenter::options::{LineBreakStrictness, LineBreakWordOption};
 use std::ops::Bound;
-use std::sync::OnceLock;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum RunSpecial {
@@ -539,13 +538,10 @@ fn is_real(script: Script) -> bool {
 }
 
 fn emoji_face_id(text: &str) -> Result<FaceId, NoFontMatch> {
-    static ONCE: OnceLock<Result<FaceId, NoFontMatch>> = OnceLock::new();
-    *ONCE.get_or_init(|| {
-        let fonts = fonts::library();
-        let script = fontique::Script::from_bytes(icu_script_as_raw_tag(Script::Common));
-        let font = fonts.select_font(&FontSelector::EMOJI, script, text);
-        font.map(|font_id| fonts.first_face_for(font_id))
-    })
+    let fonts = fonts::library();
+    let script = fontique::Script::from_bytes(icu_script_as_raw_tag(Script::Common));
+    let font = fonts.select_font(&FontSelector::EMOJI, script, text);
+    font.map(|font_id| fonts.first_face_for(font_id))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
