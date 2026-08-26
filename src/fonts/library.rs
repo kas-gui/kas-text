@@ -12,14 +12,6 @@ use std::collections::hash_map::{Entry, HashMap};
 use std::sync::{LazyLock, Mutex, MutexGuard};
 use thiserror::Error;
 
-/// Bad [`FontId`] or no font loaded
-///
-/// This error should be impossible to observe, but exists to avoid panic in
-/// lower level methods.
-#[derive(Error, Debug)]
-#[error("invalid FontId")]
-pub(crate) struct InvalidFontId;
-
 /// No matching font found
 ///
 /// Text layout failed.
@@ -53,6 +45,12 @@ impl From<u32> for FaceId {
 /// Identifies a font list within the [`FontLibrary`] by index.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct FontId(u32);
+impl FontId {
+    /// Get as `usize`
+    pub(crate) fn get(self) -> usize {
+        to_usize(self.0)
+    }
+}
 
 /// A "font" is a list of faces (primary + fallbacks)
 struct Font {
@@ -98,35 +96,31 @@ impl FontList {
         font_id: FontId,
         preferred_face: Option<FaceId>,
         c: char,
-    ) -> Result<Option<FaceId>, InvalidFontId> {
+    ) -> Option<FaceId> {
         // TODO: `face.glyph_index` is a bit slow to use like this where several
         // faces may return no result before we find a match. Caching results
         // in a HashMap helps. Perhaps better would be to (somehow) determine
         // the script/language in use and check whether the font face supports
         // that, perhaps also checking it has shaping support.
-        let faces = &self.faces;
-        let fonts = &mut self.fonts;
-        let font = fonts
-            .iter_mut()
-            .find(|item| item.id == font_id)
-            .ok_or(InvalidFontId)?;
+        let font = &mut self.fonts[font_id.get()];
+        debug_assert_eq!(font.id, font_id);
 
         if let Some(face_id) = preferred_face
             && font.faces.contains(&face_id)
         {
-            let face = &faces[face_id.get()];
+            let face = &self.faces[face_id.get()];
             // TODO(opt): should we cache this lookup?
             if face.glyph_index(c).is_some() {
-                return Ok(Some(face_id));
+                return Some(face_id);
             }
         }
 
-        Ok(match font.glyph_map.entry(c) {
+        match font.glyph_map.entry(c) {
             Entry::Occupied(entry) => *entry.get(),
             Entry::Vacant(entry) => {
                 let mut id: Option<FaceId> = None;
                 for face_id in font.faces.iter() {
-                    let face = &faces[face_id.get()];
+                    let face = &self.faces[face_id.get()];
                     if face.glyph_index(c).is_some() {
                         id = Some(*face_id);
                         break;
@@ -139,7 +133,7 @@ impl FontList {
                 entry.insert(id);
                 id
             }
-        })
+        }
     }
 }
 
@@ -163,14 +157,11 @@ impl FontLibrary {
     ///
     /// Each font identifier has at least one font face. This resolves the first
     /// (default) one.
-    pub(crate) fn first_face_for(&self, font_id: FontId) -> Result<FaceId, InvalidFontId> {
+    pub(crate) fn first_face_for(&self, font_id: FontId) -> FaceId {
         let fonts = self.fonts.lock().unwrap();
-        for font in &fonts.fonts {
-            if font.id == font_id {
-                return Ok(*font.faces.first().unwrap());
-            }
-        }
-        Err(InvalidFontId)
+        let font = &fonts.fonts[font_id.get()];
+        debug_assert_eq!(font.id, font_id);
+        *font.faces.first().unwrap()
     }
 
     /// Resolve the font face for a character
@@ -183,7 +174,7 @@ impl FontLibrary {
         font_id: FontId,
         preferred_face: Option<FaceId>,
         c: char,
-    ) -> Result<Option<FaceId>, InvalidFontId> {
+    ) -> Option<FaceId> {
         self.fonts
             .lock()
             .unwrap()

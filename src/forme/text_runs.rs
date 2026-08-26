@@ -204,16 +204,14 @@ impl Forme {
         // Find a font face
         let mut face_id = None;
         if let Some(c) = first_real {
-            face_id = fonts
-                .face_for_char(font_id, None, c)
-                .expect("invalid FontId");
+            face_id = fonts.face_for_char(font_id, None, c);
         }
 
         let preferred_face = match face_id {
             Some(id) => id,
             None => {
                 // We failed to find a font face for the run
-                fonts.first_face_for(font_id).expect("invalid FontId")
+                fonts.first_face_for(font_id)
             }
         };
         let mut face = preferred_face;
@@ -227,9 +225,7 @@ impl Forme {
 
             // HACK: disable font-fallback breaking in tests to get repeatable results
             #[cfg(not(test))]
-            if let Some(new_face) = fonts
-                .face_for_char(font_id, Some(preferred_face), c)
-                .expect("invalid FontId")
+            if let Some(new_face) = fonts.face_for_char(font_id, Some(preferred_face), c)
                 && new_face != face
             {
                 let index = to_u32(index);
@@ -548,7 +544,7 @@ fn emoji_face_id() -> Result<FaceId, NoFontMatch> {
         let fonts = fonts::library();
         let script = fontique::Script::from_bytes(icu_script_as_raw_tag(Script::Common));
         let font = fonts.select_font(&FontSelector::EMOJI, script);
-        font.map(|font_id| fonts.first_face_for(font_id).expect("invalid FontId"))
+        font.map(|font_id| fonts.first_face_for(font_id))
     })
 }
 
