@@ -145,24 +145,22 @@ impl FontList {
             }
         }
     }
+}
 
-    /// Test whether the given `font_id` has a glyph for each `char` in `text`
-    fn covers_text(&self, font_id: FontId, text: &str) -> bool {
-        let faces = &self.faces;
-        let fonts = &self.fonts;
-        let font = fonts
-            .iter()
-            .find(|item| item.id == font_id)
-            .expect("bad FontId");
-
+impl Font {
+    /// Test whether the font has a glyph for each `char` in `text`
+    ///
+    /// Also ensures that the glyph map contains each `char` in `text` which
+    /// does map to a font face.
+    fn covers_text(&mut self, faces: &Vec<Box<Face>>, text: &str) -> bool {
         let mut unmatched = String::new();
         for c in text.chars() {
-            if !font.glyph_map.contains_key(&c) {
+            if !self.glyph_map.contains_key(&c) && !unmatched.contains(c) {
                 unmatched.push(c);
             }
         }
 
-        for face_id in font.faces.iter() {
+        for face_id in self.faces.iter() {
             if unmatched.is_empty() {
                 break;
             }
@@ -170,7 +168,9 @@ impl FontList {
             let face = &faces[face_id.get()];
             let mut remaining = String::new();
             for c in unmatched.chars() {
-                if face.glyph_index(c).is_none() {
+                if face.glyph_index(c).is_some() {
+                    self.glyph_map.insert(c, Some(*face_id));
+                } else {
                     remaining.push(c);
                 }
             }
@@ -247,11 +247,13 @@ impl FontLibrary {
 
         let mut resolver = self.resolver.lock().unwrap();
         let mut fonts = self.fonts.lock().unwrap();
+        let fonts = &mut *fonts;
         let mut existing_font_id = None;
 
         for (h, id) in &fonts.sel_hash {
             if *h == sel_hash {
-                if fonts.covers_text(*id, text) {
+                let font = &mut fonts.fonts[id.get()];
+                if font.covers_text(&fonts.faces, text) {
                     return Ok(*id);
                 } else {
                     // Note that the code below replaces the faces list.
