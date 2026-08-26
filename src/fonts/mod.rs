@@ -44,14 +44,19 @@
 //! -   [`crate::DPU`]: pixels per font unit
 
 mod attributes;
+mod face;
 mod library;
 mod resolver;
 mod scaled;
 
-pub use read_fonts::types::NameId;
-
 pub use attributes::{FontStyle, FontWeight, FontWidth};
+pub use face::Face;
 pub use fontique::GenericFamily;
-pub use library::{Face, FaceId, FontLibrary, NoFontMatch, library};
+pub use library::{FaceId, FontLibrary, NoFontMatch, library};
+pub use read_fonts::types::NameId;
 pub use resolver::*;
 pub use scaled::ScaledFace;
+
+unsafe fn extend_lifetime<'b, T: ?Sized>(r: &'b T) -> &'static T {
+    unsafe { std::mem::transmute::<&'b T, &'static T>(r) }
+}
