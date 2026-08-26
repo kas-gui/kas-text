@@ -84,21 +84,12 @@ impl FontList {
         id
     }
 
-    fn replace_font_faces(&mut self, font_id: FontId, faces: Vec<FaceId>) {
-        self.fonts[font_id.get()].faces = faces;
-    }
-
     fn face_for_char(
         &mut self,
         font_id: FontId,
         preferred_face: Option<FaceId>,
         c: char,
     ) -> Option<FaceId> {
-        // TODO: `face.glyph_index` is a bit slow to use like this where several
-        // faces may return no result before we find a match. Caching results
-        // in a HashMap helps. Perhaps better would be to (somehow) determine
-        // the script/language in use and check whether the font face supports
-        // that, perhaps also checking it has shaping support.
         let font = &mut self.fonts[font_id.get()];
 
         if let Some(face_id) = preferred_face
@@ -234,6 +225,7 @@ impl FontLibrary {
         let mut fonts = self.fonts.lock().unwrap();
         let fonts = &mut *fonts;
         let mut existing_font_id = None;
+        let mut glyph_map = HashMap::new();
         let mut uncovered_chars = String::new();
 
         for (h, id) in &fonts.sel_hash {
@@ -247,13 +239,13 @@ impl FontLibrary {
                     // Assuming that the query is deterministic, the resulting
                     // list should be a strict extension of the old one.
                     existing_font_id = Some(*id);
+                    glyph_map = std::mem::take(&mut font.glyph_map);
                     break;
                 }
             }
         }
 
         let mut faces = Vec::new();
-        let mut glyph_map = HashMap::new();
         let mut families = Vec::new();
 
         let mut filter_chars = |face_id: FaceId, face: &Face| -> QueryStatus {
@@ -342,11 +334,12 @@ impl FontLibrary {
         if faces.is_empty() {
             return Err(NoFontMatch);
         }
+
+        let font = Font { faces, glyph_map };
         if let Some(id) = existing_font_id {
-            fonts.replace_font_faces(id, faces);
+            fonts.fonts[id.get()] = font;
             Ok(id)
         } else {
-            let font = Font { faces, glyph_map };
             Ok(fonts.push_font(font, sel_hash))
         }
     }
