@@ -8,7 +8,7 @@
 use super::{Face, FontSelector, Resolver};
 use crate::conv::{to_u32, to_usize};
 use fontique::{QueryStatus, Script, Synthesis};
-use std::collections::hash_map::{Entry, HashMap};
+use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex, MutexGuard};
 use thiserror::Error;
 
@@ -102,7 +102,11 @@ impl FontList {
             }
         }
 
-        match font.glyph_map.entry(c) {
+        // glyph_map covers every char we use which is covered by one of this
+        // font's faces, though not all chars covered by the font faces.
+        font.glyph_map.get(&c).cloned().flatten()
+
+        /* match font.glyph_map.entry(c) {
             Entry::Occupied(entry) => *entry.get(),
             Entry::Vacant(entry) => {
                 let mut id: Option<FaceId> = None;
@@ -114,13 +118,10 @@ impl FontList {
                     }
                 }
 
-                // TODO: we need some mechanism to widen the search when this
-                // fails (certain chars might only be found in a special font).
-
                 entry.insert(id);
                 id
             }
-        }
+        } */
     }
 }
 
