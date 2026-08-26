@@ -91,6 +91,16 @@ impl FontList {
         id
     }
 
+    fn replace_font_faces(&mut self, font_id: FontId, faces: Vec<FaceId>) {
+        let font = self
+            .fonts
+            .iter_mut()
+            .find(|item| item.id == font_id)
+            .expect("bad FontId");
+
+        font.faces = faces;
+    }
+
     fn face_for_char(
         &mut self,
         font_id: FontId,
@@ -134,6 +144,40 @@ impl FontList {
                 id
             }
         }
+    }
+
+    /// Test whether the given `font_id` has a glyph for each `char` in `text`
+    fn covers_text(&self, font_id: FontId, text: &str) -> bool {
+        let faces = &self.faces;
+        let fonts = &self.fonts;
+        let font = fonts
+            .iter()
+            .find(|item| item.id == font_id)
+            .expect("bad FontId");
+
+        let mut unmatched = String::new();
+        for c in text.chars() {
+            if !font.glyph_map.contains_key(&c) {
+                unmatched.push(c);
+            }
+        }
+
+        for face_id in font.faces.iter() {
+            if unmatched.is_empty() {
+                break;
+            }
+
+            let face = &faces[face_id.get()];
+            let mut remaining = String::new();
+            for c in unmatched.chars() {
+                if face.glyph_index(c).is_none() {
+                    remaining.push(c);
+                }
+            }
+            unmatched = remaining;
+        }
+
+        unmatched.is_empty()
     }
 }
 
@@ -203,10 +247,19 @@ impl FontLibrary {
 
         let mut resolver = self.resolver.lock().unwrap();
         let mut fonts = self.fonts.lock().unwrap();
+        let mut existing_font_id = None;
 
         for (h, id) in &fonts.sel_hash {
             if *h == sel_hash {
-                return Ok(*id);
+                if fonts.covers_text(*id, text) {
+                    return Ok(*id);
+                } else {
+                    // Note that the code below replaces the faces list.
+                    // Assuming that the query is deterministic, the resulting
+                    // list should be a strict extension of the old one.
+                    existing_font_id = Some(*id);
+                    break;
+                }
             }
         }
 
@@ -295,8 +348,12 @@ impl FontLibrary {
         if faces.is_empty() {
             return Err(NoFontMatch);
         }
-        let font = fonts.push_font(faces, sel_hash);
-        Ok(font)
+        if let Some(id) = existing_font_id {
+            fonts.replace_font_faces(id, faces);
+            Ok(id)
+        } else {
+            Ok(fonts.push_font(faces, sel_hash))
+        }
     }
 }
 
