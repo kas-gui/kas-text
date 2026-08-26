@@ -554,6 +554,13 @@ impl FontLibrary {
 
             match Face::new(qf) {
                 Ok(store) => {
+                    if let Some(name) = store.name_full() {
+                        if store.synthesis == Synthesis::default() {
+                            log::debug!("Loaded font: {name}");
+                        } else {
+                            log::debug!("Loaded font: {name} with {:?}", &store.synthesis);
+                        }
+                    }
                     let id = fonts.push_face(Box::new(store), source_hash);
                     faces.push(id);
                 }
@@ -567,7 +574,7 @@ impl FontLibrary {
 
         for family in families {
             if let Some(name) = resolver.font_family(family.0) {
-                log::debug!("match: {name}");
+                log::trace!("match: {name}");
             }
         }
 
