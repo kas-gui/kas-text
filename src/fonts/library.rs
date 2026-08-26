@@ -72,19 +72,14 @@ struct FontList {
 }
 
 impl FontList {
-    fn push_face(&mut self, face: Box<Face>, source_hash: u64) -> FaceId {
-        let id = FaceId(to_u32(self.faces.len()));
+    fn push_face(&mut self, id: FaceId, face: Box<Face>, source_hash: u64) {
         self.faces.push(face);
         self.source_hash.push((source_hash, id));
-        id
     }
 
-    fn push_font(&mut self, faces: Vec<FaceId>, sel_hash: u64) -> FontId {
+    fn push_font(&mut self, font: Font, sel_hash: u64) -> FontId {
         let id = FontId(to_u32(self.fonts.len()));
-        self.fonts.push(Font {
-            faces,
-            glyph_map: HashMap::new(),
-        });
+        self.fonts.push(font);
         self.sel_hash.push((sel_hash, id));
         id
     }
@@ -258,17 +253,21 @@ impl FontLibrary {
         }
 
         let mut faces = Vec::new();
+        let mut glyph_map = HashMap::new();
         let mut families = Vec::new();
 
-        let mut filter_chars = |face: &Face| -> QueryStatus {
+        let mut filter_chars = |face_id: FaceId, face: &Face| -> QueryStatus {
             let mut unmatched = String::new();
-            let source = if uncovered_chars.is_empty() {
+            let is_first_filter = uncovered_chars.is_empty();
+            let source = if is_first_filter {
                 text
             } else {
                 &uncovered_chars
             };
             for c in source.chars() {
-                if face.glyph_index(c).is_none() && !unmatched.contains(c) {
+                if face.glyph_index(c).is_some() {
+                    glyph_map.insert(c, Some(face_id));
+                } else if !is_first_filter || !unmatched.contains(c) {
                     unmatched.push(c);
                 }
             }
@@ -306,7 +305,7 @@ impl FontLibrary {
                     let face = &fonts.faces[id.get()];
                     if face.is_query_font(qf) {
                         faces.push(id);
-                        return filter_chars(face);
+                        return filter_chars(id, face);
                     }
                 }
             }
@@ -320,8 +319,10 @@ impl FontLibrary {
                             log::debug!("Loaded font: {name} with {:?}", face.synthesis());
                         }
                     }
-                    let status = filter_chars(&face);
-                    let id = fonts.push_face(Box::new(face), source_hash);
+
+                    let id = FaceId(to_u32(fonts.faces.len()));
+                    let status = filter_chars(id, &face);
+                    fonts.push_face(id, Box::new(face), source_hash);
                     faces.push(id);
                     status
                 }
@@ -345,7 +346,8 @@ impl FontLibrary {
             fonts.replace_font_faces(id, faces);
             Ok(id)
         } else {
-            Ok(fonts.push_font(faces, sel_hash))
+            let font = Font { faces, glyph_map };
+            Ok(fonts.push_font(font, sel_hash))
         }
     }
 }
