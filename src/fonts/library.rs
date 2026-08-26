@@ -54,7 +54,6 @@ impl FontId {
 
 /// A "font" is a list of faces (primary + fallbacks)
 struct Font {
-    id: FontId,
     faces: Vec<FaceId>,
     /// Cached `char -> FaceId` lookups
     glyph_map: HashMap<char, Option<FaceId>>,
@@ -83,7 +82,6 @@ impl FontList {
     fn push_font(&mut self, faces: Vec<FaceId>, sel_hash: u64) -> FontId {
         let id = FontId(to_u32(self.fonts.len()));
         self.fonts.push(Font {
-            id,
             faces,
             glyph_map: HashMap::new(),
         });
@@ -92,13 +90,7 @@ impl FontList {
     }
 
     fn replace_font_faces(&mut self, font_id: FontId, faces: Vec<FaceId>) {
-        let font = self
-            .fonts
-            .iter_mut()
-            .find(|item| item.id == font_id)
-            .expect("bad FontId");
-
-        font.faces = faces;
+        self.fonts[font_id.get()].faces = faces;
     }
 
     fn face_for_char(
@@ -113,7 +105,6 @@ impl FontList {
         // the script/language in use and check whether the font face supports
         // that, perhaps also checking it has shaping support.
         let font = &mut self.fonts[font_id.get()];
-        debug_assert_eq!(font.id, font_id);
 
         if let Some(face_id) = preferred_face
             && font.faces.contains(&face_id)
@@ -204,7 +195,6 @@ impl FontLibrary {
     pub(crate) fn first_face_for(&self, font_id: FontId) -> FaceId {
         let fonts = self.fonts.lock().unwrap();
         let font = &fonts.fonts[font_id.get()];
-        debug_assert_eq!(font.id, font_id);
         *font.faces.first().unwrap()
     }
 
