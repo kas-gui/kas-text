@@ -189,6 +189,7 @@ impl FontLibrary {
         &self,
         selector: &FontSelector,
         script: Script,
+        text: &str,
     ) -> Result<FontId, NoFontMatch> {
         let sel_hash = {
             use std::collections::hash_map::DefaultHasher;
@@ -211,6 +212,28 @@ impl FontLibrary {
 
         let mut faces = Vec::new();
         let mut families = Vec::new();
+
+        let mut unmatched_text = String::new();
+        let mut filter_chars = |face: &Face| -> QueryStatus {
+            let mut unmatched = String::new();
+            let source = if unmatched_text.is_empty() {
+                text
+            } else {
+                &unmatched_text
+            };
+            for c in source.chars() {
+                if face.glyph_index(c).is_none() && !unmatched.contains(c) {
+                    unmatched.push(c);
+                }
+            }
+
+            if unmatched.is_empty() {
+                QueryStatus::Stop
+            } else {
+                unmatched_text = unmatched;
+                QueryStatus::Continue
+            }
+        };
 
         selector.select(&mut resolver, script, |qf| {
             if log::log_enabled!(log::Level::Debug) {
@@ -237,29 +260,30 @@ impl FontLibrary {
                     let face = &fonts.faces[id.get()];
                     if face.is_query_font(qf) {
                         faces.push(id);
-                        return QueryStatus::Continue;
+                        return filter_chars(face);
                     }
                 }
             }
 
             match Face::new(qf) {
-                Ok(store) => {
-                    if let Some(name) = store.name_full() {
-                        if *store.synthesis() == Synthesis::default() {
+                Ok(face) => {
+                    if let Some(name) = face.name_full() {
+                        if *face.synthesis() == Synthesis::default() {
                             log::debug!("Loaded font: {name}");
                         } else {
-                            log::debug!("Loaded font: {name} with {:?}", store.synthesis());
+                            log::debug!("Loaded font: {name} with {:?}", face.synthesis());
                         }
                     }
-                    let id = fonts.push_face(Box::new(store), source_hash);
+                    let status = filter_chars(&face);
+                    let id = fonts.push_face(Box::new(face), source_hash);
                     faces.push(id);
+                    status
                 }
                 Err(err) => {
                     log::error!("Failed to load font: {err}");
+                    QueryStatus::Continue
                 }
             }
-
-            QueryStatus::Continue
         });
 
         for family in families {
