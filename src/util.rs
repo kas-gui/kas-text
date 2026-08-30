@@ -232,6 +232,13 @@ impl LineBreakExt for LineBreak {
 /// This iterator splits the input text into a sequence of "lines" at mandatory
 /// breaks (see [TR14#BK](https://www.unicode.org/reports/tr14/#BK)) and returns
 /// the range of each line within the input `text`.
+///
+/// This differs from [`str::lines`] in a few ways:
+/// -   This iterator outputs ranges within the text (see also [`Lines`])
+/// -   Each yielded line includes the terminating line-break's encoding
+/// -   When the text is empty or terminates with a line-break, this iterator
+///     yields the implied following line even though the line is empty.
+///     Implication: this iterator always yields at least one line.
 pub struct LineRanges<'a> {
     iter: iter::Peekable<str::CharIndices<'a>>,
     text: &'a str,
@@ -292,6 +299,12 @@ impl<'a> Iterator for LineRanges<'a> {
 /// breaks (see [TR14#BK](https://www.unicode.org/reports/tr14/#BK)).
 ///
 /// This is a shim over [`LineRanges`] mapping ranges to `str` slices.
+///
+/// This differs from [`str::lines`] in a few ways:
+/// -   Each yielded line includes the terminating line-break's encoding
+/// -   When the text is empty or terminates with a line-break, this iterator
+///     yields the implied following line even though the line is empty.
+///     Implication: this iterator always yields at least one line.
 pub struct Lines<'a>(LineRanges<'a>);
 
 impl<'a> Lines<'a> {

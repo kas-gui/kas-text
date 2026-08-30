@@ -144,8 +144,8 @@ impl<'a> Appender<'a> {
     ///
     /// If `imply_empty_final_line` and `text` ends with a mandatory line-break
     /// then an empty text run will be added to represent the final line. This
-    /// should not be used when another text part will be appended after this
-    /// but should be used for the final text part of a multi-line text editor.
+    /// feature allows a single [`Forme`] to be used as a multi-line editor for
+    /// short texts; it is likely not wanted in other cases.
     #[inline]
     pub fn with_tokens(
         &mut self,
