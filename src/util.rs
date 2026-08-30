@@ -199,3 +199,55 @@ pub(crate) fn icu_script_as_raw_tag(script: icu_properties::props::Script) -> [u
     let script = icu_locale::subtags::Script::from(script);
     script.into_raw()
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn line_iter() {
+        let mut iter = LineIterator::new("");
+        assert_eq!(iter.next(), None);
+
+        let mut iter = LineIterator::new("\n");
+        assert_eq!(iter.next(), Some(0..1));
+        assert_eq!(iter.next(), None);
+
+        let mut iter = LineIterator::new("\r\n");
+        assert_eq!(iter.next(), Some(0..2));
+        assert_eq!(iter.next(), None);
+
+        let mut iter = LineIterator::new("\n\r");
+        assert_eq!(iter.next(), Some(0..1));
+        assert_eq!(iter.next(), Some(1..2));
+        assert_eq!(iter.next(), None);
+
+        let mut iter = LineIterator::new("\r\r");
+        assert_eq!(iter.next(), Some(0..1));
+        assert_eq!(iter.next(), Some(1..2));
+        assert_eq!(iter.next(), None);
+
+        let mut iter = LineIterator::new("abc def");
+        assert_eq!(iter.next(), Some(0..7));
+        assert_eq!(iter.next(), None);
+
+        let mut iter = LineIterator::new("abc\n\ndef");
+        assert_eq!(iter.next(), Some(0..4));
+        assert_eq!(iter.next(), Some(4..5));
+        assert_eq!(iter.next(), Some(5..8));
+        assert_eq!(iter.next(), None);
+
+        let mut iter = LineIterator::new("abc def\nghi\n");
+        assert_eq!(iter.next(), Some(0..8));
+        assert_eq!(iter.next(), Some(8..12));
+        assert_eq!(iter.next(), None);
+
+        let mut iter = LineIterator::new("abc\rdef\nghi\r\njkl\u{85}mno");
+        assert_eq!(iter.next(), Some(0..4));
+        assert_eq!(iter.next(), Some(4..8));
+        assert_eq!(iter.next(), Some(8..13));
+        assert_eq!(iter.next(), Some(13..18));
+        assert_eq!(iter.next(), Some(18..21));
+        assert_eq!(iter.next(), None);
+    }
+}
