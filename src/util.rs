@@ -175,7 +175,8 @@ impl<'a> LineIterator<'a> {
             iter: text.char_indices(),
             len: text.len(),
             start: 0,
-            last: None,
+            // Hack: ensure the empty text results in an output
+            last: text.is_empty().then_some(LineBreak::BK),
         }
     }
 }
@@ -206,6 +207,17 @@ impl<'a> Iterator for LineIterator<'a> {
             let range = self.start..self.len;
             self.start = self.len;
             return Some(range);
+        } else if self.start == self.len {
+            self.start += 1;
+
+            if let Some(last) = self.last.take()
+                && (last == LineBreak::BK
+                    || last == LineBreak::CR
+                    || last == LineBreak::LF
+                    || last == LineBreak::NL)
+            {
+                return Some(self.len..self.len);
+            }
         }
 
         None
@@ -224,24 +236,29 @@ mod test {
     #[test]
     fn line_iter() {
         let mut iter = LineIterator::new("");
+        assert_eq!(iter.next(), Some(0..0));
         assert_eq!(iter.next(), None);
 
         let mut iter = LineIterator::new("\n");
         assert_eq!(iter.next(), Some(0..1));
+        assert_eq!(iter.next(), Some(1..1));
         assert_eq!(iter.next(), None);
 
         let mut iter = LineIterator::new("\r\n");
         assert_eq!(iter.next(), Some(0..2));
+        assert_eq!(iter.next(), Some(2..2));
         assert_eq!(iter.next(), None);
 
         let mut iter = LineIterator::new("\n\r");
         assert_eq!(iter.next(), Some(0..1));
         assert_eq!(iter.next(), Some(1..2));
+        assert_eq!(iter.next(), Some(2..2));
         assert_eq!(iter.next(), None);
 
         let mut iter = LineIterator::new("\r\r");
         assert_eq!(iter.next(), Some(0..1));
         assert_eq!(iter.next(), Some(1..2));
+        assert_eq!(iter.next(), Some(2..2));
         assert_eq!(iter.next(), None);
 
         let mut iter = LineIterator::new("abc def");
@@ -257,6 +274,7 @@ mod test {
         let mut iter = LineIterator::new("abc def\nghi\n");
         assert_eq!(iter.next(), Some(0..8));
         assert_eq!(iter.next(), Some(8..12));
+        assert_eq!(iter.next(), Some(12..12));
         assert_eq!(iter.next(), None);
 
         let mut iter = LineIterator::new("abc\rdef\nghi\r\njkl\u{85}mno");
