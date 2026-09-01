@@ -8,10 +8,11 @@
 #[allow(unused)]
 use crate::Forme;
 use crate::{Direction, fonts::FontSelector};
-use icu_properties::{CodePointMapData, props::LineBreak};
-use icu_segmenter::{
-    LineSegmenter, iterators::LineBreakIterator, options::LineBreakOptions, scaffold::Utf8,
+use icu_properties::{
+    CodePointMapData,
+    props::{EnumeratedProperty, LineBreak},
 };
+use icu_segmenter::options::LineBreakOptions;
 use std::ops::Range;
 use unicode_bidi::{BidiInfo, LTR_LEVEL, Level, ParagraphInfo, RTL_LEVEL};
 
@@ -160,22 +161,21 @@ pub(crate) fn ends_with_hard_break(text: &str) -> bool {
 /// breaks (see [TR14#BK](https://www.unicode.org/reports/tr14/#BK)).
 /// The resulting slices cover the whole input text in order without overlap.
 pub struct LineIterator<'a> {
-    break_iter: LineBreakIterator<'static, 'a, Utf8>,
-    text: &'a str,
+    iter: std::str::CharIndices<'a>,
+    len: usize,
     start: usize,
+    last: Option<LineBreak>,
 }
 
 impl<'a> LineIterator<'a> {
     /// Construct
     #[inline]
     pub fn new(text: &'a str) -> Self {
-        let segmenter = LineSegmenter::new_auto(Default::default());
-        let mut break_iter = segmenter.segment_str(text);
-        assert_eq!(break_iter.next(), Some(0)); // the iterator always reports a break at 0
         LineIterator {
-            break_iter,
-            text,
+            iter: text.char_indices(),
+            len: text.len(),
             start: 0,
+            last: None,
         }
     }
 }
@@ -184,13 +184,30 @@ impl<'a> Iterator for LineIterator<'a> {
     type Item = Range<usize>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        for index in self.break_iter.by_ref() {
-            if ends_with_hard_break(&self.text[..index]) || index == self.text.len() {
-                let range = self.start..index;
-                self.start = index;
+        while let Some((i, c)) = self.iter.next() {
+            let prop = LineBreak::for_char(c);
+
+            if let Some(last) = self.last.take()
+                && (last == LineBreak::BK
+                    || (last == LineBreak::CR && prop != LineBreak::LF)
+                    || last == LineBreak::LF
+                    || last == LineBreak::NL)
+            {
+                self.last = Some(prop);
+                let range = self.start..i;
+                self.start = i;
                 return Some(range);
             }
+
+            self.last = Some(prop);
         }
+
+        if self.start < self.len {
+            let range = self.start..self.len;
+            self.start = self.len;
+            return Some(range);
+        }
+
         None
     }
 }
