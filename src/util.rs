@@ -11,7 +11,7 @@ use crate::{Direction, fonts::FontSelector};
 use icu_properties::CodePointMapData;
 use icu_properties::props::{EnumeratedProperty, LineBreak};
 use icu_segmenter::options::LineBreakOptions;
-use std::{fmt, ops::Range};
+use std::{fmt, iter, ops::Range, str};
 use unicode_bidi::{BidiInfo, LTR_LEVEL, Level, ParagraphInfo, RTL_LEVEL};
 
 /// Describes the [state-of-preparation](Forme#states-of-preparation) of a [`Forme`]
@@ -231,14 +231,10 @@ impl LineBreakExt for LineBreak {
 ///
 /// This iterator splits the input text into a sequence of "lines" at mandatory
 /// breaks (see [TR14#BK](https://www.unicode.org/reports/tr14/#BK)).
-/// The resulting slices cover the whole input text in order without overlap.
 pub struct LineIterator<'a> {
-    iter: std::str::CharIndices<'a>,
+    iter: iter::Peekable<str::CharIndices<'a>>,
     len: usize,
     start: usize,
-    last: Option<(char, LineBreak)>,
-    #[allow(non_snake_case)]
-    skipped_CR: bool,
 }
 
 impl<'a> LineIterator<'a> {
@@ -246,12 +242,9 @@ impl<'a> LineIterator<'a> {
     #[inline]
     pub fn new(text: &'a str) -> Self {
         LineIterator {
-            iter: text.char_indices(),
+            iter: text.char_indices().peekable(),
             len: text.len(),
             start: 0,
-            // Hack: ensure the empty text results in an output
-            last: text.is_empty().then_some(('\0', LineBreak::BK)),
-            skipped_CR: false,
         }
     }
 }
@@ -261,53 +254,31 @@ impl<'a> Iterator for LineIterator<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         while let Some((i, c)) = self.iter.next() {
-            let prop = LineBreak::for_char(c);
-            let last = self.last.take();
-            self.last = Some((c, prop));
-            let Some((lc, lb)) = last else {
-                continue;
-            };
+            let lb = LineBreak::for_char(c);
 
-            eprintln!("last={lb:?}, next={prop:?}");
-            if lb == LineBreak::CR && prop == LineBreak::LF {
-                self.skipped_CR = true;
-            } else if lb.is_mandatory_break() {
-                self.last = Some((c, prop));
-                let range = self.start..i;
-                self.start = i;
-                let encoding = if self.skipped_CR && lb == LineBreak::LF {
-                    LineBreakEncoding::CR_LF
+            if lb.is_mandatory_break() {
+                let encoding;
+                let end = if lb == LineBreak::CR
+                    && self.iter.peek().map(|(_, c)| LineBreak::for_char(*c)) == Some(LineBreak::LF)
+                {
+                    encoding = LineBreakEncoding::CR_LF;
+                    let (i, c) = self.iter.next().unwrap();
+                    i + c.len_utf8()
                 } else {
-                    LineBreakEncoding::from(lc)
+                    encoding = LineBreakEncoding::from(c);
+                    i + c.len_utf8()
                 };
-                self.skipped_CR = false;
+
+                let range = self.start..i;
+                self.start = end;
                 return Some((range, Some(encoding)));
             }
         }
 
-        if self.start < self.len {
-            let range = self.start..self.len;
-            self.start = self.len;
-            let encoding = self
-                .last
-                .clone()
-                .filter(|(_, lb)| lb.is_mandatory_break())
-                .map(|(lc, lb)| {
-                    if self.skipped_CR && lb == LineBreak::LF {
-                        LineBreakEncoding::CR_LF
-                    } else {
-                        LineBreakEncoding::from(lc)
-                    }
-                });
-            return Some((range, encoding));
-        } else if self.start == self.len {
-            self.start += 1;
-
-            if let Some((_, lb)) = self.last.take()
-                && lb.is_mandatory_break()
-            {
-                return Some((self.len..self.len, None));
-            }
+        if self.start <= self.len {
+            let start = self.start;
+            self.start = self.len + 1;
+            return Some((start..self.len, None));
         }
 
         None
@@ -330,24 +301,24 @@ mod test {
         assert_eq!(iter.next(), None);
 
         let mut iter = LineIterator::new("\n");
-        assert_eq!(iter.next(), Some((0..1, Some(LineBreakEncoding::LF))));
+        assert_eq!(iter.next(), Some((0..0, Some(LineBreakEncoding::LF))));
         assert_eq!(iter.next(), Some((1..1, None)));
         assert_eq!(iter.next(), None);
 
         let mut iter = LineIterator::new("\r\n");
-        assert_eq!(iter.next(), Some((0..2, Some(LineBreakEncoding::CR_LF))));
+        assert_eq!(iter.next(), Some((0..0, Some(LineBreakEncoding::CR_LF))));
         assert_eq!(iter.next(), Some((2..2, None)));
         assert_eq!(iter.next(), None);
 
         let mut iter = LineIterator::new("\n\r");
-        assert_eq!(iter.next(), Some((0..1, Some(LineBreakEncoding::LF))));
-        assert_eq!(iter.next(), Some((1..2, Some(LineBreakEncoding::CR))));
+        assert_eq!(iter.next(), Some((0..0, Some(LineBreakEncoding::LF))));
+        assert_eq!(iter.next(), Some((1..1, Some(LineBreakEncoding::CR))));
         assert_eq!(iter.next(), Some((2..2, None)));
         assert_eq!(iter.next(), None);
 
         let mut iter = LineIterator::new("\r\r");
-        assert_eq!(iter.next(), Some((0..1, Some(LineBreakEncoding::CR))));
-        assert_eq!(iter.next(), Some((1..2, Some(LineBreakEncoding::CR))));
+        assert_eq!(iter.next(), Some((0..0, Some(LineBreakEncoding::CR))));
+        assert_eq!(iter.next(), Some((1..1, Some(LineBreakEncoding::CR))));
         assert_eq!(iter.next(), Some((2..2, None)));
         assert_eq!(iter.next(), None);
 
@@ -356,22 +327,22 @@ mod test {
         assert_eq!(iter.next(), None);
 
         let mut iter = LineIterator::new("abc\n\ndef");
-        assert_eq!(iter.next(), Some((0..4, Some(LineBreakEncoding::LF))));
-        assert_eq!(iter.next(), Some((4..5, Some(LineBreakEncoding::LF))));
+        assert_eq!(iter.next(), Some((0..3, Some(LineBreakEncoding::LF))));
+        assert_eq!(iter.next(), Some((4..4, Some(LineBreakEncoding::LF))));
         assert_eq!(iter.next(), Some((5..8, None)));
         assert_eq!(iter.next(), None);
 
         let mut iter = LineIterator::new("abc def\nghi\n");
-        assert_eq!(iter.next(), Some((0..8, Some(LineBreakEncoding::LF))));
-        assert_eq!(iter.next(), Some((8..12, Some(LineBreakEncoding::LF))));
+        assert_eq!(iter.next(), Some((0..7, Some(LineBreakEncoding::LF))));
+        assert_eq!(iter.next(), Some((8..11, Some(LineBreakEncoding::LF))));
         assert_eq!(iter.next(), Some((12..12, None)));
         assert_eq!(iter.next(), None);
 
         let mut iter = LineIterator::new("abc\rdef\nghi\r\njkl\u{85}mno");
-        assert_eq!(iter.next(), Some((0..4, Some(LineBreakEncoding::CR))));
-        assert_eq!(iter.next(), Some((4..8, Some(LineBreakEncoding::LF))));
-        assert_eq!(iter.next(), Some((8..13, Some(LineBreakEncoding::CR_LF))));
-        assert_eq!(iter.next(), Some((13..18, Some(LineBreakEncoding::NEL))));
+        assert_eq!(iter.next(), Some((0..3, Some(LineBreakEncoding::CR))));
+        assert_eq!(iter.next(), Some((4..7, Some(LineBreakEncoding::LF))));
+        assert_eq!(iter.next(), Some((8..11, Some(LineBreakEncoding::CR_LF))));
+        assert_eq!(iter.next(), Some((13..16, Some(LineBreakEncoding::NEL))));
         assert_eq!(iter.next(), Some((18..21, None)));
         assert_eq!(iter.next(), None);
     }
