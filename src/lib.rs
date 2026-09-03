@@ -27,7 +27,7 @@ mod env;
 pub use env::*;
 
 mod conv;
-pub use conv::{DPU, LineMetrics};
+pub use conv::{DPU, DecorationMetrics};
 
 mod data;
 use data::Range;
