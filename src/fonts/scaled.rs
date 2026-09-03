@@ -6,7 +6,7 @@
 //! Font face types
 
 use crate::GlyphId;
-use crate::conv::{DPU, LineMetrics};
+use crate::conv::{DPU, DecorationMetrics};
 use crate::fonts::Face;
 use read_fonts::tables::hmtx::Hmtx;
 #[cfg(not(feature = "shaping"))]
@@ -106,23 +106,23 @@ impl<'a> ScaledFace<'a> {
 
     /// Metrics for underline
     #[inline]
-    pub fn underline_metrics(&self) -> Option<LineMetrics> {
+    pub fn underline_metrics(&self) -> Option<DecorationMetrics> {
         self.face.post().map(|post| {
             // TODO: support font variations
             let top = self.dpu.i16_to_px(post.underline_position().to_i16());
             let thickness = self.dpu.i16_to_px(post.underline_thickness().to_i16());
-            LineMetrics { top, thickness }
+            DecorationMetrics { top, thickness }
         })
     }
 
     /// Metrics for strike-through
     #[inline]
-    pub fn strikethrough_metrics(&self) -> Option<LineMetrics> {
+    pub fn strikethrough_metrics(&self) -> Option<DecorationMetrics> {
         self.face.os2().map(|os2| {
             // TODO: support font variations
             let top = self.dpu.i16_to_px(os2.y_strikeout_position());
             let thickness = self.dpu.i16_to_px(os2.y_strikeout_size());
-            LineMetrics { top, thickness }
+            DecorationMetrics { top, thickness }
         })
     }
 }

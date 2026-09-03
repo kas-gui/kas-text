@@ -46,9 +46,9 @@ impl DPU {
     }
 }
 
-/// Metrics for line marks
+/// Metrics for line decorations
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct LineMetrics {
+pub struct DecorationMetrics {
     /// The vertical position of the top of the line
     pub top: f32,
     /// The recommended thickness of the line

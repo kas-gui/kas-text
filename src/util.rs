@@ -8,11 +8,10 @@
 #[allow(unused)]
 use crate::Forme;
 use crate::{Direction, fonts::FontSelector};
-use icu_properties::{CodePointMapData, props::LineBreak};
-use icu_segmenter::{
-    LineSegmenter, iterators::LineBreakIterator, options::LineBreakOptions, scaffold::Utf8,
-};
-use std::ops::Range;
+use icu_properties::CodePointMapData;
+use icu_properties::props::{EnumeratedProperty, LineBreak};
+use icu_segmenter::options::LineBreakOptions;
+use std::{fmt, iter, ops::Range, str};
 use unicode_bidi::{BidiInfo, LTR_LEVEL, Level, ParagraphInfo, RTL_LEVEL};
 
 /// Describes the [state-of-preparation](Forme#states-of-preparation) of a [`Forme`]
@@ -82,7 +81,7 @@ impl<'a> AnalyzedText<'a> {
     /// For correct analysis, `text` should be one or more whole paragraphs
     /// (i.e. up to and optionally including a mandatory line break).
     /// It is valid to analyze a multi-paragraph text as a whole or to split
-    /// the text into sub-ranges as yielded by [`LineIterator`] and analyze
+    /// the text into sub-ranges as yielded by [`LineRanges`] and analyze
     /// each sub-range separately.
     pub fn new(text: &'a str, direction: Direction) -> Self {
         let default_para_level = match direction {
@@ -154,48 +153,250 @@ pub(crate) fn ends_with_hard_break(text: &str) -> bool {
     })
 }
 
+/// Types of line break
+//
+// Note: this uses a null-terminated UTF-8 encoding internally.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct LineBreakEncoding([u8; 4]);
+
+impl LineBreakEncoding {
+    /// Carriage Return + Line Feed: `\r\n`
+    pub const CR_LF: Self = LineBreakEncoding(*"\r\n\0\0".as_bytes().as_array().unwrap());
+
+    /// Line Feed: `\n`
+    pub const LF: Self = LineBreakEncoding(*"\n\0\0\0".as_bytes().as_array().unwrap());
+
+    /// Vertical Tab
+    pub const VT: Self = LineBreakEncoding(*"\x0B\0\0\0".as_bytes().as_array().unwrap());
+
+    /// Form Feed
+    pub const FF: Self = LineBreakEncoding(*"\x0C\0\0\0".as_bytes().as_array().unwrap());
+
+    /// Carriage Return: `\r`
+    pub const CR: Self = LineBreakEncoding(*"\r\0\0\0".as_bytes().as_array().unwrap());
+
+    /// Unicode Next Line
+    pub const NEL: Self = LineBreakEncoding(*"\u{85}\0\0".as_bytes().as_array().unwrap());
+
+    /// Unicode Line Separator
+    pub const LS: Self = LineBreakEncoding(*"\u{2028}\0".as_bytes().as_array().unwrap());
+
+    /// Unicode Paragraph Separator
+    pub const PS: Self = LineBreakEncoding(*"\u{2029}\0".as_bytes().as_array().unwrap());
+
+    /// Get UTF-8 encoding
+    pub fn as_str(&self) -> &str {
+        let mut end = 4;
+        for i in 0..4 {
+            if self.0[i] == b'\0' {
+                end = i;
+                break;
+            }
+        }
+
+        // SAFETY: contents of self are always valid ASCII; chopping off
+        // trailing zero bytes leaves valid UTF-8
+        unsafe { str::from_utf8_unchecked(&self.0[..end]) }
+    }
+}
+
+impl From<char> for LineBreakEncoding {
+    fn from(c: char) -> Self {
+        let mut buf = [0u8; 4];
+        c.encode_utf8(&mut buf);
+        LineBreakEncoding(buf)
+    }
+}
+
+impl fmt::Debug for LineBreakEncoding {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        fmt::Debug::fmt(self.as_str(), f)
+    }
+}
+
+trait LineBreakExt {
+    fn is_mandatory_break(&self) -> bool;
+}
+impl LineBreakExt for LineBreak {
+    fn is_mandatory_break(&self) -> bool {
+        *self == LineBreak::BK
+            || *self == LineBreak::CR
+            || *self == LineBreak::LF
+            || *self == LineBreak::NL
+    }
+}
+
 /// Iterator over lines / paragraphs within the text
 ///
 /// This iterator splits the input text into a sequence of "lines" at mandatory
-/// breaks (see [TR14#BK](https://www.unicode.org/reports/tr14/#BK)).
-/// The resulting slices cover the whole input text in order without overlap.
-pub struct LineIterator<'a> {
-    break_iter: LineBreakIterator<'static, 'a, Utf8>,
+/// breaks (see [TR14#BK](https://www.unicode.org/reports/tr14/#BK)) and returns
+/// the range of each line within the input `text`.
+///
+/// This differs from [`str::lines`] in a few ways:
+/// -   This iterator outputs ranges within the text (see also [`Lines`])
+/// -   Each yielded line includes the terminating line-break's encoding
+/// -   When the text is empty or terminates with a line-break, this iterator
+///     yields the implied following line even though the line is empty.
+///     Implication: this iterator always yields at least one line.
+pub struct LineRanges<'a> {
+    iter: iter::Peekable<str::CharIndices<'a>>,
     text: &'a str,
     start: usize,
 }
 
-impl<'a> LineIterator<'a> {
+impl<'a> LineRanges<'a> {
     /// Construct
     #[inline]
     pub fn new(text: &'a str) -> Self {
-        let segmenter = LineSegmenter::new_auto(Default::default());
-        let mut break_iter = segmenter.segment_str(text);
-        assert_eq!(break_iter.next(), Some(0)); // the iterator always reports a break at 0
-        LineIterator {
-            break_iter,
+        LineRanges {
+            iter: text.char_indices().peekable(),
             text,
             start: 0,
         }
     }
 }
 
-impl<'a> Iterator for LineIterator<'a> {
-    type Item = Range<usize>;
+impl<'a> Iterator for LineRanges<'a> {
+    type Item = (Range<usize>, Option<LineBreakEncoding>);
 
     fn next(&mut self) -> Option<Self::Item> {
-        for index in self.break_iter.by_ref() {
-            if ends_with_hard_break(&self.text[..index]) || index == self.text.len() {
-                let range = self.start..index;
-                self.start = index;
-                return Some(range);
+        while let Some((i, c)) = self.iter.next() {
+            let lb = LineBreak::for_char(c);
+
+            if lb.is_mandatory_break() {
+                let encoding;
+                let end = if lb == LineBreak::CR
+                    && self.iter.peek().map(|(_, c)| LineBreak::for_char(*c)) == Some(LineBreak::LF)
+                {
+                    encoding = LineBreakEncoding::CR_LF;
+                    let (i, c) = self.iter.next().unwrap();
+                    i + c.len_utf8()
+                } else {
+                    encoding = LineBreakEncoding::from(c);
+                    i + c.len_utf8()
+                };
+
+                let range = self.start..i;
+                self.start = end;
+                return Some((range, Some(encoding)));
             }
         }
+
+        if self.start <= self.text.len() {
+            let range = self.start..self.text.len();
+            self.start = range.end + 1;
+            return Some((range, None));
+        }
+
         None
+    }
+}
+
+/// Iterator over lines / paragraphs within the text
+///
+/// This iterator splits the input text into a sequence of "lines" at mandatory
+/// breaks (see [TR14#BK](https://www.unicode.org/reports/tr14/#BK)).
+///
+/// This is a shim over [`LineRanges`] mapping ranges to `str` slices.
+///
+/// This differs from [`str::lines`] in a few ways:
+/// -   Each yielded line includes the terminating line-break's encoding
+/// -   When the text is empty or terminates with a line-break, this iterator
+///     yields the implied following line even though the line is empty.
+///     Implication: this iterator always yields at least one line.
+pub struct Lines<'a>(LineRanges<'a>);
+
+impl<'a> Lines<'a> {
+    /// Construct
+    #[inline]
+    pub fn new(text: &'a str) -> Self {
+        Lines(LineRanges::new(text))
+    }
+}
+
+impl<'a> Iterator for Lines<'a> {
+    type Item = (&'a str, Option<LineBreakEncoding>);
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0
+            .next()
+            .map(|(range, encoding)| (&self.0.text[range], encoding))
     }
 }
 
 pub(crate) fn icu_script_as_raw_tag(script: icu_properties::props::Script) -> [u8; 4] {
     let script = icu_locale::subtags::Script::from(script);
     script.into_raw()
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn line_range_iter() {
+        let mut iter = LineRanges::new("");
+        assert_eq!(iter.next(), Some((0..0, None)));
+        assert_eq!(iter.next(), None);
+
+        let mut iter = LineRanges::new("\n");
+        assert_eq!(iter.next(), Some((0..0, Some(LineBreakEncoding::LF))));
+        assert_eq!(iter.next(), Some((1..1, None)));
+        assert_eq!(iter.next(), None);
+
+        let mut iter = LineRanges::new("\r\n");
+        assert_eq!(iter.next(), Some((0..0, Some(LineBreakEncoding::CR_LF))));
+        assert_eq!(iter.next(), Some((2..2, None)));
+        assert_eq!(iter.next(), None);
+
+        let mut iter = LineRanges::new("\n\r");
+        assert_eq!(iter.next(), Some((0..0, Some(LineBreakEncoding::LF))));
+        assert_eq!(iter.next(), Some((1..1, Some(LineBreakEncoding::CR))));
+        assert_eq!(iter.next(), Some((2..2, None)));
+        assert_eq!(iter.next(), None);
+
+        let mut iter = LineRanges::new("\r\r");
+        assert_eq!(iter.next(), Some((0..0, Some(LineBreakEncoding::CR))));
+        assert_eq!(iter.next(), Some((1..1, Some(LineBreakEncoding::CR))));
+        assert_eq!(iter.next(), Some((2..2, None)));
+        assert_eq!(iter.next(), None);
+
+        let mut iter = LineRanges::new("abc def");
+        assert_eq!(iter.next(), Some((0..7, None)));
+        assert_eq!(iter.next(), None);
+
+        let mut iter = LineRanges::new("abc\n\ndef");
+        assert_eq!(iter.next(), Some((0..3, Some(LineBreakEncoding::LF))));
+        assert_eq!(iter.next(), Some((4..4, Some(LineBreakEncoding::LF))));
+        assert_eq!(iter.next(), Some((5..8, None)));
+        assert_eq!(iter.next(), None);
+
+        let mut iter = LineRanges::new("abc def\nghi\n");
+        assert_eq!(iter.next(), Some((0..7, Some(LineBreakEncoding::LF))));
+        assert_eq!(iter.next(), Some((8..11, Some(LineBreakEncoding::LF))));
+        assert_eq!(iter.next(), Some((12..12, None)));
+        assert_eq!(iter.next(), None);
+
+        let mut iter = LineRanges::new("abc\rdef\nghi\r\njkl\u{85}mno");
+        assert_eq!(iter.next(), Some((0..3, Some(LineBreakEncoding::CR))));
+        assert_eq!(iter.next(), Some((4..7, Some(LineBreakEncoding::LF))));
+        assert_eq!(iter.next(), Some((8..11, Some(LineBreakEncoding::CR_LF))));
+        assert_eq!(iter.next(), Some((13..16, Some(LineBreakEncoding::NEL))));
+        assert_eq!(iter.next(), Some((18..21, None)));
+        assert_eq!(iter.next(), None);
+    }
+
+    #[test]
+    fn line_iter() {
+        let mut iter = Lines::new("");
+        assert_eq!(iter.next(), Some(("", None)));
+        assert_eq!(iter.next(), None);
+
+        let mut iter = Lines::new("abc\r\ndef");
+        assert_eq!(iter.next(), Some(("abc", Some(LineBreakEncoding::CR_LF))));
+        assert_eq!(iter.next(), Some(("def", None)));
+        assert_eq!(iter.next(), None);
+    }
 }

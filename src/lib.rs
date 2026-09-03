@@ -27,7 +27,7 @@ mod env;
 pub use env::*;
 
 mod conv;
-pub use conv::{DPU, LineMetrics};
+pub use conv::{DPU, DecorationMetrics};
 
 mod data;
 use data::Range;
@@ -46,7 +46,7 @@ mod text;
 pub use text::*;
 
 mod util;
-pub use util::{FontToken, LineIterator, Status};
+pub use util::{FontToken, LineRanges, Lines, Status};
 
 pub(crate) mod shaper;
 pub use shaper::{Glyph, GlyphId};
