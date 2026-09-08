@@ -153,36 +153,44 @@ pub(crate) fn ends_with_hard_break(text: &str) -> bool {
     })
 }
 
-/// Types of line break
-//
-// Note: this uses a null-terminated UTF-8 encoding internally.
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub struct LineBreakEncoding([u8; 4]);
+/// Byte-encoding of mandatory line-break sequences
+///
+/// This is a null-terminated UTF-8 encoding of line-break sequences.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct LineBreakBytes([u8; 4]);
 
-impl LineBreakEncoding {
+impl LineBreakBytes {
     /// Carriage Return + Line Feed: `\r\n`
-    pub const CR_LF: Self = LineBreakEncoding(*"\r\n\0\0".as_bytes().as_array().unwrap());
+    pub const CR_LF: Self = LineBreakBytes::try_from("\r\n\0\0").unwrap();
 
     /// Line Feed: `\n`
-    pub const LF: Self = LineBreakEncoding(*"\n\0\0\0".as_bytes().as_array().unwrap());
+    pub const LF: Self = LineBreakBytes::try_from("\n\0\0\0").unwrap();
 
     /// Vertical Tab
-    pub const VT: Self = LineBreakEncoding(*"\x0B\0\0\0".as_bytes().as_array().unwrap());
+    pub const VT: Self = LineBreakBytes::try_from("\x0B\0\0\0").unwrap();
 
     /// Form Feed
-    pub const FF: Self = LineBreakEncoding(*"\x0C\0\0\0".as_bytes().as_array().unwrap());
+    pub const FF: Self = LineBreakBytes::try_from("\x0C\0\0\0").unwrap();
 
     /// Carriage Return: `\r`
-    pub const CR: Self = LineBreakEncoding(*"\r\0\0\0".as_bytes().as_array().unwrap());
+    pub const CR: Self = LineBreakBytes::try_from("\r\0\0\0").unwrap();
 
     /// Unicode Next Line
-    pub const NEL: Self = LineBreakEncoding(*"\u{85}\0\0".as_bytes().as_array().unwrap());
+    pub const NEL: Self = LineBreakBytes::try_from("\u{85}\0\0").unwrap();
 
     /// Unicode Line Separator
-    pub const LS: Self = LineBreakEncoding(*"\u{2028}\0".as_bytes().as_array().unwrap());
+    pub const LS: Self = LineBreakBytes::try_from("\u{2028}\0").unwrap();
 
     /// Unicode Paragraph Separator
-    pub const PS: Self = LineBreakEncoding(*"\u{2029}\0".as_bytes().as_array().unwrap());
+    pub const PS: Self = LineBreakBytes::try_from("\u{2029}\0").unwrap();
+
+    /// Construct from a `&str` (does not test validity)
+    const fn try_from(s: &str) -> Option<Self> {
+        match s.as_bytes().as_array() {
+            Some(a) => Some(LineBreakBytes(*a)),
+            None => None,
+        }
+    }
 
     /// Get UTF-8 encoding
     pub fn as_str(&self) -> &str {
@@ -200,15 +208,15 @@ impl LineBreakEncoding {
     }
 }
 
-impl From<char> for LineBreakEncoding {
+impl From<char> for LineBreakBytes {
     fn from(c: char) -> Self {
         let mut buf = [0u8; 4];
         c.encode_utf8(&mut buf);
-        LineBreakEncoding(buf)
+        LineBreakBytes(buf)
     }
 }
 
-impl fmt::Debug for LineBreakEncoding {
+impl fmt::Debug for LineBreakBytes {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         fmt::Debug::fmt(self.as_str(), f)
@@ -258,7 +266,7 @@ impl<'a> LineRanges<'a> {
 }
 
 impl<'a> Iterator for LineRanges<'a> {
-    type Item = (Range<usize>, Option<LineBreakEncoding>);
+    type Item = (Range<usize>, Option<LineBreakBytes>);
 
     fn next(&mut self) -> Option<Self::Item> {
         while let Some((i, c)) = self.iter.next() {
@@ -269,11 +277,11 @@ impl<'a> Iterator for LineRanges<'a> {
                 let end = if lb == LineBreak::CR
                     && self.iter.peek().map(|(_, c)| LineBreak::for_char(*c)) == Some(LineBreak::LF)
                 {
-                    encoding = LineBreakEncoding::CR_LF;
+                    encoding = LineBreakBytes::CR_LF;
                     let (i, c) = self.iter.next().unwrap();
                     i + c.len_utf8()
                 } else {
-                    encoding = LineBreakEncoding::from(c);
+                    encoding = LineBreakBytes::from(c);
                     i + c.len_utf8()
                 };
 
@@ -316,7 +324,7 @@ impl<'a> Lines<'a> {
 }
 
 impl<'a> Iterator for Lines<'a> {
-    type Item = (&'a str, Option<LineBreakEncoding>);
+    type Item = (&'a str, Option<LineBreakBytes>);
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
@@ -342,24 +350,24 @@ mod test {
         assert_eq!(iter.next(), None);
 
         let mut iter = LineRanges::new("\n");
-        assert_eq!(iter.next(), Some((0..0, Some(LineBreakEncoding::LF))));
+        assert_eq!(iter.next(), Some((0..0, Some(LineBreakBytes::LF))));
         assert_eq!(iter.next(), Some((1..1, None)));
         assert_eq!(iter.next(), None);
 
         let mut iter = LineRanges::new("\r\n");
-        assert_eq!(iter.next(), Some((0..0, Some(LineBreakEncoding::CR_LF))));
+        assert_eq!(iter.next(), Some((0..0, Some(LineBreakBytes::CR_LF))));
         assert_eq!(iter.next(), Some((2..2, None)));
         assert_eq!(iter.next(), None);
 
         let mut iter = LineRanges::new("\n\r");
-        assert_eq!(iter.next(), Some((0..0, Some(LineBreakEncoding::LF))));
-        assert_eq!(iter.next(), Some((1..1, Some(LineBreakEncoding::CR))));
+        assert_eq!(iter.next(), Some((0..0, Some(LineBreakBytes::LF))));
+        assert_eq!(iter.next(), Some((1..1, Some(LineBreakBytes::CR))));
         assert_eq!(iter.next(), Some((2..2, None)));
         assert_eq!(iter.next(), None);
 
         let mut iter = LineRanges::new("\r\r");
-        assert_eq!(iter.next(), Some((0..0, Some(LineBreakEncoding::CR))));
-        assert_eq!(iter.next(), Some((1..1, Some(LineBreakEncoding::CR))));
+        assert_eq!(iter.next(), Some((0..0, Some(LineBreakBytes::CR))));
+        assert_eq!(iter.next(), Some((1..1, Some(LineBreakBytes::CR))));
         assert_eq!(iter.next(), Some((2..2, None)));
         assert_eq!(iter.next(), None);
 
@@ -368,22 +376,22 @@ mod test {
         assert_eq!(iter.next(), None);
 
         let mut iter = LineRanges::new("abc\n\ndef");
-        assert_eq!(iter.next(), Some((0..3, Some(LineBreakEncoding::LF))));
-        assert_eq!(iter.next(), Some((4..4, Some(LineBreakEncoding::LF))));
+        assert_eq!(iter.next(), Some((0..3, Some(LineBreakBytes::LF))));
+        assert_eq!(iter.next(), Some((4..4, Some(LineBreakBytes::LF))));
         assert_eq!(iter.next(), Some((5..8, None)));
         assert_eq!(iter.next(), None);
 
         let mut iter = LineRanges::new("abc def\nghi\n");
-        assert_eq!(iter.next(), Some((0..7, Some(LineBreakEncoding::LF))));
-        assert_eq!(iter.next(), Some((8..11, Some(LineBreakEncoding::LF))));
+        assert_eq!(iter.next(), Some((0..7, Some(LineBreakBytes::LF))));
+        assert_eq!(iter.next(), Some((8..11, Some(LineBreakBytes::LF))));
         assert_eq!(iter.next(), Some((12..12, None)));
         assert_eq!(iter.next(), None);
 
         let mut iter = LineRanges::new("abc\rdef\nghi\r\njkl\u{85}mno");
-        assert_eq!(iter.next(), Some((0..3, Some(LineBreakEncoding::CR))));
-        assert_eq!(iter.next(), Some((4..7, Some(LineBreakEncoding::LF))));
-        assert_eq!(iter.next(), Some((8..11, Some(LineBreakEncoding::CR_LF))));
-        assert_eq!(iter.next(), Some((13..16, Some(LineBreakEncoding::NEL))));
+        assert_eq!(iter.next(), Some((0..3, Some(LineBreakBytes::CR))));
+        assert_eq!(iter.next(), Some((4..7, Some(LineBreakBytes::LF))));
+        assert_eq!(iter.next(), Some((8..11, Some(LineBreakBytes::CR_LF))));
+        assert_eq!(iter.next(), Some((13..16, Some(LineBreakBytes::NEL))));
         assert_eq!(iter.next(), Some((18..21, None)));
         assert_eq!(iter.next(), None);
     }
@@ -395,7 +403,7 @@ mod test {
         assert_eq!(iter.next(), None);
 
         let mut iter = Lines::new("abc\r\ndef");
-        assert_eq!(iter.next(), Some(("abc", Some(LineBreakEncoding::CR_LF))));
+        assert_eq!(iter.next(), Some(("abc", Some(LineBreakBytes::CR_LF))));
         assert_eq!(iter.next(), Some(("def", None)));
         assert_eq!(iter.next(), None);
     }
