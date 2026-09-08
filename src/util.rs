@@ -194,9 +194,9 @@ impl LineBreakBytes {
 
     /// Get UTF-8 encoding
     pub fn as_str(&self) -> &str {
-        let mut end = 4;
-        for i in 0..4 {
-            if self.0[i] == b'\0' {
+        let mut end = self.0.len();
+        for (i, b) in self.0.iter().enumerate() {
+            if *b == b'\0' {
                 end = i;
                 break;
             }
