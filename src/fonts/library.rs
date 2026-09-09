@@ -130,7 +130,7 @@ impl Font {
     ///
     /// Also ensures that the glyph map contains each `char` in `text` which
     /// does map to a font face.
-    fn uncovered_chars(&mut self, faces: &Vec<Box<Face>>, text: &str) -> String {
+    fn uncovered_chars(&mut self, faces: &[Box<Face>], text: &str) -> String {
         let mut unmatched = String::new();
         for c in text.chars() {
             if !self.glyph_map.contains_key(&c) && !unmatched.contains(c) {
