@@ -290,7 +290,7 @@ impl<'a> LineRanges<'a> {
 }
 
 impl<'a> Iterator for LineRanges<'a> {
-    type Item = (Range<usize>, Option<LineBreakBytes>);
+    type Item = (Range<usize>, LineBreakBytes);
 
     fn next(&mut self) -> Option<Self::Item> {
         while let Some((i, c)) = self.iter.next() {
@@ -311,14 +311,14 @@ impl<'a> Iterator for LineRanges<'a> {
 
                 let range = self.start..i;
                 self.start = end;
-                return Some((range, Some(encoding)));
+                return Some((range, encoding));
             }
         }
 
         if self.start <= self.text.len() {
             let range = self.start..self.text.len();
             self.start = range.end + 1;
-            return Some((range, None));
+            return Some((range, LineBreakBytes::NONE));
         }
 
         None
@@ -348,7 +348,7 @@ impl<'a> Lines<'a> {
 }
 
 impl<'a> Iterator for Lines<'a> {
-    type Item = (&'a str, Option<LineBreakBytes>);
+    type Item = (&'a str, LineBreakBytes);
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
@@ -370,65 +370,65 @@ mod test {
     #[test]
     fn line_range_iter() {
         let mut iter = LineRanges::new("");
-        assert_eq!(iter.next(), Some((0..0, None)));
+        assert_eq!(iter.next(), Some((0..0, LineBreakBytes::NONE)));
         assert_eq!(iter.next(), None);
 
         let mut iter = LineRanges::new("\n");
-        assert_eq!(iter.next(), Some((0..0, Some(LineBreakBytes::LF))));
-        assert_eq!(iter.next(), Some((1..1, None)));
+        assert_eq!(iter.next(), Some((0..0, LineBreakBytes::LF)));
+        assert_eq!(iter.next(), Some((1..1, LineBreakBytes::NONE)));
         assert_eq!(iter.next(), None);
 
         let mut iter = LineRanges::new("\r\n");
-        assert_eq!(iter.next(), Some((0..0, Some(LineBreakBytes::CR_LF))));
-        assert_eq!(iter.next(), Some((2..2, None)));
+        assert_eq!(iter.next(), Some((0..0, LineBreakBytes::CR_LF)));
+        assert_eq!(iter.next(), Some((2..2, LineBreakBytes::NONE)));
         assert_eq!(iter.next(), None);
 
         let mut iter = LineRanges::new("\n\r");
-        assert_eq!(iter.next(), Some((0..0, Some(LineBreakBytes::LF))));
-        assert_eq!(iter.next(), Some((1..1, Some(LineBreakBytes::CR))));
-        assert_eq!(iter.next(), Some((2..2, None)));
+        assert_eq!(iter.next(), Some((0..0, LineBreakBytes::LF)));
+        assert_eq!(iter.next(), Some((1..1, LineBreakBytes::CR)));
+        assert_eq!(iter.next(), Some((2..2, LineBreakBytes::NONE)));
         assert_eq!(iter.next(), None);
 
         let mut iter = LineRanges::new("\r\r");
-        assert_eq!(iter.next(), Some((0..0, Some(LineBreakBytes::CR))));
-        assert_eq!(iter.next(), Some((1..1, Some(LineBreakBytes::CR))));
-        assert_eq!(iter.next(), Some((2..2, None)));
+        assert_eq!(iter.next(), Some((0..0, LineBreakBytes::CR)));
+        assert_eq!(iter.next(), Some((1..1, LineBreakBytes::CR)));
+        assert_eq!(iter.next(), Some((2..2, LineBreakBytes::NONE)));
         assert_eq!(iter.next(), None);
 
         let mut iter = LineRanges::new("abc def");
-        assert_eq!(iter.next(), Some((0..7, None)));
+        assert_eq!(iter.next(), Some((0..7, LineBreakBytes::NONE)));
         assert_eq!(iter.next(), None);
 
         let mut iter = LineRanges::new("abc\n\ndef");
-        assert_eq!(iter.next(), Some((0..3, Some(LineBreakBytes::LF))));
-        assert_eq!(iter.next(), Some((4..4, Some(LineBreakBytes::LF))));
-        assert_eq!(iter.next(), Some((5..8, None)));
+        assert_eq!(iter.next(), Some((0..3, LineBreakBytes::LF)));
+        assert_eq!(iter.next(), Some((4..4, LineBreakBytes::LF)));
+        assert_eq!(iter.next(), Some((5..8, LineBreakBytes::NONE)));
         assert_eq!(iter.next(), None);
 
         let mut iter = LineRanges::new("abc def\nghi\n");
-        assert_eq!(iter.next(), Some((0..7, Some(LineBreakBytes::LF))));
-        assert_eq!(iter.next(), Some((8..11, Some(LineBreakBytes::LF))));
-        assert_eq!(iter.next(), Some((12..12, None)));
+        assert_eq!(iter.next(), Some((0..7, LineBreakBytes::LF)));
+        assert_eq!(iter.next(), Some((8..11, LineBreakBytes::LF)));
+        assert_eq!(iter.next(), Some((12..12, LineBreakBytes::NONE)));
         assert_eq!(iter.next(), None);
 
         let mut iter = LineRanges::new("abc\rdef\nghi\r\njkl\u{85}mno");
-        assert_eq!(iter.next(), Some((0..3, Some(LineBreakBytes::CR))));
-        assert_eq!(iter.next(), Some((4..7, Some(LineBreakBytes::LF))));
-        assert_eq!(iter.next(), Some((8..11, Some(LineBreakBytes::CR_LF))));
-        assert_eq!(iter.next(), Some((13..16, Some(LineBreakBytes::NEL))));
-        assert_eq!(iter.next(), Some((18..21, None)));
+        assert_eq!(iter.next(), Some((0..3, LineBreakBytes::CR)));
+        assert_eq!(iter.next(), Some((4..7, LineBreakBytes::LF)));
+        assert_eq!(iter.next(), Some((8..11, LineBreakBytes::CR_LF)));
+        assert_eq!(iter.next(), Some((13..16, LineBreakBytes::NEL)));
+        assert_eq!(iter.next(), Some((18..21, LineBreakBytes::NONE)));
         assert_eq!(iter.next(), None);
     }
 
     #[test]
     fn line_iter() {
         let mut iter = Lines::new("");
-        assert_eq!(iter.next(), Some(("", None)));
+        assert_eq!(iter.next(), Some(("", LineBreakBytes::NONE)));
         assert_eq!(iter.next(), None);
 
         let mut iter = Lines::new("abc\r\ndef");
-        assert_eq!(iter.next(), Some(("abc", Some(LineBreakBytes::CR_LF))));
-        assert_eq!(iter.next(), Some(("def", None)));
+        assert_eq!(iter.next(), Some(("abc", LineBreakBytes::CR_LF)));
+        assert_eq!(iter.next(), Some(("def", LineBreakBytes::NONE)));
         assert_eq!(iter.next(), None);
     }
 }
