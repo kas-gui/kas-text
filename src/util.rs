@@ -160,6 +160,9 @@ pub(crate) fn ends_with_hard_break(text: &str) -> bool {
 pub struct LineBreakBytes([u8; 4]);
 
 impl LineBreakBytes {
+    /// Empty (no line break)
+    pub const NONE: Self = LineBreakBytes([0; 4]);
+
     /// Carriage Return + Line Feed: `\r\n`
     pub const CR_LF: Self = LineBreakBytes::try_from("\r\n\0\0").unwrap();
 
@@ -205,6 +208,27 @@ impl LineBreakBytes {
         // SAFETY: contents of self are always valid ASCII; chopping off
         // trailing zero bytes leaves valid UTF-8
         unsafe { str::from_utf8_unchecked(&self.0[..end]) }
+    }
+
+    /// Test whether this is empty
+    #[inline]
+    pub fn is_none(self) -> bool {
+        self == Self::NONE
+    }
+
+    /// Test whether this is a default line break on some platform
+    ///
+    /// This is true for:
+    ///
+    /// -   LF: standard on Unix and Mac OS X (from 10.0)
+    /// -   CR: standard on "classic" MacOS
+    /// -   CR_LF: standard on Windows
+    /// -   NEL: standard on EBCDIC
+    ///
+    /// This is not true for LS or PS which are intended to explicitly
+    /// distinguish line and paragraph breaks.
+    pub fn is_default_line_break(self) -> bool {
+        matches!(self, Self::CR_LF | Self::LF | Self::CR | Self::NEL)
     }
 }
 
